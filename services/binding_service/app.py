@@ -9,19 +9,14 @@ from libs.contracts.models import (
     ResolveBindingRequest,
 )
 from services.binding_service.domain import BindingNotFoundError, BindingService
-from services.binding_service.repository import InMemoryBindingRepository
+from services.binding_service.runtime import get_runtime_service
 
 app = FastAPI(title="binding_service", version="0.1.0")
-
-# Default in-memory wiring keeps this service runnable without external storage.
-# In production we can swap this via dependency injection.
-_repository = InMemoryBindingRepository()
-_service = BindingService(_repository)
 
 
 def get_service() -> BindingService:
     # FastAPI dependency hook; tests replace this with a fake service.
-    return _service
+    return get_runtime_service()
 
 
 @app.post("/v1/bindings/resolve", response_model=BindingRecord)

@@ -1,0 +1,48 @@
+from __future__ import annotations
+
+import pytest
+from pydantic import ValidationError
+
+from libs.contracts.models import (
+    ControllerTickResponse,
+    EvidenceIngestRequest,
+    OrchestratorApplyRequest,
+)
+from services.controller.app import app as controller_app
+from services.orchestrator.app import app as orchestrator_app
+from services.profiler.app import app as profiler_app
+
+
+pytestmark = pytest.mark.contract
+
+
+def test_evidence_ingest_request_requires_binding_id() -> None:
+    with pytest.raises(ValidationError):
+        EvidenceIngestRequest(
+            attacker_key="198.51.100.70",
+            binding_id="",
+            event={
+                "ts": "2026-01-01T00:00:00Z",
+                "falco_rule": "Read sensitive file",
+                "priority": "WARNING",
+                "output": "Sensitive file read /etc/shadow",
+            },
+        )
+
+
+def test_controller_tick_response_has_schema_version() -> None:
+    response = ControllerTickResponse(binding_id="binding-7")
+    dumped = response.model_dump()
+
+    assert dumped["schema_version"] == "v1"
+
+
+def test_orchestrator_apply_request_requires_binding_id() -> None:
+    with pytest.raises(ValidationError):
+        OrchestratorApplyRequest(binding_id="")
+
+
+def test_openapi_contains_new_mvp_paths() -> None:
+    assert "/v1/evidence/ingest" in profiler_app.openapi()["paths"]
+    assert "/v1/controller/tick" in controller_app.openapi()["paths"]
+    assert "/v1/orchestration/apply" in orchestrator_app.openapi()["paths"]

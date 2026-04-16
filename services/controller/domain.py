@@ -1,0 +1,253 @@
+from __future__ import annotations
+
+import random
+from dataclasses import dataclass
+
+from libs.common.config import RuntimeConfig
+from libs.contracts.models import (
+    ActionType,
+    AssetDefinition,
+    ControllerAction,
+    ControllerTickRequest,
+    ControllerTickResponse,
+    DecisionEvent,
+    DecisionType,
+)
+from services.controller.repository import AssetRepository, TransitionRepository
+
+
+@dataclass(frozen=True)
+class CandidateScore:
+    """Controller-local score bundle for one candidate asset."""
+
+    asset: AssetDefinition
+    exploit_score: float
+    explore_score: float
+    procedure_score: float
+
+
+class ControllerService:
+    """MVP exposure controller with explainable exploit/explore scoring."""
+
+    def __init__(
+        self,
+        asset_repository: AssetRepository,
+        transition_repository: TransitionRepository,
+        config: RuntimeConfig | None = None,
+        rng: random.Random | None = None,
+    ) -> None:
+        self._asset_repository = asset_repository
+        self._transition_repository = transition_repository
+        self._config = config or RuntimeConfig()
+        self._rng = rng or random.Random()
+
+    def tick(self, request: ControllerTickRequest) -> ControllerTickResponse:
+        # Tests may inject assets directly; otherwise use the catalog.
+        assets = request.assets or list(self._asset_repository.list_all())
+        candidates = [
+            self._score_asset(asset, request)
+            for asset in assets
+            if self._is_eligible(asset, request.unlocked_asset_ids)
+        ]
+        if not candidates:
+            return self._noop_response(
+                request=request,
+                reason="no eligible assets remained after dependency and unlock filtering",
+            )
+
+        # Exploit deepens the current hypothesis; explore probes an alternative.
+        strategy = "exploit" if self._rng.random() >= self._config.epsilon else "explore"
+        primary = self._pick_best(candidates, strategy)
+        if primary is None:
+            # Fall back to the other strategy before returning noop.
+            fallback_strategy = "explore" if strategy == "exploit" else "exploit"
+            primary = self._pick_best(candidates, fallback_strategy)
+            if primary is None:
+                return self._noop_response(
+                    request=request,
+                    reason=f"no candidate crossed the {strategy} or {fallback_strategy} threshold",
+                    candidate_asset_ids=[
+                        candidate.asset.asset_id for candidate in candidates
+                    ],
+                )
+            strategy = fallback_strategy
+
+        actions = [self._build_unlock_action(request.binding_id, primary, strategy)]
+        decisions = [self._build_decision_event(request, primary, strategy)]
+
+        # Offer a second branch when another plausible option exists.
+        secondary_strategy = "explore" if strategy == "exploit" else "exploit"
+        remaining = [
+            candidate
+            for candidate in candidates
+            if candidate.asset.asset_id != primary.asset.asset_id
+        ]
+        secondary = self._pick_best(remaining, secondary_strategy)
+        if secondary is not None:
+            actions.append(
+                self._build_unlock_action(request.binding_id, secondary, secondary_strategy)
+            )
+            decisions.append(
+                self._build_decision_event(request, secondary, secondary_strategy)
+            )
+
+        return ControllerTickResponse(
+            binding_id=request.binding_id,
+            actions=actions,
+            decision_events=decisions,
+            candidate_asset_ids=[candidate.asset.asset_id for candidate in candidates],
+        )
+
+    def _score_asset(
+        self,
+        asset: AssetDefinition,
+        request: ControllerTickRequest,
+    ) -> CandidateScore:
+        profile = request.profile
+        recent_tactics = set(profile.recent_tactics)
+        fit_recent = 1.0 if recent_tactics.intersection(asset.covers_tactics) else 0.0
+
+        confidences = [
+            profile.conf_by_tactic.get(tactic, 0.0) for tactic in asset.covers_tactics
+        ]
+        strength_match = sum(confidences) / len(confidences) if confidences else 0.0
+        # Novelty rewards under-observed tactics.
+        novelty = (
+            sum(1.0 - confidence for confidence in confidences) / len(confidences)
+            if confidences
+            else 1.0
+        )
+        coverage_gain = sum(
+            1 for tactic in asset.covers_tactics if profile.conf_by_tactic.get(tactic, 0.0) < 0.3
+        )
+        procedure_score = self._procedure_score(
+            recent_tactics=request.profile.recent_tactics,
+            asset=asset,
+        )
+
+        exploit_score = (2.0 * fit_recent) + strength_match + procedure_score
+        explore_score = (1.5 * novelty) + (0.5 * coverage_gain) + (0.25 * procedure_score)
+        return CandidateScore(
+            asset=asset,
+            exploit_score=round(exploit_score, 4),
+            explore_score=round(explore_score, 4),
+            procedure_score=round(procedure_score, 4),
+        )
+
+    def _procedure_score(
+        self,
+        recent_tactics: list[str],
+        asset: AssetDefinition,
+    ) -> float:
+        # Use the strongest recent tactic-to-candidate transition score.
+        scores = [
+            self._transition_repository.score_transition(current_tactic, candidate_tactic)
+            for current_tactic in recent_tactics
+            for candidate_tactic in asset.covers_tactics
+        ]
+        return max(scores, default=0.0)
+
+    def _is_eligible(
+        self,
+        asset: AssetDefinition,
+        unlocked_asset_ids: list[str],
+    ) -> bool:
+        # Filter by exposure type, duplicates, unlock cap, and dependencies.
+        if asset.exposure_type != "internal":
+            return False
+        if asset.asset_id in unlocked_asset_ids:
+            return False
+        if len(unlocked_asset_ids) >= self._config.unlock_cap:
+            return False
+        return set(asset.dependencies).issubset(unlocked_asset_ids)
+
+    def _pick_best(
+        self,
+        candidates: list[CandidateScore],
+        strategy: str,
+    ) -> CandidateScore | None:
+        if not candidates:
+            return None
+
+        if strategy == "exploit":
+            # Only unlock when the candidate clears the threshold.
+            ranked = sorted(
+                candidates,
+                key=lambda candidate: (candidate.exploit_score, candidate.procedure_score),
+                reverse=True,
+            )
+            return ranked[0] if ranked[0].exploit_score >= 2.2 else None
+
+        ranked = sorted(
+            candidates,
+            key=lambda candidate: (candidate.explore_score, candidate.procedure_score),
+            reverse=True,
+        )
+        return ranked[0] if ranked[0].explore_score >= 1.2 else None
+
+    def _build_unlock_action(
+        self,
+        binding_id: str,
+        candidate: CandidateScore,
+        strategy: str,
+    ) -> ControllerAction:
+        return ControllerAction(
+            action_type=ActionType.unlock,
+            binding_id=binding_id,
+            asset_id=candidate.asset.asset_id,
+            reason=(
+                f"{strategy} score for {candidate.asset.asset_id}: "
+                f"exploit={candidate.exploit_score}, "
+                f"explore={candidate.explore_score}, "
+                f"procedure={candidate.procedure_score}"
+            ),
+        )
+
+    def _build_decision_event(
+        self,
+        request: ControllerTickRequest,
+        candidate: CandidateScore,
+        strategy: str,
+    ) -> DecisionEvent:
+        return DecisionEvent(
+            attacker_key=request.attacker_key,
+            binding_id=request.binding_id,
+            decision_type=DecisionType.unlock,
+            reason=(
+                f"{strategy} selected {candidate.asset.asset_id} "
+                f"(exploit={candidate.exploit_score}, "
+                f"explore={candidate.explore_score})"
+            ),
+            trigger_evidence_ids=request.profile.recent_evidence_ids,
+            asset_added=candidate.asset.asset_id,
+        )
+
+    def _noop_response(
+        self,
+        request: ControllerTickRequest,
+        reason: str,
+        candidate_asset_ids: list[str] | None = None,
+    ) -> ControllerTickResponse:
+        # Keep noop explicit so "do nothing" stays traceable.
+        return ControllerTickResponse(
+            binding_id=request.binding_id,
+            actions=[
+                ControllerAction(
+                    action_type=ActionType.noop,
+                    binding_id=request.binding_id,
+                    reason=reason,
+                )
+            ],
+            decision_events=[
+                DecisionEvent(
+                    attacker_key=request.attacker_key,
+                    binding_id=request.binding_id,
+                    decision_type=DecisionType.noop,
+                    reason=reason,
+                    trigger_evidence_ids=request.profile.recent_evidence_ids,
+                )
+            ],
+            candidate_asset_ids=candidate_asset_ids or [],
+        )
+
+

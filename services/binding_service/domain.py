@@ -120,3 +120,23 @@ class BindingService:
         if existing is None:
             raise BindingNotFoundError(binding_id)
         return existing
+
+    def unlock_assets(self, binding_id: str, asset_ids: list[str]) -> BindingRecord:
+        """Append one or more unlocked assets without duplicating entries."""
+        existing = self._repository.get_by_binding(binding_id)
+        if existing is None:
+            raise BindingNotFoundError(binding_id)
+
+        unlocked_assets = list(existing.unlocked_assets)
+        for asset_id in asset_ids:
+            if asset_id not in unlocked_assets:
+                unlocked_assets.append(asset_id)
+
+        updated = existing.model_copy(
+            update={
+                "status": BindingStatus.active,
+                "last_seen_ts": utcnow(),
+                "unlocked_assets": unlocked_assets,
+            }
+        )
+        return self._repository.upsert(updated)
