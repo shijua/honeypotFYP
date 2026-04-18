@@ -3,12 +3,13 @@ from __future__ import annotations
 from libs.contracts.models import (
     ActionType,
     BindingRecord,
+    GatewaySyncRequest,
     OrchestratorApplyRequest,
     OrchestratorApplyResponse,
     RecycleRequest,
 )
 from services.binding_service.domain import BindingService
-from services.orchestrator.repository import RouteStateRepository
+from services.gateway.domain import GatewayService
 
 
 class OrchestratorService:
@@ -17,10 +18,10 @@ class OrchestratorService:
     def __init__(
         self,
         binding_service: BindingService,
-        route_state_repository: RouteStateRepository,
+        gateway_service: GatewayService,
     ) -> None:
         self._binding_service = binding_service
-        self._route_state_repository = route_state_repository
+        self._gateway_service = gateway_service
 
     def apply(self, request: OrchestratorApplyRequest) -> OrchestratorApplyResponse:
         binding = self._binding_service.get(request.binding_id)
@@ -39,16 +40,17 @@ class OrchestratorService:
                 route_update = (
                     f"binding {request.binding_id} route update: {action.reason}"
                 )
-                self._route_state_repository.append_route_update(
-                    request.binding_id,
-                    route_update,
-                )
                 route_updates.append(route_update)
             elif action.action_type == ActionType.recycle:
                 binding = self._binding_service.recycle(
                     request.binding_id,
                     RecycleRequest(mode="idle"),
                 )
+                route_updates.append(f"binding {request.binding_id} recycled")
+
+        self._gateway_service.sync(
+            GatewaySyncRequest(binding=binding, route_updates=route_updates)
+        )
 
         return OrchestratorApplyResponse(
             binding=binding,
@@ -74,7 +76,6 @@ class OrchestratorService:
         route_updates = []
         for asset_id in new_assets:
             route_update = f"binding {binding_id} exposes {asset_id}"
-            self._route_state_repository.append_route_update(binding_id, route_update)
             route_updates.append(route_update)
 
         return updated, route_updates

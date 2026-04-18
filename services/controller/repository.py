@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+import json
+from pathlib import Path
 from typing import Protocol
 
 from libs.contracts.models import AssetDefinition
@@ -68,6 +70,18 @@ class InMemoryAssetRepository:
 
     def list_all(self) -> Iterable[AssetDefinition]:
         return tuple(self._assets)
+
+
+class FileAssetRepository:
+    """JSON-backed asset catalog used by the default controller runtime."""
+
+    def __init__(self, path: str | Path) -> None:
+        self._path = Path(path)
+
+    def list_all(self) -> Iterable[AssetDefinition]:
+        with self._path.open("r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        return tuple(AssetDefinition.model_validate(item) for item in payload)
 
 
 class InMemoryTransitionRepository:

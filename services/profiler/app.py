@@ -1,26 +1,40 @@
 from __future__ import annotations
 
+from functools import lru_cache
+
 from fastapi import Depends, FastAPI, HTTPException
 
+from libs.common.config import RuntimeConfig
 from libs.contracts.models import (
     EvidenceIngestRequest,
     EvidenceIngestResponse,
     ProfileSnapshot,
 )
+from services.profiler.attack_catalog import MitreAttackCatalog
 from services.profiler.domain import ProfileNotFoundError, ProfilerService
-from services.profiler.repository import InMemoryEvidenceRepository, InMemoryProfileRepository
+from services.profiler.repository import FileEvidenceRepository, FileProfileRepository
 
 app = FastAPI(title="profiler", version="0.1.0")
 
-# Default in-memory wiring keeps the service runnable locally.
-_evidence_repository = InMemoryEvidenceRepository()
-_profile_repository = InMemoryProfileRepository()
-_service = ProfilerService(_evidence_repository, _profile_repository)
+
+@lru_cache(maxsize=1)
+def _build_service() -> ProfilerService:
+    # Default local wiring persists profiler state and ATT&CK data on disk.
+    config = RuntimeConfig()
+    evidence_repository = FileEvidenceRepository(f"{config.state_dir}/evidence.json")
+    profile_repository = FileProfileRepository(f"{config.state_dir}/profiles.json")
+    attack_catalog = MitreAttackCatalog(config.mitre_attack_stix_path)
+    return ProfilerService(
+        evidence_repository,
+        profile_repository,
+        attack_catalog,
+        config=config,
+    )
 
 
 def get_service() -> ProfilerService:
     # Tests replace this dependency with an isolated service.
-    return _service
+    return _build_service()
 
 
 @app.post("/v1/evidence/ingest", response_model=EvidenceIngestResponse)

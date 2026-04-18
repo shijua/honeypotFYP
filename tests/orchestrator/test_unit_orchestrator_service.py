@@ -5,8 +5,9 @@ import pytest
 from libs.contracts.models import ActionType, ControllerAction, OrchestratorApplyRequest, ResolveBindingRequest
 from services.binding_service.domain import BindingService
 from services.binding_service.repository import InMemoryBindingRepository
+from services.gateway.domain import GatewayService
+from services.gateway.repository import InMemoryGatewayRouteRepository
 from services.orchestrator.domain import OrchestratorService
-from services.orchestrator.repository import InMemoryRouteStateRepository
 
 
 pytestmark = pytest.mark.unit
@@ -14,9 +15,10 @@ pytestmark = pytest.mark.unit
 
 def test_apply_unlock_updates_binding_assets_and_route_updates() -> None:
     binding_service = BindingService(InMemoryBindingRepository())
+    gateway_service = GatewayService(InMemoryGatewayRouteRepository())
     orchestrator = OrchestratorService(
         binding_service,
-        InMemoryRouteStateRepository(),
+        gateway_service,
     )
     binding = binding_service.resolve(ResolveBindingRequest(attacker_key="198.51.100.50"))
 
@@ -44,13 +46,16 @@ def test_apply_unlock_updates_binding_assets_and_route_updates() -> None:
     assert response.route_updates == [
         f"binding {binding.binding_id} exposes git-internal"
     ]
+    gateway_state = gateway_service.get_state(binding.binding_id)
+    assert gateway_state.exposed_assets == ["git-internal"]
 
 
 def test_recycle_then_resolve_keeps_unlocked_assets() -> None:
     binding_service = BindingService(InMemoryBindingRepository())
+    gateway_service = GatewayService(InMemoryGatewayRouteRepository())
     orchestrator = OrchestratorService(
         binding_service,
-        InMemoryRouteStateRepository(),
+        gateway_service,
     )
     binding = binding_service.resolve(ResolveBindingRequest(attacker_key="198.51.100.51"))
     orchestrator.apply(

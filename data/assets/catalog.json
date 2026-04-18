@@ -1,0 +1,42 @@
+[
+  {
+    "asset_id": "internal-portal",
+    "asset_name": "Internal Portal",
+    "exposure_type": "internal",
+    "interaction_level": "medium",
+    "covers_tactics": ["Discovery"],
+    "dependencies": []
+  },
+  {
+    "asset_id": "finance-share",
+    "asset_name": "Finance File Share",
+    "exposure_type": "internal",
+    "interaction_level": "medium",
+    "covers_tactics": ["Credential Access", "Collection"],
+    "dependencies": ["internal-portal"]
+  },
+  {
+    "asset_id": "git-internal",
+    "asset_name": "Internal Git",
+    "exposure_type": "internal",
+    "interaction_level": "medium",
+    "covers_tactics": ["Credential Access", "Discovery"],
+    "dependencies": ["internal-portal"]
+  },
+  {
+    "asset_id": "ops-db",
+    "asset_name": "Operations Database",
+    "exposure_type": "internal",
+    "interaction_level": "medium",
+    "covers_tactics": ["Credential Access", "Collection"],
+    "dependencies": ["git-internal"]
+  },
+  {
+    "asset_id": "admin-jumpbox",
+    "asset_name": "Admin Jumpbox",
+    "exposure_type": "internal",
+    "interaction_level": "high",
+    "covers_tactics": ["Lateral Movement", "Privilege Escalation"],
+    "dependencies": ["git-internal"]
+  }
+]

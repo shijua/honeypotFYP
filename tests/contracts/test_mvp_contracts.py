@@ -6,9 +6,11 @@ from pydantic import ValidationError
 from libs.contracts.models import (
     ControllerTickResponse,
     EvidenceIngestRequest,
+    GatewaySyncRequest,
     OrchestratorApplyRequest,
 )
 from services.controller.app import app as controller_app
+from services.gateway.app import app as gateway_app
 from services.orchestrator.app import app as orchestrator_app
 from services.profiler.app import app as profiler_app
 
@@ -42,7 +44,13 @@ def test_orchestrator_apply_request_requires_binding_id() -> None:
         OrchestratorApplyRequest(binding_id="")
 
 
+def test_gateway_sync_request_requires_binding_payload() -> None:
+    with pytest.raises(ValidationError):
+        GatewaySyncRequest(binding={})
+
+
 def test_openapi_contains_new_mvp_paths() -> None:
     assert "/v1/evidence/ingest" in profiler_app.openapi()["paths"]
     assert "/v1/controller/tick" in controller_app.openapi()["paths"]
     assert "/v1/orchestration/apply" in orchestrator_app.openapi()["paths"]
+    assert "/v1/gateway/sync" in gateway_app.openapi()["paths"]

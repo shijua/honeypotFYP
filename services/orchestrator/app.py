@@ -4,14 +4,13 @@ from fastapi import Depends, FastAPI
 
 from libs.contracts.models import OrchestratorApplyRequest, OrchestratorApplyResponse
 from services.binding_service.runtime import get_runtime_service
+from services.gateway.runtime import get_runtime_service as get_runtime_gateway_service
 from services.orchestrator.domain import OrchestratorService
-from services.orchestrator.repository import InMemoryRouteStateRepository
 
 app = FastAPI(title="orchestrator", version="0.1.0")
 
-_route_state_repository = InMemoryRouteStateRepository()
-# Share binding runtime so apply-actions update the same in-memory state.
-_service = OrchestratorService(get_runtime_service(), _route_state_repository)
+# Share binding and gateway runtimes so apply-actions update the same state.
+_service = OrchestratorService(get_runtime_service(), get_runtime_gateway_service())
 
 
 def get_service() -> OrchestratorService:

@@ -9,6 +9,7 @@ pytestmark = pytest.mark.component
 def test_orchestrator_apply_endpoint_updates_binding(mvp_clients) -> None:
     binding = mvp_clients["binding"]
     orchestrator = mvp_clients["orchestrator"]
+    gateway = mvp_clients["gateway"]
 
     resolved = binding.post(
         "/v1/bindings/resolve",
@@ -31,3 +32,6 @@ def test_orchestrator_apply_endpoint_updates_binding(mvp_clients) -> None:
 
     assert response.status_code == 200
     assert response.json()["binding"]["unlocked_assets"] == ["internal-portal"]
+    gateway_state = gateway.get(f"/v1/gateway/bindings/{resolved['binding_id']}")
+    assert gateway_state.status_code == 200
+    assert gateway_state.json()["exposed_assets"] == ["internal-portal"]

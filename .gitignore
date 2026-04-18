@@ -4,6 +4,8 @@ __pycache__/
 .ruff_cache/
 *.pyc
 .venv/
+data/runtime/
+data/mitre/enterprise-attack.json
 dist/
 build/
 *.egg-info/

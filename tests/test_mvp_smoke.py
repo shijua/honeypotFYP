@@ -11,6 +11,7 @@ def test_mvp_closes_the_loop_from_binding_to_unlock(mvp_clients) -> None:
     profiler_client = mvp_clients["profiler"]
     controller_client = mvp_clients["controller"]
     orchestrator_client = mvp_clients["orchestrator"]
+    gateway_client = mvp_clients["gateway"]
     attacker_key = "203.0.113.200"
 
     resolved = binding_client.post(
@@ -60,6 +61,9 @@ def test_mvp_closes_the_loop_from_binding_to_unlock(mvp_clients) -> None:
     )
     assert first_apply.status_code == 200
     assert first_apply.json()["binding"]["unlocked_assets"] == ["internal-portal"]
+    gateway_state = gateway_client.get(f"/v1/gateway/bindings/{binding['binding_id']}")
+    assert gateway_state.status_code == 200
+    assert gateway_state.json()["exposed_assets"] == ["internal-portal"]
 
     second_tick = controller_client.post(
         "/v1/controller/tick",
@@ -81,3 +85,8 @@ def test_mvp_closes_the_loop_from_binding_to_unlock(mvp_clients) -> None:
     )
     assert second_apply.status_code == 200
     assert "finance-share" in second_apply.json()["binding"]["unlocked_assets"]
+    final_gateway_state = gateway_client.get(
+        f"/v1/gateway/bindings/{binding['binding_id']}"
+    )
+    assert final_gateway_state.status_code == 200
+    assert "finance-share" in final_gateway_state.json()["exposed_assets"]

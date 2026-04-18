@@ -8,6 +8,7 @@ from libs.common.config import RuntimeConfig
 from libs.contracts.models import EvidenceIngestRequest, FalcoEvent
 from services.profiler.domain import ProfilerService
 from services.profiler.repository import InMemoryEvidenceRepository, InMemoryProfileRepository
+from tests.support.attack_catalog import build_test_attack_catalog
 
 
 pytestmark = pytest.mark.unit
@@ -17,6 +18,7 @@ def test_ingest_maps_falco_event_into_attack_profile() -> None:
     service = ProfilerService(
         InMemoryEvidenceRepository(),
         InMemoryProfileRepository(),
+        build_test_attack_catalog(),
     )
 
     response = service.ingest(
@@ -45,6 +47,7 @@ def test_profile_recent_sequence_respects_time_window() -> None:
     service = ProfilerService(
         InMemoryEvidenceRepository(),
         InMemoryProfileRepository(),
+        build_test_attack_catalog(),
         config=RuntimeConfig(chain_window_seconds=300),
     )
     start = datetime(2026, 1, 1, tzinfo=timezone.utc)
@@ -86,6 +89,7 @@ def test_ingest_extracts_subtechnique_ids_from_realistic_falco_tags() -> None:
     service = ProfilerService(
         InMemoryEvidenceRepository(),
         InMemoryProfileRepository(),
+        build_test_attack_catalog(),
     )
 
     response = service.ingest(
@@ -113,3 +117,57 @@ def test_ingest_extracts_subtechnique_ids_from_realistic_falco_tags() -> None:
 
     assert response.evidences[0].tech_id == "T1552.001"
     assert response.evidences[0].group == "Credential Access"
+
+
+def test_ingest_uses_catalog_default_when_only_tactic_tag_is_present() -> None:
+    service = ProfilerService(
+        InMemoryEvidenceRepository(),
+        InMemoryProfileRepository(),
+        build_test_attack_catalog(),
+    )
+
+    response = service.ingest(
+        EvidenceIngestRequest(
+            attacker_key="198.51.100.40",
+            binding_id="binding-4",
+            event=FalcoEvent(
+                ts=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                falco_rule="Launch Privileged Container",
+                priority="CRITICAL",
+                output="Privileged container started",
+                tags=["mitre_privilege_escalation"],
+                output_fields={},
+            ),
+        )
+    )
+
+    assert response.evidences[0].tech_id is None
+    assert response.evidences[0].group == "Privilege Escalation"
+
+
+def test_ingest_keeps_untagged_events_unclassified() -> None:
+    service = ProfilerService(
+        InMemoryEvidenceRepository(),
+        InMemoryProfileRepository(),
+        build_test_attack_catalog(),
+    )
+
+    response = service.ingest(
+        EvidenceIngestRequest(
+            attacker_key="198.51.100.41",
+            binding_id="binding-5",
+            event=FalcoEvent(
+                ts=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                falco_rule="Unexpected process launch",
+                priority="WARNING",
+                output="Command execution observed",
+                tags=[],
+                output_fields={"proc_cmdline": "bash -c whoami"},
+            ),
+        )
+    )
+
+    assert response.evidences[0].tech_id is None
+    assert response.evidences[0].group is None
+    assert response.profile.conf_by_tactic == {}
+    assert response.profile.recent_tactics == []

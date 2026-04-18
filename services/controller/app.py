@@ -4,17 +4,20 @@ import random
 
 from fastapi import Depends, FastAPI
 
+from libs.common.config import RuntimeConfig
 from libs.contracts.models import ControllerTickRequest, ControllerTickResponse
 from services.controller.domain import ControllerService
-from services.controller.repository import InMemoryAssetRepository, InMemoryTransitionRepository
+from services.controller.repository import FileAssetRepository, InMemoryTransitionRepository
 
 app = FastAPI(title="controller", version="0.1.0")
 
-_asset_repository = InMemoryAssetRepository()
+_config = RuntimeConfig()
+_asset_repository = FileAssetRepository(_config.asset_catalog_path)
 _transition_repository = InMemoryTransitionRepository()
 _service = ControllerService(
     _asset_repository,
     _transition_repository,
+    config=_config,
     # Seed RNG for deterministic local runs and tests.
     rng=random.Random(0),
 )

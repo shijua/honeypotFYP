@@ -92,8 +92,8 @@ class TechniqueEvidence(VersionedModel):
     ts: datetime
     attacker_key: str
     binding_id: str
-    tech_id: str
-    group: str
+    tech_id: Optional[str] = None
+    group: Optional[str] = None
     weight: float
     success: bool
     reason: str
@@ -180,6 +180,25 @@ class OrchestratorApplyResponse(VersionedModel):
     binding: BindingRecord
     applied_actions: List[ControllerAction] = Field(default_factory=list)
     route_updates: List[str] = Field(default_factory=list)
+
+
+class GatewayBindingState(VersionedModel):
+    binding_id: str
+    attacker_key: str
+    backend_instance_id: str
+    status: BindingStatus
+    exposed_assets: List[str] = Field(default_factory=list)
+    route_updates: List[str] = Field(default_factory=list)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class GatewaySyncRequest(VersionedModel):
+    binding: BindingRecord
+    route_updates: List[str] = Field(default_factory=list)
+
+
+class GatewaySyncResponse(VersionedModel):
+    state: GatewayBindingState
 
 
 # ---- Attack-graph probability contracts ----

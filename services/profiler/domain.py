@@ -15,6 +15,7 @@ from libs.contracts.models import (
     ProfileSnapshot,
     TechniqueEvidence,
 )
+from services.profiler.attack_catalog import AttackCatalog
 from services.profiler.repository import EvidenceRepository, ProfileRepository
 
 
@@ -26,9 +27,9 @@ class ProfileNotFoundError(KeyError):
 
 @dataclass(frozen=True)
 class AttackMapping:
-    tech_id: str
-    tactic: str
+    tech_id: str | None
     reason: str
+    tactic: str | None = None
 
 
 class ProfilerService:
@@ -40,10 +41,12 @@ class ProfilerService:
         self,
         evidence_repository: EvidenceRepository,
         profile_repository: ProfileRepository,
+        attack_catalog: AttackCatalog,
         config: RuntimeConfig | None = None,
     ) -> None:
         self._evidence_repository = evidence_repository
         self._profile_repository = profile_repository
+        self._attack_catalog = attack_catalog
         self._config = config or RuntimeConfig()
 
     def ingest(self, request: EvidenceIngestRequest) -> EvidenceIngestResponse:
@@ -86,7 +89,14 @@ class ProfilerService:
                 attacker_key=attacker_key,
                 binding_id=binding_id,
                 tech_id=mapping.tech_id,
-                group=mapping.tactic,
+                group=(
+                    mapping.tactic
+                    or (
+                        self._attack_catalog.tactic_for_technique(mapping.tech_id)
+                        if mapping.tech_id
+                        else None
+                    )
+                ),
                 weight=weight,
                 success=self._infer_success(event),
                 reason=mapping.reason,
@@ -105,12 +115,18 @@ class ProfilerService:
             snapshot = ProfileSnapshot(attacker_key=attacker_key)
             return self._profile_repository.upsert(snapshot)
 
+        tactic_evidences = [
+            evidence for evidence in evidences if evidence.group is not None
+        ]
         conf_by_tactic, level_by_tactic = self._summarize_dimension(
-            evidences=evidences,
+            evidences=tactic_evidences,
             key_fn=lambda evidence: evidence.group,
         )
+        technique_evidences = [
+            evidence for evidence in evidences if evidence.tech_id is not None
+        ]
         conf_by_technique, level_by_technique = self._summarize_dimension(
-            evidences=evidences,
+            evidences=technique_evidences,
             key_fn=lambda evidence: evidence.tech_id,
         )
 
@@ -129,10 +145,14 @@ class ProfilerService:
             level_by_tactic=level_by_tactic,
             level_by_technique=level_by_technique,
             recent_tactics=self._dedupe_preserve(
-                evidence.group for evidence in recent_evidences
+                evidence.group
+                for evidence in recent_evidences
+                if evidence.group is not None
             ),
             recent_techniques=self._dedupe_preserve(
-                evidence.tech_id for evidence in recent_evidences
+                evidence.tech_id
+                for evidence in recent_evidences
+                if evidence.tech_id is not None
             ),
             recent_evidence_ids=[
                 evidence.evidence_id for evidence in recent_evidences[-5:]],
@@ -177,49 +197,43 @@ class ProfilerService:
         return weights.get(priority.upper(), 1.0)
 
     def _derive_attack_mappings(self, event: FalcoEvent) -> list[AttackMapping]:
-        # Prefer explicit ATT&CK tags when present.
+        # Trust explicit ATT&CK tags and let the catalog resolve tactic names.
         tactic = self._tactic_from_tags(event.tags)
         tech_ids = self._technique_ids_from_tags(event.tags)
         if tactic and tech_ids:
             return [
                 AttackMapping(
                     tech_id=tech_id,
-                    tactic=tactic,
                     reason=f"{event.falco_rule}: {event.output}",
+                    tactic=tactic,
+                )
+                for tech_id in tech_ids
+            ]
+        if tech_ids:
+            return [
+                self._mapping_for_technique(
+                    tech_id=tech_id,
+                    reason=f"{event.falco_rule}: {event.output}",
+                    tagged_tactic=tactic,
                 )
                 for tech_id in tech_ids
             ]
 
-        # Fall back to keyword heuristics when tags are sparse.
-        text = " ".join(
-            [
-                event.falco_rule,
-                event.output,
-                " ".join(event.tags),
-                " ".join(str(value) for value in event.output_fields.values()),
+        if tactic is not None:
+            return [
+                AttackMapping(
+                    tech_id=None,
+                    reason=f"Tag-only tactic mapping for rule {event.falco_rule}",
+                    tactic=tactic,
+                )
             ]
-        ).lower()
 
-        keyword_mappings = (
-            ("shadow", AttackMapping("T1003", "Credential Access", event.output)),
-            ("credential", AttackMapping("T1003", "Credential Access", event.output)),
-            ("sudo", AttackMapping("T1548.003", "Privilege Escalation", event.output)),
-            ("mysql", AttackMapping("T1046", "Discovery", event.output)),
-            ("redis", AttackMapping("T1046", "Discovery", event.output)),
-            ("ssh", AttackMapping("T1021.004", "Lateral Movement", event.output)),
-            ("curl", AttackMapping("T1105", "Command and Control", event.output)),
-            ("wget", AttackMapping("T1105", "Command and Control", event.output)),
-            ("exec", AttackMapping("T1059", "Execution", event.output)),
-        )
-        for needle, mapping in keyword_mappings:
-            if needle in text:
-                return [mapping]
-
+        # Without ATT&CK tags, keep the fallback unclassified.
         return [
             AttackMapping(
-                tech_id="T1595",
-                tactic="Discovery",
+                tech_id=None,
                 reason=f"Fallback mapping for rule {event.falco_rule}",
+                tactic=None,
             )
         ]
 
@@ -227,12 +241,24 @@ class ProfilerService:
         for tag in tags:
             if tag.startswith("mitre_"):
                 raw = tag[len("mitre_"):]
-                return " ".join(part.capitalize() for part in raw.split("_"))
+                return self._attack_catalog.canonical_tactic_name(raw)
         return None
 
     def _technique_ids_from_tags(self, tags: list[str]) -> list[str]:
         # Accept only canonical ATT&CK technique tags.
         return [tag for tag in tags if self._TECHNIQUE_TAG_RE.match(tag)]
+
+    def _mapping_for_technique(
+        self,
+        tech_id: str,
+        reason: str,
+        tagged_tactic: str | None,
+    ) -> AttackMapping:
+        return AttackMapping(
+            tech_id=tech_id,
+            reason=reason,
+            tactic=tagged_tactic or self._attack_catalog.tactic_for_technique(tech_id),
+        )
 
     def _infer_success(self, event: FalcoEvent) -> bool:
         # Infer success from obvious failure language.

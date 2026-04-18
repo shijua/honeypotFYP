@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from pathlib import Path
 from typing import Protocol
 
+from libs.common.json_store import JsonFileStore
 from libs.contracts.models import BindingRecord
 
 
@@ -56,3 +58,41 @@ class InMemoryBindingRepository:
 
     def list_all(self) -> Iterable[BindingRecord]:
         return tuple(self._by_binding.values())
+
+
+class FileBindingRepository:
+    """File-backed repository used by the default local runtime."""
+
+    def __init__(self, path: str | Path) -> None:
+        self._store = JsonFileStore(path, default_data={"records": []})
+
+    def get_by_attacker(self, attacker_key: str) -> BindingRecord | None:
+        return self._records_by_attacker().get(attacker_key)
+
+    def get_by_binding(self, binding_id: str) -> BindingRecord | None:
+        return self._records_by_binding().get(binding_id)
+
+    def upsert(self, record: BindingRecord) -> BindingRecord:
+        records = self._records_by_binding()
+        records[record.binding_id] = record
+        payload = {
+            "records": [item.model_dump(mode="json") for item in records.values()],
+        }
+        self._store.write(payload)
+        return record
+
+    def list_all(self) -> Iterable[BindingRecord]:
+        return tuple(self._records_by_binding().values())
+
+    def _records_by_binding(self) -> dict[str, BindingRecord]:
+        payload = self._store.read()
+        return {
+            item["binding_id"]: BindingRecord.model_validate(item)
+            for item in payload.get("records", [])
+        }
+
+    def _records_by_attacker(self) -> dict[str, BindingRecord]:
+        return {
+            record.attacker_key: record
+            for record in self._records_by_binding().values()
+        }
