@@ -1,3 +1,9 @@
+"""FastAPI entrypoints for the gateway route view.
+
+The gateway service keeps a lightweight mirror of which binding currently
+exposes which assets and route updates.
+"""
+
 from __future__ import annotations
 
 from fastapi import Depends, FastAPI, HTTPException
@@ -14,6 +20,7 @@ app = FastAPI(title="gateway", version="0.1.0")
 
 
 def get_service() -> GatewayService:
+    """Return the default gateway service used by the API."""
     # Tests replace this dependency with an isolated service.
     return get_runtime_service()
 

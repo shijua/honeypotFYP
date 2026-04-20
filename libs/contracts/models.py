@@ -1,3 +1,9 @@
+"""Shared request, response, and persistence models for the honeynet MVP.
+
+All services exchange these Pydantic models instead of defining local schemas.
+That keeps API payloads, stored state, and tests aligned around one contract.
+"""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -10,6 +16,12 @@ from libs.common.clock import utcnow
 
 
 class VersionedModel(BaseModel):
+    """Base class for shared payloads that carry a schema version.
+
+    Example:
+        {"schema_version": "v1", ...}
+    """
+
     # Carry a schema version on every shared payload.
     model_config = ConfigDict(extra="forbid")
     schema_version: str = "v1"
@@ -17,6 +29,12 @@ class VersionedModel(BaseModel):
 
 # ---- Binding / routing lifecycle contracts ----
 class BindingStatus(str, Enum):
+    """Lifecycle state for one attacker binding.
+
+    Example value:
+        "active"
+    """
+
     active = "active"
     idle = "idle"
     recycled = "recycled"
@@ -24,6 +42,12 @@ class BindingStatus(str, Enum):
 
 
 class DecisionType(str, Enum):
+    """Audit event type emitted by controller/orchestrator logic.
+
+    Example value:
+        "unlock"
+    """
+
     bind = "bind"
     unlock = "unlock"
     route_update = "route_update"
@@ -32,6 +56,12 @@ class DecisionType(str, Enum):
 
 
 class ActionType(str, Enum):
+    """Concrete action that one service asks another service to apply.
+
+    Example value:
+        "route_update"
+    """
+
     bind = "bind"
     unlock = "unlock"
     recycle = "recycle"
@@ -40,24 +70,54 @@ class ActionType(str, Enum):
 
 
 class ResolveBindingRequest(VersionedModel):
+    """Request to resolve an attacker into a sticky binding.
+
+    Example:
+        {"attacker_key": "198.51.100.10", "protocol": "tcp"}
+    """
+
     attacker_key: str = Field(min_length=1)
     protocol: str = Field(default="tcp", min_length=1)
 
 
 class RouteRequest(VersionedModel):
+    """Request to look up routing for one attacker/protocol pair.
+
+    Example:
+        {"attacker_key": "198.51.100.10", "protocol": "tcp"}
+    """
+
     attacker_key: str = Field(min_length=1)
     protocol: str = Field(default="tcp", min_length=1)
 
 
 class HeartbeatRequest(VersionedModel):
+    """Request to refresh liveness for an existing binding.
+
+    Example:
+        {"ts": "2026-04-18T12:00:00Z"}
+    """
+
     ts: datetime = Field(default_factory=utcnow)
 
 
 class RecycleRequest(VersionedModel):
+    """Request to recycle one binding in idle or hard mode.
+
+    Example:
+        {"mode": "idle"}
+    """
+
     mode: Literal["idle", "hard"] = "idle"
 
 
 class BindingRecord(VersionedModel):
+    """Persisted binding state for one attacker/backend pairing.
+
+    Example:
+        {"binding_id": "binding-1", "attacker_key": "198.51.100.10", "unlocked_assets": ["git-internal"]}
+    """
+
     binding_id: str
     attacker_key: str
     backend_instance_id: str
@@ -71,6 +131,12 @@ class BindingRecord(VersionedModel):
 
 
 class RouteResponse(VersionedModel):
+    """Minimal routing answer returned by a route lookup.
+
+    Example:
+        {"binding_id": "binding-1", "backend_instance_id": "ns-1234abcd", "status": "active"}
+    """
+
     binding_id: str
     backend_instance_id: str
     status: BindingStatus
@@ -78,6 +144,12 @@ class RouteResponse(VersionedModel):
 
 # ---- Evidence and profiling contracts ----
 class FalcoEvent(VersionedModel):
+    """Normalized security event ingested by the profiler.
+
+    Example:
+        {"falco_rule": "Read sensitive file", "tags": ["mitre_credential_access", "T1003"]}
+    """
+
     ts: datetime
     falco_rule: str
     priority: str
@@ -88,6 +160,12 @@ class FalcoEvent(VersionedModel):
 
 
 class TechniqueEvidence(VersionedModel):
+    """Profiler evidence derived from one event and optionally mapped to ATT&CK.
+
+    Example:
+        {"tech_id": "T1003", "group": "Credential Access", "weight": 2.5}
+    """
+
     evidence_id: str
     ts: datetime
     attacker_key: str
@@ -101,6 +179,35 @@ class TechniqueEvidence(VersionedModel):
 
 
 class ProfileSnapshot(VersionedModel):
+    """Current aggregated attacker profile built by the profiler.
+
+    This snapshot is the controller's main input for deciding which asset to
+    expose next.
+
+    Field meaning:
+    - conf_by_tactic: confidence score per ATT&CK tactic in the range [0, 1]
+    - conf_by_technique: confidence score per ATT&CK technique in the range [0, 1]
+    - level_by_tactic: coarse repetition level per tactic, usually 1/2/3
+    - level_by_technique: coarse repetition level per technique, usually 1/2/3
+    - recent_tactics: de-duplicated recent tactic chain within the short time window
+    - recent_techniques: de-duplicated recent technique chain within the short time window
+    - recent_evidence_ids: the most recent evidence ids used to explain decisions
+    - updated_at: timestamp of the newest evidence included in this snapshot
+
+    Example:
+        {
+            "attacker_key": "198.51.100.10",
+            "conf_by_tactic": {"Credential Access": 0.82, "Discovery": 0.41},
+            "conf_by_technique": {"T1003": 0.82},
+            "level_by_tactic": {"Credential Access": 2, "Discovery": 1},
+            "level_by_technique": {"T1003": 2},
+            "recent_tactics": ["Discovery", "Credential Access"],
+            "recent_techniques": ["T1003"],
+            "recent_evidence_ids": ["e-1", "e-2"],
+            "updated_at": "2026-04-18T12:00:00Z"
+        }
+    """
+
     attacker_key: str
     conf_by_tactic: Dict[str, float] = Field(default_factory=dict)
     conf_by_technique: Dict[str, float] = Field(default_factory=dict)
@@ -114,12 +221,24 @@ class ProfileSnapshot(VersionedModel):
 
 
 class EvidenceIngestRequest(VersionedModel):
+    """Request to send one Falco event through the profiler.
+
+    Example:
+        {"attacker_key": "198.51.100.10", "binding_id": "binding-1", "event": {...}}
+    """
+
     attacker_key: str = Field(min_length=1)
     binding_id: str = Field(min_length=1)
     event: FalcoEvent
 
 
 class EvidenceIngestResponse(VersionedModel):
+    """Profiler response containing new evidence and the refreshed profile.
+
+    Example:
+        {"evidences": [{...}], "profile": {...}}
+    """
+
     attacker_key: str
     binding_id: str
     evidences: List[TechniqueEvidence] = Field(default_factory=list)
@@ -128,6 +247,12 @@ class EvidenceIngestResponse(VersionedModel):
 
 # ---- Controller decision contracts ----
 class AssetDefinition(VersionedModel):
+    """One candidate honeypot asset that the controller may expose.
+
+    Example:
+        {"asset_id": "git-internal", "covers_tactics": ["Credential Access", "Discovery"]}
+    """
+
     asset_id: str
     asset_name: str
     exposure_type: Literal["public", "internal"]
@@ -137,6 +262,12 @@ class AssetDefinition(VersionedModel):
 
 
 class ControllerTickRequest(VersionedModel):
+    """Input sent to the controller for one decision tick.
+
+    Example:
+        {"binding_id": "binding-1", "profile": {...}, "unlocked_asset_ids": ["internal-portal"]}
+    """
+
     attacker_key: str
     binding_id: str
     profile: ProfileSnapshot
@@ -146,6 +277,12 @@ class ControllerTickRequest(VersionedModel):
 
 
 class ControllerAction(VersionedModel):
+    """One action proposed by the controller.
+
+    Example:
+        {"action_type": "unlock", "binding_id": "binding-1", "asset_id": "git-internal"}
+    """
+
     action_type: ActionType
     binding_id: str
     asset_id: Optional[str] = None
@@ -153,6 +290,12 @@ class ControllerAction(VersionedModel):
 
 
 class DecisionEvent(VersionedModel):
+    """Explainable audit record for one controller or orchestrator decision.
+
+    Example:
+        {"decision_type": "unlock", "asset_added": "git-internal", "trigger_evidence_ids": ["e-1"]}
+    """
+
     ts: datetime = Field(default_factory=utcnow)
     attacker_key: str
     binding_id: str
@@ -164,6 +307,12 @@ class DecisionEvent(VersionedModel):
 
 
 class ControllerTickResponse(VersionedModel):
+    """Controller output for one tick.
+
+    Example:
+        {"actions": [{...}], "decision_events": [{...}], "candidate_asset_ids": ["git-internal"]}
+    """
+
     binding_id: str
     actions: List[ControllerAction] = Field(default_factory=list)
     decision_events: List[DecisionEvent] = Field(default_factory=list)
@@ -172,17 +321,35 @@ class ControllerTickResponse(VersionedModel):
 
 
 class OrchestratorApplyRequest(VersionedModel):
+    """Request to apply controller actions to the current binding state.
+
+    Example:
+        {"binding_id": "binding-1", "actions": [{...}]}
+    """
+
     binding_id: str = Field(min_length=1)
     actions: List[ControllerAction] = Field(default_factory=list)
 
 
 class OrchestratorApplyResponse(VersionedModel):
+    """Result of applying controller actions.
+
+    Example:
+        {"binding": {...}, "route_updates": ["binding binding-1 exposes git-internal"]}
+    """
+
     binding: BindingRecord
     applied_actions: List[ControllerAction] = Field(default_factory=list)
     route_updates: List[str] = Field(default_factory=list)
 
 
 class GatewayBindingState(VersionedModel):
+    """Gateway-facing view of what one binding currently exposes.
+
+    Example:
+        {"binding_id": "binding-1", "exposed_assets": ["git-internal"], "route_updates": ["..."]}
+    """
+
     binding_id: str
     attacker_key: str
     backend_instance_id: str
@@ -193,16 +360,35 @@ class GatewayBindingState(VersionedModel):
 
 
 class GatewaySyncRequest(VersionedModel):
+    """Request used to sync the latest binding state into the gateway view.
+
+    Example:
+        {"binding": {...}, "route_updates": ["binding binding-1 exposes git-internal"]}
+    """
+
     binding: BindingRecord
     route_updates: List[str] = Field(default_factory=list)
 
 
 class GatewaySyncResponse(VersionedModel):
+    """Gateway response after route state has been synced.
+
+    Example:
+        {"state": {...GatewayBindingState...}}
+    """
+
     state: GatewayBindingState
 
 
+# TODO edge with from and to
 # ---- Attack-graph probability contracts ----
 class EdgeStats(VersionedModel):
+    """Lightweight probability statistics for one attack-graph edge.
+
+    Example:
+        {"edge_id": "cred->collect", "alpha": 2.0, "beta": 1.0, "mean_probability": 0.66}
+    """
+
     edge_id: str
     n_avail: int = 0
     n_taken: int = 0
@@ -213,5 +399,11 @@ class EdgeStats(VersionedModel):
 
 
 class EdgeObservationRequest(VersionedModel):
+    """Observation request for updating one attack-graph edge.
+
+    Example:
+        {"edge_id": "cred->collect", "binding_id": "binding-1"}
+    """
+
     edge_id: str
     binding_id: str

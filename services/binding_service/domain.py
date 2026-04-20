@@ -1,3 +1,9 @@
+"""Business rules for sticky attacker-to-backend bindings.
+
+This file owns the binding lifecycle state machine: resolve, heartbeat,
+recycle, recover, and asset-unlock updates.
+"""
+
 from __future__ import annotations
 
 from datetime import timedelta

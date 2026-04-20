@@ -1,3 +1,9 @@
+"""ATT&CK catalog adapter used by the profiler.
+
+This module reads MITRE STIX data and exposes simple lookups such as
+technique -> tactic and tactic shortname -> canonical display name.
+"""
+
 from __future__ import annotations
 
 import json
@@ -7,6 +13,12 @@ from typing import Protocol
 
 
 class AttackCatalog(Protocol):
+    """Lookup contract for ATT&CK metadata.
+
+    Example:
+        tactic_for_technique("T1003") -> "Credential Access"
+    """
+
     def tactic_for_technique(self, tech_id: str) -> str | None:
         """Return the canonical tactic name for one ATT&CK technique id."""
         ...
@@ -21,7 +33,11 @@ class AttackCatalog(Protocol):
 
 
 class MitreAttackCatalog:
-    """Load ATT&CK tactic/technique relationships from MITRE STIX data."""
+    """Load ATT&CK tactic/technique relationships from MITRE STIX data.
+
+    Example:
+        catalog.canonical_tactic_name("credential_access") -> "Credential Access"
+    """
 
     def __init__(self, stix_path: str | Path) -> None:
         self._stix_path = Path(stix_path)

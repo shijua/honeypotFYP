@@ -1,3 +1,9 @@
+"""FastAPI entrypoints for binding lifecycle operations.
+
+This module exposes the HTTP surface for creating, refreshing, recycling,
+and reading attacker-to-backend bindings.
+"""
+
 from __future__ import annotations
 
 from fastapi import Depends, FastAPI, HTTPException
@@ -15,6 +21,11 @@ app = FastAPI(title="binding_service", version="0.1.0")
 
 
 def get_service() -> BindingService:
+    """Return the default binding service used by the API.
+
+    Example:
+        The test suite can override this dependency with an isolated service.
+    """
     # FastAPI dependency hook; tests replace this with a fake service.
     return get_runtime_service()
 

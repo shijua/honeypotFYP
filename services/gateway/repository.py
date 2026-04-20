@@ -1,3 +1,9 @@
+"""Repository adapters for gateway route state.
+
+The gateway service depends on this protocol so it can store route views in
+memory during tests or in JSON files during local runs.
+"""
+
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -9,6 +15,12 @@ from libs.contracts.models import GatewayBindingState
 
 
 class GatewayRouteRepository(Protocol):
+    """Storage contract for gateway route state.
+
+    Example:
+        get("binding-1") -> GatewayBindingState | None
+    """
+
     def get(self, binding_id: str) -> GatewayBindingState | None:
         """Return one gateway state by binding_id."""
         ...
@@ -50,7 +62,11 @@ class InMemoryGatewayRouteRepository:
 
 
 class FileGatewayRouteRepository:
-    """File-backed gateway state used by the default local runtime."""
+    """File-backed gateway state used by the default local runtime.
+
+    Example file shape:
+        {"routes": [{...GatewayBindingState...}]}
+    """
 
     def __init__(self, path: str | Path) -> None:
         self._store = JsonFileStore(path, default_data={"routes": []})

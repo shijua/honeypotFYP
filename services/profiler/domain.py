@@ -1,3 +1,9 @@
+"""Profiler domain logic for turning events into attacker profiles.
+
+This module translates one Falco event into zero or more ATT&CK-aligned
+evidence records, then rebuilds the current profile snapshot for the attacker.
+"""
+
 from __future__ import annotations
 
 import math
@@ -27,6 +33,12 @@ class ProfileNotFoundError(KeyError):
 
 @dataclass(frozen=True)
 class AttackMapping:
+    """Intermediate ATT&CK mapping derived from one Falco event.
+
+    Example:
+        AttackMapping(tech_id="T1003", tactic="Credential Access", reason="Read sensitive file: ...")
+    """
+
     tech_id: str | None
     reason: str
     tactic: str | None = None

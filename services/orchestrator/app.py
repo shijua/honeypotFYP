@@ -1,3 +1,9 @@
+"""FastAPI entrypoint for applying controller actions.
+
+The orchestrator API receives controller decisions, applies them to binding
+state, and syncs the resulting exposure view into the gateway.
+"""
+
 from __future__ import annotations
 
 from fastapi import Depends, FastAPI
@@ -14,6 +20,7 @@ _service = OrchestratorService(get_runtime_service(), get_runtime_gateway_servic
 
 
 def get_service() -> OrchestratorService:
+    """Return the default orchestrator service used by the API."""
     # Tests replace this dependency with an isolated service.
     return _service
 

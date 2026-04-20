@@ -1,3 +1,9 @@
+"""Small JSON persistence helper for file-backed adapters.
+
+Repositories use this helper to load/write JSON atomically without duplicating
+file handling code in every adapter.
+"""
+
 from __future__ import annotations
 
 import json
@@ -7,7 +13,11 @@ from typing import Any
 
 
 class JsonFileStore:
-    """Small JSON helper for MVP file-backed repositories."""
+    """Small JSON helper for MVP file-backed repositories.
+
+    Example:
+        store = JsonFileStore("data/runtime/profiles.json", {"profiles": {}})
+    """
 
     def __init__(self, path: str | Path, default_data: Any) -> None:
         self._path = Path(path)

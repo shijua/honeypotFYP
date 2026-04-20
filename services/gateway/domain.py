@@ -1,3 +1,9 @@
+"""Gateway-side state management for exposed assets per binding.
+
+This module does not proxy traffic itself. It keeps the route view that a real
+gateway or router adapter would later consume.
+"""
+
 from __future__ import annotations
 
 from libs.common.clock import utcnow
@@ -16,7 +22,11 @@ class GatewayStateNotFoundError(KeyError):
 
 
 class GatewayService:
-    """Route-state service that mirrors exposed assets per binding."""
+    """Route-state service that mirrors exposed assets per binding.
+
+    Example:
+        sync(binding-1 with unlocked_assets=["git-internal"]) -> state.exposed_assets == ["git-internal"]
+    """
 
     def __init__(self, repository: GatewayRouteRepository) -> None:
         self._repository = repository

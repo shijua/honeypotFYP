@@ -1,3 +1,9 @@
+"""FastAPI entrypoints for attacker profiling.
+
+The profiler API ingests Falco events and exposes the latest per-attacker
+profile snapshot used by the controller.
+"""
+
 from __future__ import annotations
 
 from functools import lru_cache
@@ -19,6 +25,7 @@ app = FastAPI(title="profiler", version="0.1.0")
 
 @lru_cache(maxsize=1)
 def _build_service() -> ProfilerService:
+    """Build the default profiler service with file-backed local storage."""
     # Default local wiring persists profiler state and ATT&CK data on disk.
     config = RuntimeConfig()
     evidence_repository = FileEvidenceRepository(f"{config.state_dir}/evidence.json")
@@ -33,6 +40,7 @@ def _build_service() -> ProfilerService:
 
 
 def get_service() -> ProfilerService:
+    """Return the default profiler service used by the API."""
     # Tests replace this dependency with an isolated service.
     return _build_service()
 

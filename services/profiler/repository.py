@@ -1,3 +1,10 @@
+"""Repository adapters for profiler evidence and profile snapshots.
+
+The profiler depends on two small storage contracts:
+- evidence history per attacker
+- latest profile snapshot per attacker
+"""
+
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -9,6 +16,12 @@ from libs.contracts.models import ProfileSnapshot, TechniqueEvidence
 
 
 class EvidenceRepository(Protocol):
+    """Storage contract for raw profiler evidence.
+
+    Example:
+        add_many("198.51.100.10", [TechniqueEvidence(...)]) -> same evidence list
+    """
+
     def add_many(
         self,
         attacker_key: str,
@@ -23,6 +36,12 @@ class EvidenceRepository(Protocol):
 
 
 class ProfileRepository(Protocol):
+    """Storage contract for the latest attacker profile snapshot.
+
+    Example:
+        get("198.51.100.10") -> ProfileSnapshot | None
+    """
+
     def get(self, attacker_key: str) -> ProfileSnapshot | None:
         """Return the current snapshot for one attacker, if present."""
         ...

@@ -1,3 +1,9 @@
+"""Decision logic for choosing the next assets to expose.
+
+This module scores candidate assets against the current attacker profile and
+returns explainable exploit/explore actions for the orchestrator.
+"""
+
 from __future__ import annotations
 
 import random
@@ -18,7 +24,11 @@ from services.controller.repository import AssetRepository, TransitionRepository
 
 @dataclass(frozen=True)
 class CandidateScore:
-    """Controller-local score bundle for one candidate asset."""
+    """Controller-local score bundle for one candidate asset.
+
+    Example:
+        CandidateScore(asset=portal, exploit_score=2.9, explore_score=1.1, procedure_score=0.7)
+    """
 
     asset: AssetDefinition
     exploit_score: float
@@ -249,5 +259,4 @@ class ControllerService:
             ],
             candidate_asset_ids=candidate_asset_ids or [],
         )
-
 

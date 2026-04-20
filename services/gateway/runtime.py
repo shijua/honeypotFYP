@@ -1,3 +1,9 @@
+"""Default local wiring for the gateway service.
+
+This module shares one file-backed repository and one GatewayService instance
+across the local app and orchestrator.
+"""
+
 from __future__ import annotations
 
 from libs.common.config import RuntimeConfig

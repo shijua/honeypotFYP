@@ -1,3 +1,10 @@
+"""Repository adapters for controller inputs.
+
+This file provides two kinds of controller data:
+- the asset catalog the controller may expose
+- a small tactic transition table used for procedure-style scoring
+"""
+
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -9,12 +16,24 @@ from libs.contracts.models import AssetDefinition
 
 
 class AssetRepository(Protocol):
+    """Storage contract for the controller asset catalog.
+
+    Example:
+        list_all() -> [AssetDefinition(asset_id="internal-portal", ...)]
+    """
+
     def list_all(self) -> Iterable[AssetDefinition]:
         """Return the template catalog available to the controller."""
         ...
 
 
 class TransitionRepository(Protocol):
+    """Lookup contract for tactic-to-tactic transition support.
+
+    Example:
+        score_transition("Credential Access", "Collection") -> 0.9
+    """
+
     def score_transition(self, current_tactic: str, candidate_tactic: str) -> float:
         """Return a light-weight transition score between ATT&CK tactics."""
         ...
@@ -73,7 +92,11 @@ class InMemoryAssetRepository:
 
 
 class FileAssetRepository:
-    """JSON-backed asset catalog used by the default controller runtime."""
+    """JSON-backed asset catalog used by the default controller runtime.
+
+    Example file shape:
+        [{"asset_id": "internal-portal", "covers_tactics": ["Discovery"], ...}]
+    """
 
     def __init__(self, path: str | Path) -> None:
         self._path = Path(path)

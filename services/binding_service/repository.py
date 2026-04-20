@@ -1,3 +1,9 @@
+"""Repository interfaces and adapters for binding records.
+
+The service code depends on the BindingRepository protocol so the same domain
+logic can run against in-memory or file-backed storage.
+"""
+
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -9,6 +15,12 @@ from libs.contracts.models import BindingRecord
 
 
 class BindingRepository(Protocol):
+    """Storage contract for binding records.
+
+    Example:
+        get_by_attacker("198.51.100.10") -> BindingRecord | None
+    """
+
     # Port interface: production adapters (DB/Redis) and test doubles share this contract.
     def get_by_attacker(self, attacker_key: str) -> BindingRecord | None:
         """Return the current binding for attacker_key, if any."""
@@ -61,7 +73,11 @@ class InMemoryBindingRepository:
 
 
 class FileBindingRepository:
-    """File-backed repository used by the default local runtime."""
+    """File-backed repository used by the default local runtime.
+
+    Example file shape:
+        {"records": [{...BindingRecord...}]}
+    """
 
     def __init__(self, path: str | Path) -> None:
         self._store = JsonFileStore(path, default_data={"records": []})

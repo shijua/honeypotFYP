@@ -1,3 +1,9 @@
+"""Execution layer for controller actions.
+
+This module turns controller decisions into concrete state changes on bindings
+and route updates on the gateway view.
+"""
+
 from __future__ import annotations
 
 from libs.contracts.models import (
@@ -13,7 +19,11 @@ from services.gateway.domain import GatewayService
 
 
 class OrchestratorService:
-    """Mock orchestrator that applies controller actions to binding state."""
+    """Mock orchestrator that applies controller actions to binding state.
+
+    Example:
+        apply([unlock git-internal]) -> binding.unlocked_assets includes "git-internal"
+    """
 
     def __init__(
         self,

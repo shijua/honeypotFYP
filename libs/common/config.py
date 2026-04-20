@@ -1,3 +1,9 @@
+"""Shared runtime configuration used by the MVP services.
+
+Most values here are intentionally simple constants so local runs and tests can
+share the same defaults.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -5,7 +11,11 @@ from dataclasses import dataclass
 
 @dataclass
 class RuntimeConfig:
-    """Small runtime knobs shared by the MVP services."""
+    """Small runtime knobs shared by the MVP services.
+
+    Example:
+        RuntimeConfig(epsilon=0.15, asset_catalog_path="data/assets/catalog.json")
+    """
 
     tick_seconds: int = 30
     epsilon: float = 0.15

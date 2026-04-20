@@ -1,3 +1,9 @@
+"""FastAPI entrypoint for controller ticks.
+
+The controller API accepts an attacker profile plus the current binding view,
+then returns the next actions the honeynet should apply.
+"""
+
 from __future__ import annotations
 
 import random
@@ -24,6 +30,7 @@ _service = ControllerService(
 
 
 def get_service() -> ControllerService:
+    """Return the default controller service used by the API."""
     # Tests replace this dependency with an isolated service.
     return _service
 

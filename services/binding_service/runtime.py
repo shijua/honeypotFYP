@@ -1,3 +1,9 @@
+"""Default local wiring for the binding service.
+
+This module creates one shared repository and one shared BindingService so the
+local FastAPI app and the orchestrator see the same persisted state.
+"""
+
 from __future__ import annotations
 
 from libs.common.config import RuntimeConfig
