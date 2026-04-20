@@ -14,6 +14,15 @@ from services.controller.app import app as controller_app
 from services.controller.app import get_service as get_controller_service
 from services.controller.domain import ControllerService
 from services.controller.repository import InMemoryAssetRepository, InMemoryTransitionRepository
+from services.cowrie.app import app as cowrie_app
+from services.cowrie.app import get_service as get_cowrie_service
+from services.cowrie.domain import CowrieService
+from services.cowrie.event_catalog import FileCowrieEventCatalog
+from services.cowrie.repository import InMemoryCowrieObservationRepository
+from services.entrypoint.app import app as entrypoint_app
+from services.entrypoint.app import get_service as get_entrypoint_service
+from services.entrypoint.domain import EntrypointService
+from services.entrypoint.repository import InMemoryEntrypointObservationRepository
 from services.gateway.app import app as gateway_app
 from services.gateway.app import get_service as get_gateway_service
 from services.gateway.domain import GatewayService
@@ -103,6 +112,59 @@ def gateway_client() -> TestClient:
         yield client
     finally:
         gateway_app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def entrypoint_client() -> TestClient:
+    binding_service = BindingService(InMemoryBindingRepository())
+    profiler_service = ProfilerService(
+        InMemoryEvidenceRepository(),
+        InMemoryProfileRepository(),
+        build_test_attack_catalog(),
+    )
+    service = EntrypointService(
+        binding_service,
+        profiler_service,
+        InMemoryEntrypointObservationRepository(),
+    )
+
+    def _get_service() -> EntrypointService:
+        return service
+
+    entrypoint_app.dependency_overrides.clear()
+    entrypoint_app.dependency_overrides[get_entrypoint_service] = _get_service
+    client = TestClient(entrypoint_app)
+    try:
+        yield client
+    finally:
+        entrypoint_app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def cowrie_client() -> TestClient:
+    binding_service = BindingService(InMemoryBindingRepository())
+    profiler_service = ProfilerService(
+        InMemoryEvidenceRepository(),
+        InMemoryProfileRepository(),
+        build_test_attack_catalog(),
+    )
+    service = CowrieService(
+        binding_service,
+        profiler_service,
+        InMemoryCowrieObservationRepository(),
+        FileCowrieEventCatalog("data/cowrie/event_mappings.json"),
+    )
+
+    def _get_service() -> CowrieService:
+        return service
+
+    cowrie_app.dependency_overrides.clear()
+    cowrie_app.dependency_overrides[get_cowrie_service] = _get_service
+    client = TestClient(cowrie_app)
+    try:
+        yield client
+    finally:
+        cowrie_app.dependency_overrides.clear()
 
 
 @pytest.fixture

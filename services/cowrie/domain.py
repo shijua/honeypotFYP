@@ -1,0 +1,165 @@
+"""Domain logic for ingesting Cowrie SSH honeypot telemetry.
+
+Cowrie provides attacker interaction logs from inside the SSH honeypot. This
+adapter resolves the attacker binding, stores a sanitized observation, and
+forwards a normalized event into the profiler.
+"""
+
+from __future__ import annotations
+
+from uuid import uuid4
+
+from libs.contracts.models import (
+    CowrieIngestRequest,
+    CowrieIngestResponse,
+    CowrieLogEvent,
+    CowrieObservation,
+    EvidenceIngestRequest,
+    FalcoEvent,
+    ResolveBindingRequest,
+)
+from services.binding_service.domain import BindingService
+from services.cowrie.event_catalog import CowrieEventCatalog, CowrieEventMapping
+from services.cowrie.repository import CowrieObservationRepository
+from services.profiler.domain import ProfilerService
+
+
+class CowrieService:
+    """Ingest Cowrie JSON events into the binding/profile pipeline.
+
+    Example:
+        ingest(cowrie.command.input with input="uname -a") -> Execution evidence
+    """
+
+    def __init__(
+        self,
+        binding_service: BindingService,
+        profiler_service: ProfilerService,
+        observation_repository: CowrieObservationRepository,
+        event_catalog: CowrieEventCatalog,
+    ) -> None:
+        self._binding_service = binding_service
+        self._profiler_service = profiler_service
+        self._observation_repository = observation_repository
+        self._event_catalog = event_catalog
+
+    def ingest(self, request: CowrieIngestRequest) -> CowrieIngestResponse:
+        """Ingest one Cowrie event and update binding/profile state."""
+        event = request.event
+        # Cowrie src_ip is the attacker identity for the SSH entrypoint.
+        binding = self._binding_service.resolve(
+            ResolveBindingRequest(
+                attacker_key=event.src_ip,
+                protocol=request.protocol,
+            )
+        )
+        # Event semantics live in data/cowrie/event_mappings.json, not here.
+        mapping = self._event_catalog.mapping_for(event.eventid)
+        tags = list(mapping.tags)
+        # Reuse the profiler's normalized event contract so Cowrie and Falco-like
+        # telemetry can feed the same profile aggregation path.
+        ingest_response = self._profiler_service.ingest(
+            EvidenceIngestRequest(
+                attacker_key=event.src_ip,
+                binding_id=binding.binding_id,
+                event=FalcoEvent(
+                    ts=event.timestamp,
+                    falco_rule=event.eventid,
+                    priority=mapping.priority,
+                    output=_format_output(event, mapping),
+                    tags=tags,
+                    output_fields=_output_fields(event, mapping),
+                ),
+            )
+        )
+
+        # Store a sanitized intake record for research/debugging. Do not persist
+        # raw password values; password_seen is enough for behavior analysis.
+        observation = CowrieObservation(
+            observation_id=str(uuid4()),
+            ts=event.timestamp,
+            attacker_key=event.src_ip,
+            binding_id=binding.binding_id,
+            eventid=event.eventid,
+            session=event.session,
+            sensor=event.sensor,
+            username=event.username,
+            password_seen=event.password is not None,
+            command=_event_value(event, mapping.command_field),
+            message=event.message,
+            tags=tags,
+            profiler_evidence_ids=[
+                evidence.evidence_id for evidence in ingest_response.evidences
+            ],
+        )
+        stored_observation = self._observation_repository.add(observation)
+        return CowrieIngestResponse(
+            observation=stored_observation,
+            binding=binding,
+            profile=ingest_response.profile,
+        )
+
+
+def _format_output(event: CowrieLogEvent, mapping: CowrieEventMapping) -> str:
+    # output_template keeps human-readable profiler reasons data-driven.
+    context = _event_context(event)
+    try:
+        return mapping.output_template.format(**context)
+    except KeyError:
+        # Bad or outdated templates should not drop telemetry ingestion.
+        return f"{event.eventid} from {event.src_ip}"
+
+
+def _output_fields(
+    event: CowrieLogEvent,
+    mapping: CowrieEventMapping,
+) -> dict[str, object]:
+    fields: dict[str, object] = {}
+    # output_fields lets the catalog decide which Cowrie fields become profiler
+    # source_ref fields for each event type.
+    for field_name in mapping.output_fields:
+        value = _event_value(event, field_name)
+        if value is not None:
+            fields[field_name] = value
+    return fields
+
+
+def _event_context(event: CowrieLogEvent) -> dict[str, object]:
+    # Template rendering needs safe defaults so missing optional Cowrie fields do
+    # not produce noisy KeyError failures.
+    context = {
+        "source": "cowrie",
+        "cowrie_eventid": event.eventid,
+        "eventid": event.eventid,
+        "src_ip": event.src_ip,
+        "session": event.session or "",
+        "sensor": event.sensor or "",
+        "username": event.username or "<unknown>",
+        "input": event.input or "",
+        "message": event.message or "",
+        "password_seen": event.password is not None,
+    }
+    if event.model_extra:
+        # Cowrie event schemas differ by eventid; Pydantic keeps unknown JSON
+        # keys in model_extra so mappings can reference them without model edits.
+        context.update(event.model_extra)
+    return context
+
+
+def _event_value(event: CowrieLogEvent, field_name: str | None) -> object | None:
+    # Field lookup supports first-class model fields, synthetic fields, and
+    # event-specific extra JSON fields from Cowrie.
+    if field_name is None:
+        return None
+    if field_name == "source":
+        return "cowrie"
+    if field_name == "cowrie_eventid":
+        return event.eventid
+    if field_name == "password_seen":
+        return True if event.password is not None else None
+    value = getattr(event, field_name, None)
+    if value is not None:
+        return value
+    if event.model_extra:
+        return event.model_extra.get(field_name)
+    return None

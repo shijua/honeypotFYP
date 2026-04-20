@@ -86,6 +86,23 @@
     },
     {
       "type": "attack-pattern",
+      "id": "attack-pattern--t1110",
+      "name": "Brute Force",
+      "external_references": [
+        {
+          "source_name": "mitre-attack",
+          "external_id": "T1110"
+        }
+      ],
+      "kill_chain_phases": [
+        {
+          "kill_chain_name": "mitre-attack",
+          "phase_name": "credential-access"
+        }
+      ]
+    },
+    {
+      "type": "attack-pattern",
       "id": "attack-pattern--t1046",
       "name": "Network Service Discovery",
       "external_references": [

@@ -8,12 +8,16 @@ import pytest
 from libs.contracts.models import (
     BindingRecord,
     BindingStatus,
+    CowrieObservation,
+    EntrypointObservation,
     GatewayBindingState,
     ProfileSnapshot,
     TechniqueEvidence,
 )
 from services.binding_service.repository import FileBindingRepository
 from services.controller.repository import FileAssetRepository
+from services.cowrie.repository import FileCowrieObservationRepository
+from services.entrypoint.repository import FileEntrypointObservationRepository
 from services.gateway.repository import FileGatewayRouteRepository
 from services.profiler.repository import FileEvidenceRepository, FileProfileRepository
 
@@ -105,3 +109,40 @@ def test_file_gateway_repository_persists_route_state(tmp_path) -> None:
 
     reloaded = FileGatewayRouteRepository(tmp_path / "gateway.json")
     assert reloaded.get("binding-3") is not None
+
+
+def test_file_entrypoint_repository_persists_observations(tmp_path) -> None:
+    repository = FileEntrypointObservationRepository(tmp_path / "entrypoint.json")
+    observation = EntrypointObservation(
+        observation_id="obs-1",
+        ts=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        attacker_key="198.51.100.93",
+        binding_id="binding-4",
+        method="GET",
+        path="/.env",
+        status_code=404,
+        profiler_evidence_ids=["e-1"],
+    )
+
+    repository.add(observation)
+
+    reloaded = FileEntrypointObservationRepository(tmp_path / "entrypoint.json")
+    assert tuple(reloaded.list_recent())[0].observation_id == "obs-1"
+
+
+def test_file_cowrie_repository_persists_observations(tmp_path) -> None:
+    repository = FileCowrieObservationRepository(tmp_path / "cowrie.json")
+    observation = CowrieObservation(
+        observation_id="obs-2",
+        ts=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        attacker_key="198.51.100.94",
+        binding_id="binding-5",
+        eventid="cowrie.command.input",
+        command="uname -a",
+        profiler_evidence_ids=["e-2"],
+    )
+
+    repository.add(observation)
+
+    reloaded = FileCowrieObservationRepository(tmp_path / "cowrie.json")
+    assert tuple(reloaded.list_recent())[0].observation_id == "obs-2"

@@ -1,0 +1,222 @@
+{
+  "default": {
+    "priority": "INFO",
+    "tags": [],
+    "output_template": "{eventid} from {src_ip}",
+    "output_fields": [
+      "source",
+      "cowrie_eventid",
+      "src_ip",
+      "session",
+      "sensor",
+      "username",
+      "message"
+    ],
+    "command_field": null
+  },
+  "events": {
+    "cowrie.session.connect": {
+      "priority": "INFO",
+      "tags": ["cowrie_connection"],
+      "output_template": "cowrie.session.connect from {src_ip}",
+      "output_fields": [
+        "source",
+        "cowrie_eventid",
+        "src_ip",
+        "session",
+        "sensor",
+        "message"
+      ],
+      "command_field": null
+    },
+    "cowrie.session.closed": {
+      "priority": "INFO",
+      "tags": ["cowrie_session"],
+      "output_template": "cowrie.session.closed from {src_ip}",
+      "output_fields": [
+        "source",
+        "cowrie_eventid",
+        "src_ip",
+        "session",
+        "sensor",
+        "duration",
+        "message"
+      ],
+      "command_field": null
+    },
+    "cowrie.client.version": {
+      "priority": "INFO",
+      "tags": ["cowrie_client_metadata"],
+      "output_template": "cowrie.client.version from {src_ip} version={version}",
+      "output_fields": [
+        "source",
+        "cowrie_eventid",
+        "src_ip",
+        "session",
+        "sensor",
+        "version",
+        "message"
+      ],
+      "command_field": null
+    },
+    "cowrie.client.kex": {
+      "priority": "INFO",
+      "tags": ["cowrie_client_metadata", "cowrie_fingerprint"],
+      "output_template": "cowrie.client.kex from {src_ip}",
+      "output_fields": [
+        "source",
+        "cowrie_eventid",
+        "src_ip",
+        "session",
+        "sensor",
+        "hassh",
+        "hasshAlgorithms",
+        "kexAlgs",
+        "keyAlgs",
+        "message"
+      ],
+      "command_field": null
+    },
+    "cowrie.client.fingerprint": {
+      "priority": "INFO",
+      "tags": ["cowrie_client_metadata", "cowrie_fingerprint"],
+      "output_template": "cowrie.client.fingerprint from {src_ip}",
+      "output_fields": [
+        "source",
+        "cowrie_eventid",
+        "src_ip",
+        "session",
+        "sensor",
+        "fingerprint",
+        "key",
+        "message"
+      ],
+      "command_field": null
+    },
+    "cowrie.login.failed": {
+      "priority": "INFO",
+      "tags": ["mitre_credential_access", "T1110"],
+      "output_template": "cowrie.login.failed from {src_ip} username={username}",
+      "output_fields": [
+        "source",
+        "cowrie_eventid",
+        "src_ip",
+        "session",
+        "sensor",
+        "username",
+        "password_seen",
+        "message"
+      ],
+      "command_field": null
+    },
+    "cowrie.login.success": {
+      "priority": "NOTICE",
+      "tags": ["cowrie_auth_success"],
+      "output_template": "cowrie.login.success from {src_ip} username={username}",
+      "output_fields": [
+        "source",
+        "cowrie_eventid",
+        "src_ip",
+        "session",
+        "sensor",
+        "username",
+        "message"
+      ],
+      "command_field": null
+    },
+    "cowrie.command.input": {
+      "priority": "NOTICE",
+      "tags": ["mitre_execution", "T1059"],
+      "output_template": "cowrie.command.input from {src_ip}: {input}",
+      "output_fields": [
+        "source",
+        "cowrie_eventid",
+        "src_ip",
+        "session",
+        "sensor",
+        "username",
+        "input",
+        "message"
+      ],
+      "command_field": "input"
+    },
+    "cowrie.command.failed": {
+      "priority": "NOTICE",
+      "tags": ["mitre_execution", "T1059"],
+      "output_template": "cowrie.command.failed from {src_ip}: {input}",
+      "output_fields": [
+        "source",
+        "cowrie_eventid",
+        "src_ip",
+        "session",
+        "sensor",
+        "username",
+        "input",
+        "message"
+      ],
+      "command_field": "input"
+    },
+    "cowrie.direct-tcpip.request": {
+      "priority": "NOTICE",
+      "tags": ["cowrie_tunnel_attempt"],
+      "output_template": "cowrie.direct-tcpip.request from {src_ip} dst={dst_ip}:{dst_port}",
+      "output_fields": [
+        "source",
+        "cowrie_eventid",
+        "src_ip",
+        "session",
+        "sensor",
+        "dst_ip",
+        "dst_port",
+        "message"
+      ],
+      "command_field": null
+    },
+    "cowrie.direct-tcpip.data": {
+      "priority": "INFO",
+      "tags": ["cowrie_tunnel_data"],
+      "output_template": "cowrie.direct-tcpip.data from {src_ip}",
+      "output_fields": [
+        "source",
+        "cowrie_eventid",
+        "src_ip",
+        "session",
+        "sensor",
+        "message"
+      ],
+      "command_field": null
+    },
+    "cowrie.session.file_download": {
+      "priority": "NOTICE",
+      "tags": ["mitre_command_and_control", "T1105"],
+      "output_template": "cowrie.session.file_download from {src_ip}",
+      "output_fields": [
+        "source",
+        "cowrie_eventid",
+        "src_ip",
+        "session",
+        "sensor",
+        "url",
+        "outfile",
+        "message"
+      ],
+      "command_field": null
+    },
+    "cowrie.session.file_upload": {
+      "priority": "NOTICE",
+      "tags": ["mitre_command_and_control", "T1105"],
+      "output_template": "cowrie.session.file_upload from {src_ip}",
+      "output_fields": [
+        "source",
+        "cowrie_eventid",
+        "src_ip",
+        "session",
+        "sensor",
+        "filename",
+        "outfile",
+        "message"
+      ],
+      "command_field": null
+    }
+  }
+}

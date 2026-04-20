@@ -380,6 +380,154 @@ class GatewaySyncResponse(VersionedModel):
     state: GatewayBindingState
 
 
+# ---- Public entrypoint capture contracts ----
+class EntrypointCaptureRequest(VersionedModel):
+    """Normalized HTTP request captured by the low-interaction web honeypot.
+
+    Example:
+        {
+            "attacker_key": "198.51.100.10",
+            "method": "POST",
+            "path": "/wp-login.php",
+            "query_string": "redirect_to=/wp-admin",
+            "headers": {"user-agent": "curl/8.0"},
+            "body_preview": "log=admin&pwd=[redacted]"
+        }
+    """
+
+    attacker_key: str = Field(min_length=1)
+    method: str = Field(min_length=1)
+    path: str = Field(min_length=1)
+    query_string: str = ""
+    headers: Dict[str, str] = Field(default_factory=dict)
+    body_preview: Optional[str] = None
+    body_truncated: bool = False
+    protocol: str = Field(default="tcp", min_length=1)
+
+
+class EntrypointObservation(VersionedModel):
+    """Persisted observation from one public honeypot request.
+
+    Example:
+        {
+            "observation_id": "obs-1",
+            "attacker_key": "198.51.100.10",
+            "binding_id": "binding-1",
+            "method": "GET",
+            "path": "/.env",
+            "status_code": 404
+        }
+    """
+
+    observation_id: str
+    ts: datetime
+    attacker_key: str
+    binding_id: str
+    method: str
+    path: str
+    query_string: str = ""
+    headers: Dict[str, str] = Field(default_factory=dict)
+    body_preview: Optional[str] = None
+    body_truncated: bool = False
+    user_agent: Optional[str] = None
+    status_code: int = 404
+    profiler_evidence_ids: List[str] = Field(default_factory=list)
+
+
+class EntrypointCaptureResponse(VersionedModel):
+    """Internal result after an entrypoint request has been captured.
+
+    Example:
+        {"observation": {...}, "binding": {...}, "profile": {...}}
+    """
+
+    observation: EntrypointObservation
+    binding: BindingRecord
+    profile: ProfileSnapshot
+
+
+# ---- Cowrie SSH honeypot telemetry contracts ----
+class CowrieLogEvent(VersionedModel):
+    """Raw-ish Cowrie JSON event accepted by the Cowrie adapter.
+
+    Cowrie event schemas vary by `eventid`, so this model allows extra fields
+    while still naming the fields the MVP adapter understands.
+
+    Example:
+        {
+            "eventid": "cowrie.command.input",
+            "timestamp": "2026-04-20T12:00:00Z",
+            "src_ip": "198.51.100.10",
+            "session": "s-1",
+            "input": "uname -a"
+        }
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    eventid: str = Field(min_length=1)
+    timestamp: datetime
+    src_ip: str = Field(min_length=1)
+    session: Optional[str] = None
+    sensor: Optional[str] = None
+    username: Optional[str] = None
+    password: Optional[str] = None
+    input: Optional[str] = None
+    message: Optional[str] = None
+
+
+class CowrieObservation(VersionedModel):
+    """Persisted sanitized observation from one Cowrie log event.
+
+    Example:
+        {
+            "observation_id": "obs-1",
+            "eventid": "cowrie.login.failed",
+            "attacker_key": "198.51.100.10",
+            "binding_id": "binding-1",
+            "username": "root",
+            "password_seen": true
+        }
+    """
+
+    observation_id: str
+    ts: datetime
+    attacker_key: str
+    binding_id: str
+    eventid: str
+    session: Optional[str] = None
+    sensor: Optional[str] = None
+    username: Optional[str] = None
+    password_seen: bool = False
+    command: Optional[str] = None
+    message: Optional[str] = None
+    tags: List[str] = Field(default_factory=list)
+    profiler_evidence_ids: List[str] = Field(default_factory=list)
+
+
+class CowrieIngestRequest(VersionedModel):
+    """Request to ingest one Cowrie JSON event.
+
+    Example:
+        {"event": {...CowrieLogEvent...}, "protocol": "ssh"}
+    """
+
+    event: CowrieLogEvent
+    protocol: str = Field(default="ssh", min_length=1)
+
+
+class CowrieIngestResponse(VersionedModel):
+    """Result after Cowrie telemetry has updated binding/profile state.
+
+    Example:
+        {"observation": {...}, "binding": {...}, "profile": {...}}
+    """
+
+    observation: CowrieObservation
+    binding: BindingRecord
+    profile: ProfileSnapshot
+
+
 # TODO edge with from and to
 # ---- Attack-graph probability contracts ----
 class EdgeStats(VersionedModel):

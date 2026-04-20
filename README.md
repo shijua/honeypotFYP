@@ -3,6 +3,8 @@
 This repository implements a profiling-driven dynamic honeynet MVP with independently testable services.
 
 - `services/binding_service`
+- `services/cowrie`
+- `services/entrypoint`
 - `services/profiler`
 - `services/controller`
 - `services/gateway`
@@ -22,6 +24,7 @@ The repository target is Python `3.10+`.
 Repository data layout:
 
 - `data/assets/catalog.json` is committed with the repo.
+- `data/cowrie/event_mappings.json` is committed with the repo.
 - `data/mitre/enterprise-attack.json` must be fetched locally before using the
   default profiler runtime.
 
@@ -44,7 +47,7 @@ pytest -m adapter
 Run the current MVP suite with:
 
 ```bash
-pytest -q tests/binding_service tests/profiler tests/controller tests/orchestrator tests/contracts tests/test_mvp_smoke.py
+pytest -q tests/binding_service tests/cowrie tests/entrypoint tests/profiler tests/controller tests/orchestrator tests/gateway tests/contracts tests/adapter tests/test_mvp_smoke.py
 ```
 
 ## Service entrypoints
@@ -53,6 +56,8 @@ Each service has a FastAPI app object in `services/*/app.py`.
 Implemented entrypoints:
 
 - `uvicorn services.binding_service.app:app --reload`
+- `uvicorn services.cowrie.app:app --reload`
+- `uvicorn services.entrypoint.app:app --reload`
 - `uvicorn services.profiler.app:app --reload`
 - `uvicorn services.controller.app:app --reload`
 - `uvicorn services.gateway.app:app --reload`
@@ -61,7 +66,7 @@ Implemented entrypoints:
 Current MVP flow:
 
 ```bash
-resolve binding -> ingest evidence -> read profile -> controller tick -> orchestrator apply -> gateway sync
+HTTP/Cowrie event -> resolve binding -> ingest evidence -> read profile -> controller tick -> orchestrator apply -> gateway sync
 ```
 
 ## Runtime storage
@@ -69,10 +74,13 @@ resolve binding -> ingest evidence -> read profile -> controller tick -> orchest
 The default local runtime now persists state under `data/runtime/`:
 
 - `bindings.json`
+- `cowrie_observations.json`
+- `entrypoint_observations.json`
 - `evidence.json`
 - `profiles.json`
 - `gateway_routes.json`
 
 The controller asset catalog is now externalized at `data/assets/catalog.json`.
+Cowrie event mappings are externalized at `data/cowrie/event_mappings.json`.
 The profiler resolves tactic/technique relationships from the official MITRE
 ATT&CK `attack-stix-data` bundle at `data/mitre/enterprise-attack.json`.
