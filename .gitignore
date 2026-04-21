@@ -6,6 +6,7 @@ __pycache__/
 .venv/
 data/runtime/
 data/mitre/enterprise-attack.json
+deploy/cowrie/var/
 dist/
 build/
 *.egg-info/

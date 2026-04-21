@@ -1,0 +1,18 @@
+# Local Cowrie SSH honeypot for MVP data collection.
+#
+# This compose file intentionally binds SSH to 127.0.0.1 by default so a local
+# test does not accidentally expose the honeypot to the public internet. Change
+# the port binding to "0.0.0.0:2222:2222" only when the host firewall and lab
+# network are ready for external traffic.
+version: "3.3"
+
+services:
+  cowrie:
+    image: cowrie/cowrie:latest
+    container_name: dynamic-honeynet-cowrie
+    ports:
+      - "${COWRIE_SSH_BIND:-127.0.0.1}:${COWRIE_SSH_PORT:-2222}:2222"
+    volumes:
+      - ./cowrie.cfg:/cowrie/cowrie-git/etc/cowrie.cfg:ro
+      - ./var:/cowrie/cowrie-git/var
+    restart: unless-stopped

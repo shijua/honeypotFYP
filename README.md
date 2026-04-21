@@ -69,6 +69,57 @@ Current MVP flow:
 HTTP/Cowrie event -> resolve binding -> ingest evidence -> read profile -> controller tick -> orchestrator apply -> gateway sync
 ```
 
+## Local Cowrie honeypot
+
+The repo includes a local Cowrie Docker setup in `deploy/cowrie/`.
+
+Quick start:
+
+```bash
+./scripts/run_local_cowrie_lab.sh
+```
+
+The quick-start command opens `ssh -p 2222 root@127.0.0.1` and shuts the
+adapter, log forwarder, and Cowrie container down when the SSH session exits.
+On startup it also stops the previous `dynamic-honeynet-cowrie` compose
+container and a legacy container named `cowrie`, if present. If another process
+still owns `2222`, the script reports the conflict instead of switching ports.
+It rotates the previous raw Cowrie JSON log before each run so the current
+session is forwarded cleanly. It also clears the local Cowrie demo runtime
+files under `data/runtime/`; the file-backed repositories recreate missing JSON
+files with their default shapes when the adapter starts.
+
+Manual mode:
+
+Start the adapter API:
+
+```bash
+/home/wh1322/honeypot/.venv/bin/python -m uvicorn services.cowrie.app:app --host 127.0.0.1 --port 8081
+```
+
+Start Cowrie in another terminal:
+
+```bash
+mkdir -p deploy/cowrie/var/log/cowrie
+mkdir -p deploy/cowrie/var/lib/cowrie/tty
+chmod 0777 deploy/cowrie/var deploy/cowrie/var/log deploy/cowrie/var/log/cowrie deploy/cowrie/var/lib deploy/cowrie/var/lib/cowrie deploy/cowrie/var/lib/cowrie/tty
+docker-compose -f deploy/cowrie/docker-compose.yml up
+```
+
+Forward Cowrie JSON logs into the adapter:
+
+```bash
+/home/wh1322/honeypot/.venv/bin/python scripts/forward_cowrie_json.py \
+  --log-file deploy/cowrie/var/log/cowrie/cowrie.json \
+  --adapter-url http://127.0.0.1:8081/v1/cowrie/events
+```
+
+Generate a local SSH event:
+
+```bash
+ssh -p 2222 root@127.0.0.1
+```
+
 ## Runtime storage
 
 The default local runtime now persists state under `data/runtime/`:

@@ -146,3 +146,22 @@ def test_file_cowrie_repository_persists_observations(tmp_path) -> None:
 
     reloaded = FileCowrieObservationRepository(tmp_path / "cowrie.json")
     assert tuple(reloaded.list_recent())[0].observation_id == "obs-2"
+
+
+def test_file_repositories_create_default_json_files(tmp_path) -> None:
+    binding_path = tmp_path / "runtime" / "bindings.json"
+    cowrie_path = tmp_path / "runtime" / "cowrie_observations.json"
+    evidence_path = tmp_path / "runtime" / "evidence.json"
+    profile_path = tmp_path / "runtime" / "profiles.json"
+
+    FileBindingRepository(binding_path)
+    FileCowrieObservationRepository(cowrie_path)
+    FileEvidenceRepository(evidence_path)
+    FileProfileRepository(profile_path)
+
+    assert json.loads(binding_path.read_text(encoding="utf-8")) == {"records": []}
+    assert json.loads(cowrie_path.read_text(encoding="utf-8")) == {
+        "observations": []
+    }
+    assert json.loads(evidence_path.read_text(encoding="utf-8")) == {"records": {}}
+    assert json.loads(profile_path.read_text(encoding="utf-8")) == {"profiles": {}}

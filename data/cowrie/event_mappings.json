@@ -12,7 +12,8 @@
       "username",
       "message"
     ],
-    "command_field": null
+    "command_field": null,
+    "profile": false
   },
   "events": {
     "cowrie.session.connect": {
@@ -27,7 +28,8 @@
         "sensor",
         "message"
       ],
-      "command_field": null
+      "command_field": null,
+      "profile": false
     },
     "cowrie.session.closed": {
       "priority": "INFO",
@@ -42,7 +44,8 @@
         "duration",
         "message"
       ],
-      "command_field": null
+      "command_field": null,
+      "profile": false
     },
     "cowrie.client.version": {
       "priority": "INFO",
@@ -57,7 +60,8 @@
         "version",
         "message"
       ],
-      "command_field": null
+      "command_field": null,
+      "profile": false
     },
     "cowrie.client.kex": {
       "priority": "INFO",
@@ -75,7 +79,8 @@
         "keyAlgs",
         "message"
       ],
-      "command_field": null
+      "command_field": null,
+      "profile": false
     },
     "cowrie.client.fingerprint": {
       "priority": "INFO",
@@ -91,7 +96,8 @@
         "key",
         "message"
       ],
-      "command_field": null
+      "command_field": null,
+      "profile": false
     },
     "cowrie.login.failed": {
       "priority": "INFO",
@@ -107,7 +113,8 @@
         "password_seen",
         "message"
       ],
-      "command_field": null
+      "command_field": null,
+      "profile": true
     },
     "cowrie.login.success": {
       "priority": "NOTICE",
@@ -122,7 +129,8 @@
         "username",
         "message"
       ],
-      "command_field": null
+      "command_field": null,
+      "profile": false
     },
     "cowrie.command.input": {
       "priority": "NOTICE",
@@ -138,7 +146,8 @@
         "input",
         "message"
       ],
-      "command_field": "input"
+      "command_field": "input",
+      "profile": true
     },
     "cowrie.command.failed": {
       "priority": "NOTICE",
@@ -154,7 +163,8 @@
         "input",
         "message"
       ],
-      "command_field": "input"
+      "command_field": "input",
+      "profile": true
     },
     "cowrie.direct-tcpip.request": {
       "priority": "NOTICE",
@@ -170,7 +180,8 @@
         "dst_port",
         "message"
       ],
-      "command_field": null
+      "command_field": null,
+      "profile": false
     },
     "cowrie.direct-tcpip.data": {
       "priority": "INFO",
@@ -184,7 +195,8 @@
         "sensor",
         "message"
       ],
-      "command_field": null
+      "command_field": null,
+      "profile": false
     },
     "cowrie.session.file_download": {
       "priority": "NOTICE",
@@ -200,7 +212,8 @@
         "outfile",
         "message"
       ],
-      "command_field": null
+      "command_field": null,
+      "profile": true
     },
     "cowrie.session.file_upload": {
       "priority": "NOTICE",
@@ -216,7 +229,8 @@
         "outfile",
         "message"
       ],
-      "command_field": null
+      "command_field": null,
+      "profile": true
     }
   }
 }

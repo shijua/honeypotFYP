@@ -22,10 +22,10 @@ class JsonFileStore:
     def __init__(self, path: str | Path, default_data: Any) -> None:
         self._path = Path(path)
         self._default_data = default_data
+        self._ensure_exists()
 
     def read(self) -> Any:
-        if not self._path.exists():
-            return deepcopy(self._default_data)
+        self._ensure_exists()
         with self._path.open("r", encoding="utf-8") as handle:
             return json.load(handle)
 
@@ -36,3 +36,9 @@ class JsonFileStore:
             json.dump(data, handle, indent=2, sort_keys=True)
             handle.write("\n")
         temp_path.replace(self._path)
+
+    def _ensure_exists(self) -> None:
+        """Create a missing JSON file with its repository default shape."""
+        if self._path.exists():
+            return
+        self.write(deepcopy(self._default_data))

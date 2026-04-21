@@ -20,6 +20,12 @@ def get_service() -> CowrieService:
     return get_runtime_service()
 
 
+@app.get("/healthz")
+def healthz() -> dict[str, str]:
+    """Return a basic health check for local runners and deployment probes."""
+    return {"status": "ok"}
+
+
 @app.post("/v1/cowrie/events", response_model=CowrieIngestResponse)
 def ingest_cowrie_event(
     request: CowrieIngestRequest,

@@ -163,6 +163,8 @@ Additional repositories now exist for:
 - Entrypoint observations are stored in `data/runtime/entrypoint_observations.json`.
 - Falco should later run outside honeypot containers as node/runtime telemetry,
   while Cowrie logs capture SSH attacker interaction telemetry.
+- Local Cowrie lab configuration lives in `deploy/cowrie/`; the log forwarder
+  `scripts/forward_cowrie_json.py` bridges `cowrie.json` into the Cowrie API.
 - Orchestration is still a mock control-plane adapter; it does not start real containers or pods.
 - The controller now loads its asset catalog from `data/assets/catalog.json`.
 - Cowrie event priority, ATT&CK tags, descriptive `cowrie_*` tags, and

@@ -20,9 +20,11 @@ class CowrieEventMapping:
     `mitre_*` and `Txxxx` tags are only used when the event behavior is clear.
     Less certain events can keep `tags=()` or use descriptive `cowrie_*` tags
     that are retained on observations but ignored by the ATT&CK profiler.
+    `profile=False` means the event is stored for debugging/replay but does not
+    create profiler evidence.
 
     Example:
-        CowrieEventMapping(priority="INFO", tags=("cowrie_client_metadata",))
+        CowrieEventMapping(priority="INFO", tags=("cowrie_client_metadata",), profile=False)
     """
 
     priority: str
@@ -30,6 +32,7 @@ class CowrieEventMapping:
     output_template: str
     output_fields: tuple[str, ...]
     command_field: str | None = None
+    profile: bool = False
 
 
 class CowrieEventCatalog(Protocol):
@@ -86,6 +89,7 @@ class InMemoryCowrieEventCatalog:
             tags=(),
             output_template="{eventid} from {src_ip}",
             output_fields=("source", "cowrie_eventid", "src_ip"),
+            profile=False,
         )
 
     def mapping_for(self, eventid: str) -> CowrieEventMapping:
@@ -107,4 +111,5 @@ def _mapping_from_payload(payload: object) -> CowrieEventMapping:
             if payload.get("command_field") is not None
             else None
         ),
+        profile=bool(payload.get("profile", False)),
     )

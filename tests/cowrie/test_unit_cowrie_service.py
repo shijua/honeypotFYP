@@ -54,6 +54,7 @@ def test_failed_login_maps_to_credential_access_without_storing_password() -> No
     observation = tuple(repository.list_recent())[0]
     assert observation.password_seen is True
     assert "password" not in observation.model_dump()
+    assert len(observation.profiler_evidence_ids) == 1
     assert response.profile.recent_tactics == ["Credential Access"]
     assert response.profile.recent_techniques == ["T1110"]
 
@@ -74,6 +75,7 @@ def test_command_input_maps_to_execution() -> None:
     )
 
     assert response.observation.command == "uname -a"
+    assert len(response.observation.profiler_evidence_ids) == 1
     assert response.profile.recent_tactics == ["Execution"]
     assert response.profile.recent_techniques == ["T1059"]
 
@@ -94,6 +96,7 @@ def test_successful_login_stays_descriptive_without_attack_mapping() -> None:
     )
 
     assert response.observation.tags == ["cowrie_auth_success"]
+    assert response.observation.profiler_evidence_ids == []
     assert response.profile.recent_tactics == []
     assert response.profile.recent_techniques == []
 
@@ -114,5 +117,6 @@ def test_client_metadata_stays_descriptive_without_attack_mapping() -> None:
     )
 
     assert response.observation.tags == ["cowrie_client_metadata"]
+    assert response.observation.profiler_evidence_ids == []
     assert response.profile.recent_tactics == []
     assert response.profile.recent_techniques == []

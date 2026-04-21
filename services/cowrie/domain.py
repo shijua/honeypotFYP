@@ -16,12 +16,14 @@ from libs.contracts.models import (
     CowrieObservation,
     EvidenceIngestRequest,
     FalcoEvent,
+    ProfileSnapshot,
     ResolveBindingRequest,
+    TechniqueEvidence,
 )
 from services.binding_service.domain import BindingService
 from services.cowrie.event_catalog import CowrieEventCatalog, CowrieEventMapping
 from services.cowrie.repository import CowrieObservationRepository
-from services.profiler.domain import ProfilerService
+from services.profiler.domain import ProfilerService, ProfileNotFoundError
 
 
 class CowrieService:
@@ -56,21 +58,11 @@ class CowrieService:
         # Event semantics live in data/cowrie/event_mappings.json, not here.
         mapping = self._event_catalog.mapping_for(event.eventid)
         tags = list(mapping.tags)
-        # Reuse the profiler's normalized event contract so Cowrie and Falco-like
-        # telemetry can feed the same profile aggregation path.
-        ingest_response = self._profiler_service.ingest(
-            EvidenceIngestRequest(
-                attacker_key=event.src_ip,
-                binding_id=binding.binding_id,
-                event=FalcoEvent(
-                    ts=event.timestamp,
-                    falco_rule=event.eventid,
-                    priority=mapping.priority,
-                    output=_format_output(event, mapping),
-                    tags=tags,
-                    output_fields=_output_fields(event, mapping),
-                ),
-            )
+        evidences, profile = self._profile_event(
+            event=event,
+            binding_id=binding.binding_id,
+            mapping=mapping,
+            tags=tags,
         )
 
         # Store a sanitized intake record for research/debugging. Do not persist
@@ -88,16 +80,48 @@ class CowrieService:
             command=_event_value(event, mapping.command_field),
             message=event.message,
             tags=tags,
-            profiler_evidence_ids=[
-                evidence.evidence_id for evidence in ingest_response.evidences
-            ],
+            profiler_evidence_ids=[evidence.evidence_id for evidence in evidences],
         )
         stored_observation = self._observation_repository.add(observation)
         return CowrieIngestResponse(
             observation=stored_observation,
             binding=binding,
-            profile=ingest_response.profile,
+            profile=profile,
         )
+
+    def _profile_event(
+        self,
+        event: CowrieLogEvent,
+        binding_id: str,
+        mapping: CowrieEventMapping,
+        tags: list[str],
+    ) -> tuple[list[TechniqueEvidence], ProfileSnapshot]:
+        if not mapping.profile:
+            return [], self._current_or_empty_profile(event.src_ip)
+
+        # Reuse the profiler's normalized event contract so Cowrie and Falco-like
+        # telemetry can feed the same profile aggregation path.
+        ingest_response = self._profiler_service.ingest(
+            EvidenceIngestRequest(
+                attacker_key=event.src_ip,
+                binding_id=binding_id,
+                event=FalcoEvent(
+                    ts=event.timestamp,
+                    falco_rule=event.eventid,
+                    priority=mapping.priority,
+                    output=_format_output(event, mapping),
+                    tags=tags,
+                    output_fields=_output_fields(event, mapping),
+                ),
+            )
+        )
+        return list(ingest_response.evidences), ingest_response.profile
+
+    def _current_or_empty_profile(self, attacker_key: str) -> ProfileSnapshot:
+        try:
+            return self._profiler_service.get_profile(attacker_key)
+        except ProfileNotFoundError:
+            return ProfileSnapshot(attacker_key=attacker_key)
 
 
 def _format_output(event: CowrieLogEvent, mapping: CowrieEventMapping) -> str:
