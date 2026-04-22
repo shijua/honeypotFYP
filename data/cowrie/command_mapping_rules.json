@@ -1,0 +1,202 @@
+{
+  "schema_version": "v1",
+  "rules": [
+    {
+      "name": "file_directory_discovery",
+      "technique_id": "T1083",
+      "confidence": "medium",
+      "match": {
+        "process_names": ["ls", "dir", "find", "locate", "tree"]
+      },
+      "source_refs": [
+        {
+          "type": "mitre_attack_technique",
+          "name": "File and Directory Discovery",
+          "url": "https://attack.mitre.org/techniques/T1083/"
+        }
+      ]
+    },
+    {
+      "name": "user_owner_discovery",
+      "technique_id": "T1033",
+      "confidence": "medium",
+      "match": {
+        "process_names": ["whoami", "who", "w", "id"]
+      },
+      "source_refs": [
+        {
+          "type": "mitre_attack_technique",
+          "name": "System Owner/User Discovery",
+          "url": "https://attack.mitre.org/techniques/T1033/"
+        }
+      ]
+    },
+    {
+      "name": "local_account_file_discovery",
+      "technique_id": "T1087.001",
+      "confidence": "high",
+      "match": {
+        "command_line_regex_any": [
+          "^cat\\s+/etc/passwd(\\s|$)",
+          "^getent\\s+passwd(\\s|$)"
+        ]
+      },
+      "source_refs": [
+        {
+          "type": "mitre_attack_technique",
+          "name": "Account Discovery: Local Account",
+          "url": "https://attack.mitre.org/techniques/T1087/001/"
+        }
+      ]
+    },
+    {
+      "name": "network_config_discovery",
+      "technique_id": "T1016",
+      "confidence": "medium",
+      "match": {
+        "command_line_regex_any": [
+          "^(ifconfig|ip\\s+addr|ip\\s+a|ip\\s+route|route|netstat|ss)(\\s|$)"
+        ]
+      },
+      "source_refs": [
+        {
+          "type": "mitre_attack_technique",
+          "name": "System Network Configuration Discovery",
+          "url": "https://attack.mitre.org/techniques/T1016/"
+        }
+      ]
+    },
+    {
+      "name": "network_service_discovery",
+      "technique_id": "T1046",
+      "confidence": "high",
+      "match": {
+        "command_line_regex_any": [
+          "^(nmap|masscan)(\\s|$)",
+          "^nc\\s+.*\\s-vz(\\s|$)",
+          "^telnet\\s+\\S+\\s+\\d+(\\s|$)"
+        ]
+      },
+      "source_refs": [
+        {
+          "type": "mitre_attack_technique",
+          "name": "Network Service Discovery",
+          "url": "https://attack.mitre.org/techniques/T1046/"
+        }
+      ]
+    },
+    {
+      "name": "credential_file_search",
+      "technique_id": "T1552.001",
+      "confidence": "high",
+      "match": {
+        "process_names": ["cat", "grep", "egrep", "fgrep", "find", "locate", "mlocate"],
+        "command_line_contains_any": [
+          ".env",
+          "id_rsa",
+          "id_dsa",
+          "begin private",
+          "begin openssh private",
+          "password",
+          "secret",
+          "token",
+          "/etc/shadow"
+        ]
+      },
+      "source_refs": [
+        {
+          "type": "elastic_detection_rule",
+          "name": "Sensitive Keys Or Passwords Searched For Inside A Container",
+          "url": "https://raw.githubusercontent.com/elastic/detection-rules/main/rules/linux/credential_access_sensitive_keys_or_passwords_search_inside_container.toml"
+        },
+        {
+          "type": "mitre_attack_technique",
+          "name": "Unsecured Credentials: Credentials In Files",
+          "url": "https://attack.mitre.org/techniques/T1552/001/"
+        }
+      ]
+    },
+    {
+      "name": "local_data_collection",
+      "technique_id": "T1005",
+      "confidence": "medium",
+      "match": {
+        "command_line_regex_any": [
+          "^(tar|zip|gzip|scp|rsync)\\s+",
+          "^cat\\s+.*\\.(txt|csv|json|sql|db|bak|conf|config)(\\s|$)"
+        ]
+      },
+      "source_refs": [
+        {
+          "type": "mitre_attack_technique",
+          "name": "Data from Local System",
+          "url": "https://attack.mitre.org/techniques/T1005/"
+        }
+      ]
+    },
+    {
+      "name": "ingress_tool_transfer",
+      "technique_id": "T1105",
+      "confidence": "medium",
+      "match": {
+        "command_line_regex_any": [
+          "^(wget|curl|tftp|ftp)\\s+",
+          "^python\\s+-m\\s+http\\.server(\\s|$)"
+        ]
+      },
+      "source_refs": [
+        {
+          "type": "elastic_detection_rule",
+          "name": "Git Repository or File Download to Suspicious Directory",
+          "url": "https://raw.githubusercontent.com/elastic/detection-rules/main/rules/linux/command_and_control_git_repo_or_file_download_to_sus_dir.toml"
+        },
+        {
+          "type": "mitre_attack_technique",
+          "name": "Ingress Tool Transfer",
+          "url": "https://attack.mitre.org/techniques/T1105/"
+        }
+      ]
+    },
+    {
+      "name": "base64_decode_or_deobfuscation",
+      "technique_id": "T1140",
+      "confidence": "high",
+      "match": {
+        "command_line_regex_any": [
+          "\\bbase64\\b.*\\s-d(\\s|$)",
+          "\\bopenssl\\b.*\\benc\\b.*(-d|-base64|-a)",
+          "\\bpython[0-9.]*\\b.*b64decode",
+          "\\bperl\\b.*decode_base64",
+          "\\bruby\\b.*base64\\.decode64"
+        ]
+      },
+      "source_refs": [
+        {
+          "type": "elastic_detection_rule",
+          "name": "Unusual Base64 Encoding/Decoding Activity",
+          "url": "https://raw.githubusercontent.com/elastic/detection-rules/main/rules/linux/defense_evasion_base64_decoding_activity.toml"
+        },
+        {
+          "type": "mitre_attack_technique",
+          "name": "Deobfuscate/Decode Files or Information",
+          "url": "https://attack.mitre.org/techniques/T1140/"
+        }
+      ]
+    },
+    {
+      "name": "sudo_privilege_escalation",
+      "technique_id": "T1548.003",
+      "confidence": "medium",
+      "match": {
+        "command_line_regex_any": ["^sudo(\\s|$)"]
+      },
+      "source_refs": [
+        {
+          "type": "mitre_attack_technique",
+          "name": "Abuse Elevation Control Mechanism: Sudo and Sudo Caching",
+          "url": "https://attack.mitre.org/techniques/T1548/003/"
+        }
+      ]
+    }
+  ]
+}

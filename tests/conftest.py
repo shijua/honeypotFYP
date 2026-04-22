@@ -16,6 +16,7 @@ from services.controller.domain import ControllerService
 from services.controller.repository import InMemoryAssetRepository, InMemoryTransitionRepository
 from services.cowrie.app import app as cowrie_app
 from services.cowrie.app import get_service as get_cowrie_service
+from services.cowrie.command_mapping import FileCowrieCommandRuleCatalog
 from services.cowrie.domain import CowrieService
 from services.cowrie.event_catalog import FileCowrieEventCatalog
 from services.cowrie.repository import InMemoryCowrieObservationRepository
@@ -153,6 +154,7 @@ def cowrie_client() -> TestClient:
         profiler_service,
         InMemoryCowrieObservationRepository(),
         FileCowrieEventCatalog("data/cowrie/event_mappings.json"),
+        FileCowrieCommandRuleCatalog("data/cowrie/command_mapping_rules.json"),
     )
 
     def _get_service() -> CowrieService:

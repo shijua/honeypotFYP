@@ -7,6 +7,7 @@ import pytest
 from libs.contracts.models import CowrieIngestRequest, CowrieLogEvent
 from services.binding_service.domain import BindingService
 from services.binding_service.repository import InMemoryBindingRepository
+from services.cowrie.command_mapping import FileCowrieCommandRuleCatalog
 from services.cowrie.domain import CowrieService
 from services.cowrie.event_catalog import FileCowrieEventCatalog
 from services.cowrie.repository import InMemoryCowrieObservationRepository
@@ -30,6 +31,7 @@ def _service() -> tuple[CowrieService, InMemoryCowrieObservationRepository]:
             ),
             repository,
             FileCowrieEventCatalog("data/cowrie/event_mappings.json"),
+            FileCowrieCommandRuleCatalog("data/cowrie/command_mapping_rules.json"),
         ),
         repository,
     )
@@ -78,6 +80,64 @@ def test_command_input_maps_to_execution() -> None:
     assert len(response.observation.profiler_evidence_ids) == 1
     assert response.profile.recent_tactics == ["Execution"]
     assert response.profile.recent_techniques == ["T1059"]
+
+
+def test_command_input_adds_data_driven_discovery_mapping() -> None:
+    service, _ = _service()
+
+    response = service.ingest(
+        CowrieIngestRequest(
+            event=CowrieLogEvent(
+                eventid="cowrie.command.input",
+                timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                src_ip="198.51.100.214",
+                session="s-5",
+                input="ls -la /tmp",
+            )
+        )
+    )
+
+    assert len(response.observation.profiler_evidence_ids) == 2
+    assert response.profile.recent_tactics == ["Execution", "Discovery"]
+    assert response.profile.recent_techniques == ["T1059", "T1083"]
+
+
+def test_failed_command_intent_can_add_network_discovery_mapping() -> None:
+    service, _ = _service()
+
+    response = service.ingest(
+        CowrieIngestRequest(
+            event=CowrieLogEvent(
+                eventid="cowrie.command.failed",
+                timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                src_ip="198.51.100.215",
+                session="s-6",
+                input="nmap 10.0.0.0/24",
+            )
+        )
+    )
+
+    assert response.profile.recent_tactics == ["Execution", "Discovery"]
+    assert response.profile.recent_techniques == ["T1059", "T1046"]
+
+
+def test_command_mapping_can_use_elastic_derived_credential_rule() -> None:
+    service, _ = _service()
+
+    response = service.ingest(
+        CowrieIngestRequest(
+            event=CowrieLogEvent(
+                eventid="cowrie.command.input",
+                timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                src_ip="198.51.100.216",
+                session="s-7",
+                input="grep password /app/.env",
+            )
+        )
+    )
+
+    assert response.profile.recent_tactics == ["Execution", "Credential Access"]
+    assert response.profile.recent_techniques == ["T1059", "T1552.001"]
 
 
 def test_successful_login_stays_descriptive_without_attack_mapping() -> None:

@@ -26,6 +26,7 @@ class RuntimeConfig:
     state_dir: str = "data/runtime"
     asset_catalog_path: str = "data/assets/catalog.json"
     cowrie_event_mapping_path: str = "data/cowrie/event_mappings.json"
+    cowrie_command_mapping_path: str = "data/cowrie/command_mapping_rules.json"
     entrypoint_body_preview_bytes: int = 2048
     mitre_attack_stix_path: str = "data/mitre/enterprise-attack.json"
     mitre_attack_stix_url: str = (

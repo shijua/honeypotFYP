@@ -21,6 +21,7 @@ from libs.contracts.models import (
     TechniqueEvidence,
 )
 from services.binding_service.domain import BindingService
+from services.cowrie.command_mapping import CowrieCommandRuleCatalog
 from services.cowrie.event_catalog import CowrieEventCatalog, CowrieEventMapping
 from services.cowrie.repository import CowrieObservationRepository
 from services.profiler.domain import ProfilerService, ProfileNotFoundError
@@ -39,11 +40,13 @@ class CowrieService:
         profiler_service: ProfilerService,
         observation_repository: CowrieObservationRepository,
         event_catalog: CowrieEventCatalog,
+        command_rule_catalog: CowrieCommandRuleCatalog,
     ) -> None:
         self._binding_service = binding_service
         self._profiler_service = profiler_service
         self._observation_repository = observation_repository
         self._event_catalog = event_catalog
+        self._command_rule_catalog = command_rule_catalog
 
     def ingest(self, request: CowrieIngestRequest) -> CowrieIngestResponse:
         """Ingest one Cowrie event and update binding/profile state."""
@@ -63,6 +66,7 @@ class CowrieService:
             binding_id=binding.binding_id,
             mapping=mapping,
             tags=tags,
+            command_rule_catalog=self._command_rule_catalog,
         )
 
         # Store a sanitized intake record for research/debugging. Do not persist
@@ -95,27 +99,38 @@ class CowrieService:
         binding_id: str,
         mapping: CowrieEventMapping,
         tags: list[str],
+        command_rule_catalog: CowrieCommandRuleCatalog,
     ) -> tuple[list[TechniqueEvidence], ProfileSnapshot]:
         if not mapping.profile:
             return [], self._current_or_empty_profile(event.src_ip)
 
-        # Reuse the profiler's normalized event contract so Cowrie and Falco-like
-        # telemetry can feed the same profile aggregation path.
-        ingest_response = self._profiler_service.ingest(
-            EvidenceIngestRequest(
-                attacker_key=event.src_ip,
-                binding_id=binding_id,
-                event=FalcoEvent(
-                    ts=event.timestamp,
-                    falco_rule=event.eventid,
-                    priority=mapping.priority,
-                    output=_format_output(event, mapping),
-                    tags=tags,
-                    output_fields=_output_fields(event, mapping),
-                ),
+        evidences: list[TechniqueEvidence] = []
+        profile = self._current_or_empty_profile(event.src_ip)
+        for profile_tags, output in _profile_inputs(
+            event,
+            mapping,
+            tags,
+            command_rule_catalog,
+        ):
+            # Reuse the profiler's normalized event contract so Cowrie and
+            # Falco-like telemetry can feed the same profile aggregation path.
+            ingest_response = self._profiler_service.ingest(
+                EvidenceIngestRequest(
+                    attacker_key=event.src_ip,
+                    binding_id=binding_id,
+                    event=FalcoEvent(
+                        ts=event.timestamp,
+                        falco_rule=event.eventid,
+                        priority=mapping.priority,
+                        output=output,
+                        tags=profile_tags,
+                        output_fields=_output_fields(event, mapping),
+                    ),
+                )
             )
-        )
-        return list(ingest_response.evidences), ingest_response.profile
+            evidences.extend(ingest_response.evidences)
+            profile = ingest_response.profile
+        return evidences, profile
 
     def _current_or_empty_profile(self, attacker_key: str) -> ProfileSnapshot:
         try:
@@ -146,6 +161,29 @@ def _output_fields(
         if value is not None:
             fields[field_name] = value
     return fields
+
+
+def _profile_inputs(
+    event: CowrieLogEvent,
+    mapping: CowrieEventMapping,
+    base_tags: list[str],
+    command_rule_catalog: CowrieCommandRuleCatalog,
+) -> list[tuple[list[str], str]]:
+    base_output = _format_output(event, mapping)
+    profile_inputs = [(base_tags, base_output)]
+
+    command = _event_value(event, mapping.command_field)
+    if not isinstance(command, str):
+        return profile_inputs
+
+    for rule in command_rule_catalog.match(command):
+        profile_inputs.append(
+            (
+                [rule.technique_id],
+                f"{base_output} [{rule.name}; confidence={rule.confidence}]",
+            )
+        )
+    return profile_inputs
 
 
 def _event_context(event: CowrieLogEvent) -> dict[str, object]:
