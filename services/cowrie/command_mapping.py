@@ -252,7 +252,7 @@ def _match_from_payload(payload: object) -> CommandMatch:
             _lower_strings(payload.get("command_line_contains_any", []))
         ),
         command_line_regex_any=tuple(
-            _lower_strings(payload.get("command_line_regex_any", []))
+            _strings(payload.get("command_line_regex_any", []))
         ),
     )
 
@@ -272,3 +272,10 @@ def _lower_strings(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
     return [str(item).lower() for item in value]
+
+
+def _strings(value: object) -> list[str]:
+    """Return a string list without changing regex escape sequences."""
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value]

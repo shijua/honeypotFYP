@@ -31,6 +31,14 @@ def test_file_command_rule_catalog_matches_reviewed_rules() -> None:
     assert rules[0].source_refs
 
 
+def test_file_command_rule_catalog_preserves_regex_escape_case() -> None:
+    catalog = FileCowrieCommandRuleCatalog("data/cowrie/command_mapping_rules.json")
+
+    rules = catalog.match("telnet 10.0.0.1 22")
+
+    assert [rule.name for rule in rules] == ["network_service_discovery"]
+
+
 def test_file_command_rule_catalog_returns_no_match_for_generic_command() -> None:
     catalog = FileCowrieCommandRuleCatalog("data/cowrie/command_mapping_rules.json")
 
