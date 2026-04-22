@@ -250,13 +250,26 @@ class AssetDefinition(VersionedModel):
     """One candidate honeypot asset that the controller may expose.
 
     Example:
-        {"asset_id": "git-internal", "covers_tactics": ["Credential Access", "Discovery"]}
+        {
+            "asset_id": "admin-jumpbox",
+            "template_family": "ssh-honeypot",
+            "protocols": ["ssh"],
+            "ports": [22],
+            "default_settings": {"banner": "OpenSSH_8.2"},
+            "covers_tactics": ["Lateral Movement", "Privilege Escalation"]
+        }
     """
 
     asset_id: str
     asset_name: str
     exposure_type: Literal["public", "internal"]
     interaction_level: Literal["low", "medium", "high"]
+    description: Optional[str] = None
+    template_family: Optional[str] = None
+    protocols: List[str] = Field(default_factory=list)
+    ports: List[int] = Field(default_factory=list)
+    source_refs: List[str] = Field(default_factory=list)
+    default_settings: Dict[str, Any] = Field(default_factory=dict)
     covers_tactics: List[str] = Field(default_factory=list)
     dependencies: List[str] = Field(default_factory=list)
 
@@ -341,6 +354,36 @@ class OrchestratorApplyResponse(VersionedModel):
     binding: BindingRecord
     applied_actions: List[ControllerAction] = Field(default_factory=list)
     route_updates: List[str] = Field(default_factory=list)
+    runtime_events: List["AssetRuntimeRecord"] = Field(default_factory=list)
+    monitoring_events: List[FalcoEvent] = Field(default_factory=list)
+
+
+class AssetRuntimeRecord(VersionedModel):
+    """Mock runtime state produced when the orchestrator enables one asset.
+
+    This is the MVP stand-in for a future Docker/Kubernetes object. It records
+    the concrete settings that would be used to launch the decoy template.
+
+    Example:
+        {
+            "binding_id": "binding-1",
+            "asset_id": "admin-jumpbox",
+            "status": "running",
+            "settings": {"banner": "OpenSSH_8.2"}
+        }
+    """
+
+    runtime_id: str
+    binding_id: str
+    asset_id: str
+    asset_name: str
+    template_family: Optional[str] = None
+    status: Literal["running", "stopped", "failed"] = "running"
+    protocols: List[str] = Field(default_factory=list)
+    ports: List[int] = Field(default_factory=list)
+    settings: Dict[str, Any] = Field(default_factory=dict)
+    source_refs: List[str] = Field(default_factory=list)
+    started_at: datetime = Field(default_factory=utcnow)
 
 
 class GatewayBindingState(VersionedModel):

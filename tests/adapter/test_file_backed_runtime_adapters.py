@@ -11,6 +11,7 @@ from libs.contracts.models import (
     CowrieObservation,
     EntrypointObservation,
     GatewayBindingState,
+    AssetRuntimeRecord,
     ProfileSnapshot,
     TechniqueEvidence,
 )
@@ -19,6 +20,7 @@ from services.controller.repository import FileAssetRepository
 from services.cowrie.repository import FileCowrieObservationRepository
 from services.entrypoint.repository import FileEntrypointObservationRepository
 from services.gateway.repository import FileGatewayRouteRepository
+from services.orchestrator.template_runtime import FileTemplateRuntimeRepository
 from services.profiler.repository import FileEvidenceRepository, FileProfileRepository
 
 
@@ -81,6 +83,11 @@ def test_file_asset_repository_reads_external_catalog(tmp_path) -> None:
                     "asset_name": "Internal Portal",
                     "exposure_type": "internal",
                     "interaction_level": "medium",
+                    "description": "Fake internal web app",
+                    "template_family": "web-honeypot",
+                    "protocols": ["http"],
+                    "ports": [80],
+                    "source_refs": ["tpotce:snare"],
                     "covers_tactics": ["Discovery"],
                     "dependencies": [],
                 }
@@ -91,7 +98,12 @@ def test_file_asset_repository_reads_external_catalog(tmp_path) -> None:
 
     repository = FileAssetRepository(path)
 
-    assert tuple(repository.list_all())[0].asset_id == "internal-portal"
+    asset = tuple(repository.list_all())[0]
+    assert asset.asset_id == "internal-portal"
+    assert asset.template_family == "web-honeypot"
+    assert asset.protocols == ["http"]
+    assert asset.ports == [80]
+    assert asset.source_refs == ["tpotce:snare"]
 
 
 def test_file_gateway_repository_persists_route_state(tmp_path) -> None:
@@ -109,6 +121,28 @@ def test_file_gateway_repository_persists_route_state(tmp_path) -> None:
 
     reloaded = FileGatewayRouteRepository(tmp_path / "gateway.json")
     assert reloaded.get("binding-3") is not None
+
+
+def test_file_template_runtime_repository_persists_asset_runtime(tmp_path) -> None:
+    repository = FileTemplateRuntimeRepository(tmp_path / "asset_runtime.json")
+    record = AssetRuntimeRecord(
+        runtime_id="runtime-1",
+        binding_id="binding-asset",
+        asset_id="admin-jumpbox",
+        asset_name="Admin Jumpbox",
+        template_family="ssh-honeypot",
+        protocols=["ssh"],
+        ports=[22],
+        settings={"hostname": "admin-jumpbox-01"},
+        source_refs=["tpotce:cowrie"],
+    )
+
+    repository.upsert(record)
+
+    reloaded = FileTemplateRuntimeRepository(tmp_path / "asset_runtime.json")
+    records = tuple(reloaded.list_by_binding("binding-asset"))
+    assert len(records) == 1
+    assert records[0].settings["hostname"] == "admin-jumpbox-01"
 
 
 def test_file_entrypoint_repository_persists_observations(tmp_path) -> None:

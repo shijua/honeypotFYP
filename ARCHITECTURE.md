@@ -68,6 +68,7 @@ This repository currently implements an MVP control loop across seven services:
 - Path: `services/controller/*`
 - Purpose: decide which internal assets should be exposed next.
 - Core behavior:
+  - load T-Pot-inspired decoy template definitions from `data/assets/catalog.json`
   - filter assets by dependencies, unlock state, and unlock cap
   - score candidates with a light exploit/explore policy
   - emit `unlock` or `noop` actions plus explanatory `DecisionEvent` records
@@ -85,6 +86,10 @@ This repository currently implements an MVP control loop across seven services:
 - Purpose: apply controller actions to the current binding state.
 - Core behavior:
   - update unlocked assets on the binding
+  - start template runtime records from `data/assets/catalog.json`
+  - start a real Docker container for supported web templates
+  - fall back to mock runtime records for unsupported templates
+  - emit Falco-style monitoring events for asset lifecycle changes
   - sync route changes into the gateway state
   - recycle bindings while preserving recoverable attacker state
 
@@ -168,8 +173,17 @@ Additional repositories now exist for:
   while Cowrie logs capture SSH attacker interaction telemetry.
 - Local Cowrie lab configuration lives in `deploy/cowrie/`; the log forwarder
   `scripts/forward_cowrie_json.py` bridges `cowrie.json` into the Cowrie API.
-- Orchestration is still a mock control-plane adapter; it does not start real containers or pods.
+- Orchestration is still a mock control-plane adapter; it records
+  `AssetRuntimeRecord` entries and can now start a small Docker-backed web
+  template, but it does not manage Kubernetes pods/namespaces yet.
 - The controller now loads its asset catalog from `data/assets/catalog.json`.
+  The catalog contains MVP template metadata such as protocol, port, family,
+  default settings, and source references, but these are not real
+  Docker/Kubernetes manifests yet.
+- Mock asset starts are converted into Falco-style `FalcoEvent` objects with
+  `falco_rule="Honeynet asset template started"`. Real Falco will only observe
+  these lifecycle events after a future Docker/Kubernetes adapter creates real
+  workloads.
 - Cowrie event priority, ATT&CK tags, descriptive `cowrie_*` tags, and
   profiler output fields are loaded from `data/cowrie/event_mappings.json`.
 - Attack-graph generation is still planned but not implemented.

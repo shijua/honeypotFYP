@@ -95,7 +95,14 @@ class FileAssetRepository:
     """JSON-backed asset catalog used by the default controller runtime.
 
     Example file shape:
-        [{"asset_id": "internal-portal", "covers_tactics": ["Discovery"], ...}]
+        [{
+            "asset_id": "admin-jumpbox",
+            "template_family": "ssh-honeypot",
+            "protocols": ["ssh"],
+            "ports": [22],
+            "covers_tactics": ["Lateral Movement"],
+            ...
+        }]
     """
 
     def __init__(self, path: str | Path) -> None:

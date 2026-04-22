@@ -4,6 +4,24 @@
     "asset_name": "Internal Portal",
     "exposure_type": "internal",
     "interaction_level": "medium",
+    "description": "A fake employee portal used as the first internal foothold after public entrypoint interaction.",
+    "template_family": "web-honeypot",
+    "protocols": ["http", "https"],
+    "ports": [80, 443],
+    "source_refs": ["tpotce:snare", "tpotce:tanner", "tpotce:wordpot"],
+    "default_settings": {
+      "runtime": {
+        "backend": "docker",
+        "image": "nginx:alpine",
+        "container_port": 80,
+        "requested_host_port": 18080,
+        "health_path": "/"
+      },
+      "route_path": "/portal",
+      "http_title": "Employee Self Service",
+      "credential_hints": false,
+      "log_profile_events": true
+    },
     "covers_tactics": ["Discovery"],
     "dependencies": []
   },
@@ -12,6 +30,17 @@
     "asset_name": "Finance File Share",
     "exposure_type": "internal",
     "interaction_level": "medium",
+    "description": "A fake SMB-style finance share with believable documents and credential-looking breadcrumbs.",
+    "template_family": "file-share-honeypot",
+    "protocols": ["smb"],
+    "ports": [445],
+    "source_refs": ["tpotce:dionaea", "tpotce:honeytrap"],
+    "default_settings": {
+      "share_name": "FINANCE",
+      "seed_documents": ["budget.xlsx", "payroll-archive.zip"],
+      "credential_hints": true,
+      "read_only": true
+    },
     "covers_tactics": ["Credential Access", "Collection"],
     "dependencies": ["internal-portal"]
   },
@@ -20,6 +49,17 @@
     "asset_name": "Internal Git",
     "exposure_type": "internal",
     "interaction_level": "medium",
+    "description": "A fake source-code service containing internal project names, config files, and deployment hints.",
+    "template_family": "developer-service-honeypot",
+    "protocols": ["http", "git"],
+    "ports": [80, 9418],
+    "source_refs": ["tpotce:honeytrap", "tpotce:glutton"],
+    "default_settings": {
+      "repo_names": ["infra-deploy", "customer-portal"],
+      "expose_fake_secrets": true,
+      "allow_clone": false,
+      "route_path": "/git"
+    },
     "covers_tactics": ["Credential Access", "Discovery"],
     "dependencies": ["internal-portal"]
   },
@@ -28,6 +68,17 @@
     "asset_name": "Operations Database",
     "exposure_type": "internal",
     "interaction_level": "medium",
+    "description": "A fake operations database endpoint exposed only after the attacker finds internal developer context.",
+    "template_family": "database-honeypot",
+    "protocols": ["mysql", "postgresql"],
+    "ports": [3306, 5432],
+    "source_refs": ["tpotce:honeytrap", "tpotce:glutton"],
+    "default_settings": {
+      "database_names": ["ops", "inventory"],
+      "auth_mode": "fake-login",
+      "query_logging": true,
+      "sample_rows": 25
+    },
     "covers_tactics": ["Credential Access", "Collection"],
     "dependencies": ["git-internal"]
   },
@@ -36,7 +87,138 @@
     "asset_name": "Admin Jumpbox",
     "exposure_type": "internal",
     "interaction_level": "high",
+    "description": "A fake SSH administration host for observing credential reuse, shell commands, and lateral movement attempts.",
+    "template_family": "ssh-honeypot",
+    "protocols": ["ssh"],
+    "ports": [22],
+    "source_refs": ["tpotce:cowrie", "tpotce:heralding"],
+    "default_settings": {
+      "hostname": "admin-jumpbox-01",
+      "ssh_banner": "SSH-2.0-OpenSSH_8.2p1 Ubuntu-4ubuntu0.13",
+      "accept_passwords": true,
+      "shell_profile": "linux-admin"
+    },
     "covers_tactics": ["Lateral Movement", "Privilege Escalation"],
     "dependencies": ["git-internal"]
+  },
+  {
+    "asset_id": "redis-cache",
+    "asset_name": "Redis Cache",
+    "exposure_type": "internal",
+    "interaction_level": "medium",
+    "description": "A fake Redis cache advertising session and queue names to attract service discovery and credential probing.",
+    "template_family": "redis-honeypot",
+    "protocols": ["redis"],
+    "ports": [6379],
+    "source_refs": ["tpotce:redishoneypot"],
+    "default_settings": {
+      "requirepass": false,
+      "fake_keys": ["session:*", "queue:payments", "cache:users"],
+      "allow_write": false
+    },
+    "covers_tactics": ["Credential Access", "Discovery", "Collection"],
+    "dependencies": ["internal-portal"]
+  },
+  {
+    "asset_id": "mail-relay",
+    "asset_name": "Mail Relay",
+    "exposure_type": "internal",
+    "interaction_level": "medium",
+    "description": "A fake mail relay for observing SMTP/IMAP enumeration, credential attempts, and mailbox collection behavior.",
+    "template_family": "mail-honeypot",
+    "protocols": ["smtp", "imap", "pop3"],
+    "ports": [25, 110, 143, 587],
+    "source_refs": ["tpotce:mailoney", "tpotce:heralding"],
+    "default_settings": {
+      "domains": ["corp.example"],
+      "mailboxes": ["admin", "finance", "it-support"],
+      "accept_auth": false,
+      "capture_rcpt_to": true
+    },
+    "covers_tactics": ["Credential Access", "Discovery", "Collection"],
+    "dependencies": ["internal-portal"]
+  },
+  {
+    "asset_id": "ics-plc",
+    "asset_name": "Plant PLC",
+    "exposure_type": "internal",
+    "interaction_level": "high",
+    "description": "A fake industrial control endpoint for observing Modbus/ICS probing after network service discovery.",
+    "template_family": "ics-honeypot",
+    "protocols": ["modbus", "http"],
+    "ports": [502, 80],
+    "source_refs": ["tpotce:conpot"],
+    "default_settings": {
+      "plant_profile": "water-treatment",
+      "modbus_unit_ids": [1, 2],
+      "http_title": "PLC Maintenance Console",
+      "write_operations": "log-only"
+    },
+    "covers_tactics": ["Discovery", "Collection", "Lateral Movement"],
+    "dependencies": ["internal-portal"]
+  },
+  {
+    "asset_id": "log4shell-app",
+    "asset_name": "Legacy Java App",
+    "exposure_type": "internal",
+    "interaction_level": "medium",
+    "description": "A fake legacy Java service that can later emulate Log4Shell-style probes without running a vulnerable service.",
+    "template_family": "vulnerable-webapp-honeypot",
+    "protocols": ["http"],
+    "ports": [8080],
+    "source_refs": ["tpotce:log4pot", "tpotce:beelzebub"],
+    "default_settings": {
+      "runtime": {
+        "backend": "docker",
+        "image": "nginx:alpine",
+        "container_port": 80,
+        "requested_host_port": 18081,
+        "health_path": "/"
+      },
+      "route_path": "/legacy",
+      "http_title": "Legacy Billing Service",
+      "detect_jndi_strings": true,
+      "emulate_vulnerability": false
+    },
+    "covers_tactics": ["Initial Access", "Execution", "Discovery"],
+    "dependencies": ["internal-portal"]
+  },
+  {
+    "asset_id": "vpn-appliance",
+    "asset_name": "VPN Appliance",
+    "exposure_type": "internal",
+    "interaction_level": "medium",
+    "description": "A fake VPN/network appliance used to attract appliance fingerprinting and credential attacks.",
+    "template_family": "network-appliance-honeypot",
+    "protocols": ["https", "ike"],
+    "ports": [443, 500, 4500],
+    "source_refs": ["tpotce:ciscoasa", "tpotce:citrixhoneypot"],
+    "default_settings": {
+      "vendor_skin": "generic-vpn",
+      "login_realm": "Employees",
+      "mfa_prompt": true,
+      "capture_usernames": true
+    },
+    "covers_tactics": ["Initial Access", "Credential Access", "Discovery"],
+    "dependencies": ["internal-portal"]
+  },
+  {
+    "asset_id": "malware-sink",
+    "asset_name": "Malware Drop Sink",
+    "exposure_type": "internal",
+    "interaction_level": "high",
+    "description": "A generic service sink for observing binary drops, downloader behavior, and post-exploitation callbacks.",
+    "template_family": "malware-capture-honeypot",
+    "protocols": ["http", "ftp", "smb"],
+    "ports": [80, 21, 445],
+    "source_refs": ["tpotce:dionaea", "tpotce:glutton", "tpotce:honeytrap"],
+    "default_settings": {
+      "capture_binaries": false,
+      "download_sink": "metadata-only",
+      "protocol_banner": "generic-service",
+      "max_payload_bytes": 0
+    },
+    "covers_tactics": ["Command and Control", "Execution", "Collection"],
+    "dependencies": ["internal-portal"]
   }
 ]

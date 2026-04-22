@@ -4,12 +4,15 @@ import pytest
 from pydantic import ValidationError
 
 from libs.contracts.models import (
+    AssetDefinition,
+    AssetRuntimeRecord,
     ControllerTickResponse,
     CowrieIngestRequest,
     EntrypointCaptureRequest,
     EvidenceIngestRequest,
     GatewaySyncRequest,
     OrchestratorApplyRequest,
+    OrchestratorApplyResponse,
 )
 from services.controller.app import app as controller_app
 from services.cowrie.app import app as cowrie_app
@@ -41,6 +44,62 @@ def test_controller_tick_response_has_schema_version() -> None:
     dumped = response.model_dump()
 
     assert dumped["schema_version"] == "v1"
+
+
+def test_asset_definition_accepts_template_metadata() -> None:
+    asset = AssetDefinition(
+        asset_id="admin-jumpbox",
+        asset_name="Admin Jumpbox",
+        exposure_type="internal",
+        interaction_level="high",
+        template_family="ssh-honeypot",
+        protocols=["ssh"],
+        ports=[22],
+        source_refs=["tpotce:cowrie"],
+        default_settings={"hostname": "admin-jumpbox-01"},
+        covers_tactics=["Lateral Movement"],
+    )
+
+    assert asset.template_family == "ssh-honeypot"
+    assert asset.protocols == ["ssh"]
+    assert asset.ports == [22]
+    assert asset.source_refs == ["tpotce:cowrie"]
+    assert asset.default_settings["hostname"] == "admin-jumpbox-01"
+
+
+def test_orchestrator_response_accepts_runtime_and_monitoring_events() -> None:
+    record = AssetRuntimeRecord(
+        runtime_id="runtime-1",
+        binding_id="binding-1",
+        asset_id="admin-jumpbox",
+        asset_name="Admin Jumpbox",
+        template_family="ssh-honeypot",
+        settings={"hostname": "admin-jumpbox-01"},
+    )
+    response = OrchestratorApplyResponse(
+        binding={
+            "binding_id": "binding-1",
+            "attacker_key": "198.51.100.10",
+            "backend_instance_id": "ns-binding",
+            "status": "active",
+            "first_seen_ts": "2026-01-01T00:00:00Z",
+            "last_seen_ts": "2026-01-01T00:00:00Z",
+            "ttl_expires_at": "2026-01-02T00:00:00Z",
+        },
+        runtime_events=[record],
+        monitoring_events=[
+            {
+                "ts": "2026-01-01T00:00:00Z",
+                "falco_rule": "Honeynet asset template started",
+                "priority": "INFO",
+                "output": "asset admin-jumpbox started",
+                "tags": ["honeynet_asset_runtime"],
+            }
+        ],
+    )
+
+    assert response.runtime_events[0].asset_id == "admin-jumpbox"
+    assert response.monitoring_events[0].falco_rule == "Honeynet asset template started"
 
 
 def test_orchestrator_apply_request_requires_binding_id() -> None:

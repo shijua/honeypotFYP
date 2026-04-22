@@ -8,15 +8,42 @@ from __future__ import annotations
 
 from fastapi import Depends, FastAPI
 
+from libs.common.config import RuntimeConfig
 from libs.contracts.models import OrchestratorApplyRequest, OrchestratorApplyResponse
 from services.binding_service.runtime import get_runtime_service
+from services.controller.repository import FileAssetRepository
 from services.gateway.runtime import get_runtime_service as get_runtime_gateway_service
 from services.orchestrator.domain import OrchestratorService
+from services.orchestrator.template_runtime import (
+    DockerTemplateRuntime,
+    FileTemplateRuntimeRepository,
+    HybridTemplateRuntime,
+    MockTemplateRuntime,
+)
 
 app = FastAPI(title="orchestrator", version="0.1.0")
 
 # Share binding and gateway runtimes so apply-actions update the same state.
-_service = OrchestratorService(get_runtime_service(), get_runtime_gateway_service())
+_config = RuntimeConfig()
+_asset_repository = FileAssetRepository(_config.asset_catalog_path)
+_template_runtime_repository = FileTemplateRuntimeRepository(
+    f"{_config.state_dir}/asset_runtime.json"
+)
+_docker_template_runtime = DockerTemplateRuntime(
+    _template_runtime_repository,
+    _config.generated_template_dir,
+)
+_mock_template_runtime = MockTemplateRuntime(_template_runtime_repository)
+_template_runtime = HybridTemplateRuntime(
+    _docker_template_runtime,
+    _mock_template_runtime,
+)
+_service = OrchestratorService(
+    get_runtime_service(),
+    get_runtime_gateway_service(),
+    _asset_repository,
+    _template_runtime,
+)
 
 
 def get_service() -> OrchestratorService:
