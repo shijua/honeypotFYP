@@ -151,7 +151,7 @@
     },
     "cowrie.command.failed": {
       "priority": "NOTICE",
-      "tags": ["mitre_execution", "T1059"],
+      "tags": ["cowrie_command_failed"],
       "output_template": "cowrie.command.failed from {src_ip}: {input}",
       "output_fields": [
         "source",
@@ -164,7 +164,7 @@
         "message"
       ],
       "command_field": "input",
-      "profile": true
+      "profile": false
     },
     "cowrie.direct-tcpip.request": {
       "priority": "NOTICE",

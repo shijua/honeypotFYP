@@ -102,8 +102,8 @@ def test_command_input_adds_data_driven_discovery_mapping() -> None:
     assert response.profile.recent_techniques == ["T1059", "T1083"]
 
 
-def test_failed_command_intent_can_add_network_discovery_mapping() -> None:
-    service, _ = _service()
+def test_failed_command_is_observation_only_to_avoid_duplicate_profile_evidence() -> None:
+    service, repository = _service()
 
     response = service.ingest(
         CowrieIngestRequest(
@@ -117,8 +117,47 @@ def test_failed_command_intent_can_add_network_discovery_mapping() -> None:
         )
     )
 
-    assert response.profile.recent_tactics == ["Execution", "Discovery"]
-    assert response.profile.recent_techniques == ["T1059", "T1046"]
+    observation = tuple(repository.list_recent())[0]
+    assert observation.command == "nmap 10.0.0.0/24"
+    assert observation.tags == ["cowrie_command_failed"]
+    assert observation.profiler_evidence_ids == []
+    assert response.profile.recent_tactics == []
+    assert response.profile.recent_techniques == []
+
+
+def test_command_input_then_failed_does_not_double_count_same_command() -> None:
+    service, repository = _service()
+
+    first_response = service.ingest(
+        CowrieIngestRequest(
+            event=CowrieLogEvent(
+                eventid="cowrie.command.input",
+                timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                src_ip="198.51.100.217",
+                session="s-8",
+                input="nmap 10.0.0.0/24",
+            )
+        )
+    )
+    second_response = service.ingest(
+        CowrieIngestRequest(
+            event=CowrieLogEvent(
+                eventid="cowrie.command.failed",
+                timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                src_ip="198.51.100.217",
+                session="s-8",
+                input="nmap 10.0.0.0/24",
+            )
+        )
+    )
+
+    observations = tuple(repository.list_recent())
+    assert len(first_response.observation.profiler_evidence_ids) == 2
+    assert observations[0].eventid == "cowrie.command.input"
+    assert observations[1].eventid == "cowrie.command.failed"
+    assert observations[1].profiler_evidence_ids == []
+    assert second_response.profile.recent_tactics == ["Execution", "Discovery"]
+    assert second_response.profile.recent_techniques == ["T1059", "T1046"]
 
 
 def test_command_mapping_can_use_elastic_derived_credential_rule() -> None:

@@ -61,7 +61,8 @@ This repository currently implements an MVP control loop across seven services:
   - persist a sanitized Cowrie observation
   - load Cowrie event mappings from `data/cowrie/event_mappings.json`
   - only emit ATT&CK tags for clear behavior; keep metadata/ambiguous events as `cowrie_*` descriptive tags
-  - forward a normalized `FalcoEvent` into the profiler
+  - forward a normalized `FalcoEvent` into the profiler only when the event mapping has `profile=true`
+  - keep `cowrie.command.failed` as observation-only to avoid double-counting a command already seen as `cowrie.command.input`
 
 ### 6) Controller service
 - Path: `services/controller/*`
@@ -160,6 +161,8 @@ Additional repositories now exist for:
 ## Notes
 - Default local storage is file-backed under `data/runtime/`.
 - Cowrie observations are stored in `data/runtime/cowrie_observations.json`.
+- Cowrie profiler evidence is stored separately in `data/runtime/evidence.json`;
+  observations are intake/audit records, while evidence affects profiles and controller decisions.
 - Entrypoint observations are stored in `data/runtime/entrypoint_observations.json`.
 - Falco should later run outside honeypot containers as node/runtime telemetry,
   while Cowrie logs capture SSH attacker interaction telemetry.
