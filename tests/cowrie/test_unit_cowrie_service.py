@@ -61,7 +61,7 @@ def test_failed_login_maps_to_credential_access_without_storing_password() -> No
     assert response.profile.recent_techniques == ["T1110"]
 
 
-def test_command_input_maps_to_execution() -> None:
+def test_unmapped_command_input_is_observation_only() -> None:
     service, _ = _service()
 
     response = service.ingest(
@@ -71,15 +71,16 @@ def test_command_input_maps_to_execution() -> None:
                 timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
                 src_ip="198.51.100.211",
                 session="s-2",
-                input="uname -a",
+                input="totallycustom",
             )
         )
     )
 
-    assert response.observation.command == "uname -a"
-    assert len(response.observation.profiler_evidence_ids) == 1
-    assert response.profile.recent_tactics == ["Execution"]
-    assert response.profile.recent_techniques == ["T1059"]
+    assert response.observation.command == "totallycustom"
+    assert response.observation.tags == ["cowrie_command_input"]
+    assert response.observation.profiler_evidence_ids == []
+    assert response.profile.recent_tactics == []
+    assert response.profile.recent_techniques == []
 
 
 def test_command_input_adds_data_driven_discovery_mapping() -> None:
@@ -97,9 +98,9 @@ def test_command_input_adds_data_driven_discovery_mapping() -> None:
         )
     )
 
-    assert len(response.observation.profiler_evidence_ids) == 2
-    assert response.profile.recent_tactics == ["Execution", "Discovery"]
-    assert response.profile.recent_techniques == ["T1059", "T1083"]
+    assert len(response.observation.profiler_evidence_ids) == 1
+    assert response.profile.recent_tactics == ["Discovery"]
+    assert response.profile.recent_techniques == ["T1083"]
 
 
 def test_failed_command_is_observation_only_to_avoid_duplicate_profile_evidence() -> None:
@@ -152,12 +153,12 @@ def test_command_input_then_failed_does_not_double_count_same_command() -> None:
     )
 
     observations = tuple(repository.list_recent())
-    assert len(first_response.observation.profiler_evidence_ids) == 2
+    assert len(first_response.observation.profiler_evidence_ids) == 1
     assert observations[0].eventid == "cowrie.command.input"
     assert observations[1].eventid == "cowrie.command.failed"
     assert observations[1].profiler_evidence_ids == []
-    assert second_response.profile.recent_tactics == ["Execution", "Discovery"]
-    assert second_response.profile.recent_techniques == ["T1059", "T1046"]
+    assert second_response.profile.recent_tactics == ["Discovery"]
+    assert second_response.profile.recent_techniques == ["T1046"]
 
 
 def test_command_mapping_can_use_elastic_derived_credential_rule() -> None:
@@ -175,8 +176,8 @@ def test_command_mapping_can_use_elastic_derived_credential_rule() -> None:
         )
     )
 
-    assert response.profile.recent_tactics == ["Execution", "Credential Access"]
-    assert response.profile.recent_techniques == ["T1059", "T1552.001"]
+    assert response.profile.recent_tactics == ["Credential Access"]
+    assert response.profile.recent_techniques == ["T1552.001"]
 
 
 def test_successful_login_stays_descriptive_without_attack_mapping() -> None:

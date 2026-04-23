@@ -398,6 +398,7 @@ class GatewayBindingState(VersionedModel):
     backend_instance_id: str
     status: BindingStatus
     exposed_assets: List[str] = Field(default_factory=list)
+    failed_assets: List[str] = Field(default_factory=list)
     route_updates: List[str] = Field(default_factory=list)
     updated_at: datetime = Field(default_factory=utcnow)
 
@@ -411,6 +412,9 @@ class GatewaySyncRequest(VersionedModel):
 
     binding: BindingRecord
     route_updates: List[str] = Field(default_factory=list)
+    # Optional override used when "unlocked" and "currently reachable" differ.
+    exposed_assets_override: Optional[List[str]] = None
+    failed_assets_override: Optional[List[str]] = None
 
 
 class GatewaySyncResponse(VersionedModel):

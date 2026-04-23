@@ -31,7 +31,8 @@ class CowrieService:
     """Ingest Cowrie JSON events into the binding/profile pipeline.
 
     Example:
-        ingest(cowrie.command.input with input="uname -a") -> Execution evidence
+        ingest(cowrie.command.input with input="ls -la") -> Discovery evidence
+        when a reviewed command mapping rule matches.
     """
 
     def __init__(
@@ -170,7 +171,7 @@ def _profile_inputs(
     command_rule_catalog: CowrieCommandRuleCatalog,
 ) -> list[tuple[list[str], str]]:
     base_output = _format_output(event, mapping)
-    profile_inputs = [(base_tags, base_output)]
+    profile_inputs = _attack_profile_inputs(base_tags, base_output)
 
     command = _event_value(event, mapping.command_field)
     if not isinstance(command, str):
@@ -184,6 +185,22 @@ def _profile_inputs(
             )
         )
     return profile_inputs
+
+
+def _attack_profile_inputs(
+    tags: list[str],
+    output: str,
+) -> list[tuple[list[str], str]]:
+    """Return profiler inputs only when tags contain explicit ATT&CK signal.
+
+    Descriptive Cowrie tags such as `cowrie_command_input` are useful on stored
+    observations, but they should not by themselves update the attacker profile.
+    Command-level ATT&CK evidence is added below only when reviewed command
+    mapping rules match the exact input.
+    """
+    if any(tag.startswith("mitre_") or tag.startswith("T") for tag in tags):
+        return [(tags, output)]
+    return []
 
 
 def _event_context(event: CowrieLogEvent) -> dict[str, object]:

@@ -44,6 +44,22 @@ Watch the adaptive controller output with:
 tail -f deploy/cowrie/var/adaptive-controller-loop.log
 ```
 
+The adaptive loop is deliberately rate-limited for explainability: one new
+profile evidence batch can trigger at most one asset unlock. The progress file
+`data/runtime/adaptive_loop_state.json` prevents the same evidence from opening
+more ports on later ticks.
+
+Generate a compact report for the run with:
+
+```bash
+.venv/bin/python scripts/summarize_adaptive_demo.py \
+  --write-report data/runtime/adaptive_demo_report.json
+```
+
+The report explains observed Cowrie events, recent profile tactics, controller
+decisions, unlocked assets, ATT&CK techniques such as `T1110`, any real Docker
+port mappings, and whether Docker still reports the container as present.
+
 If a run is interrupted, clean up containers, service processes, and runtime
 JSON state with:
 

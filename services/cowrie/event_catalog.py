@@ -39,7 +39,7 @@ class CowrieEventCatalog(Protocol):
     """Lookup contract for Cowrie event mapping rules.
 
     Example:
-        mapping_for("cowrie.command.input").tags -> ("mitre_execution", "T1059")
+        mapping_for("cowrie.command.input").tags -> ("cowrie_command_input",)
     """
 
     def mapping_for(self, eventid: str) -> CowrieEventMapping:

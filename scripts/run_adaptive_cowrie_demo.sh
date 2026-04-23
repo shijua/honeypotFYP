@@ -108,7 +108,10 @@ reset_runtime_state() {
     "$RUNTIME_DIR/evidence.json" \
     "$RUNTIME_DIR/profiles.json" \
     "$RUNTIME_DIR/gateway_routes.json" \
-    "$RUNTIME_DIR/asset_runtime.json"
+    "$RUNTIME_DIR/asset_runtime.json" \
+    "$RUNTIME_DIR/decision_trace.json" \
+    "$RUNTIME_DIR/adaptive_loop_state.json" \
+    "$RUNTIME_DIR/adaptive_demo_report.json"
 }
 
 cleanup() {
@@ -211,6 +214,9 @@ start_adaptive_loop() {
     --state-dir "$RUNTIME_DIR" \
     --controller-url "$CONTROLLER_URL" \
     --orchestrator-url "$ORCHESTRATOR_URL" \
+    --trace-file "$RUNTIME_DIR/decision_trace.json" \
+    --loop-state-file "$RUNTIME_DIR/adaptive_loop_state.json" \
+    --max-actions-per-trigger 1 \
     --poll-seconds 2 \
     >"$VAR_DIR/adaptive-controller-loop.log" 2>&1 &
   record_pid "$!"
@@ -278,6 +284,11 @@ main() {
   echo "Runtime files:"
   echo "  data/runtime/profiles.json"
   echo "  data/runtime/asset_runtime.json"
+  echo "  data/runtime/decision_trace.json"
+  echo "  data/runtime/adaptive_loop_state.json"
+  echo
+  echo "After the run, generate a report with:"
+  echo "  .venv/bin/python scripts/summarize_adaptive_demo.py --write-report data/runtime/adaptive_demo_report.json"
   echo
   echo "Type 'exit' inside Cowrie to stop and clean up this demo."
   echo

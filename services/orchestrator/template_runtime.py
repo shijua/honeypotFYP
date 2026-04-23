@@ -18,6 +18,7 @@ from pathlib import Path
 import shutil
 import socket
 import subprocess
+import time
 from typing import Protocol
 from uuid import uuid4
 
@@ -128,6 +129,25 @@ class MockTemplateRuntime:
         """Persist an updated runtime record back into the mock repository."""
         return self._repository.upsert(record)
 
+    def list_accessible_asset_ids(self, binding_id: str) -> list[str]:
+        """Return currently reachable mock assets for one binding."""
+        asset_ids: list[str] = []
+        for record in self._repository.list_by_binding(binding_id):
+            if (
+                record.status == "running"
+                and str(record.settings.get("runtime_backend", "mock")) != "docker"
+            ):
+                asset_ids.append(record.asset_id)
+        return asset_ids
+
+    def list_failed_asset_ids(self, binding_id: str) -> list[str]:
+        """Return failed mock/runtime placeholder assets for one binding."""
+        asset_ids: list[str] = []
+        for record in self._repository.list_by_binding(binding_id):
+            if _runtime_record_is_failed(record):
+                asset_ids.append(record.asset_id)
+        return asset_ids
+
     def _existing_record(
         self,
         binding_id: str,
@@ -194,6 +214,11 @@ class DockerTemplateRuntime:
             capture_output=True,
             text=True,
         )
+        self._verify_started_container(
+            container_name=container_name,
+            runtime=runtime,
+            runtime_settings=runtime_settings,
+        )
 
         settings = dict(asset.default_settings)
         settings.update(runtime_settings)
@@ -223,6 +248,22 @@ class DockerTemplateRuntime:
             stopped.append(updated)
         return stopped
 
+    def list_accessible_asset_ids(self, binding_id: str) -> list[str]:
+        """Return Docker assets whose containers are still Up right now."""
+        asset_ids: list[str] = []
+        for record in self._repository.list_by_binding(binding_id):
+            if _runtime_record_is_accessible(record):
+                asset_ids.append(record.asset_id)
+        return asset_ids
+
+    def list_failed_asset_ids(self, binding_id: str) -> list[str]:
+        """Return Docker assets whose runtime has failed or exited."""
+        asset_ids: list[str] = []
+        for record in self._repository.list_by_binding(binding_id):
+            if _runtime_record_is_failed(record):
+                asset_ids.append(record.asset_id)
+        return asset_ids
+
     def _docker_args_for_runtime(
         self,
         binding_id: str,
@@ -240,7 +281,6 @@ class DockerTemplateRuntime:
         docker_args = [
             "docker",
             "run",
-            "--rm",
             "-d",
             "--name",
             container_name,
@@ -308,6 +348,46 @@ class DockerTemplateRuntime:
                 return record
         return None
 
+    def _verify_started_container(
+        self,
+        container_name: str,
+        runtime: dict[str, object],
+        runtime_settings: dict[str, object],
+    ) -> None:
+        """Verify a container is still alive before recording it as running.
+
+        This closes the gap between "docker run returned 0" and "the honeypot
+        is actually alive". Some third-party images exit immediately after the
+        shell command starts. Without this check, the orchestrator would record
+        a dead asset as `running`, which is exactly the confusing Redis case.
+        """
+        attempts = 6
+        delay_seconds = 0.5
+        last_status = "missing"
+
+        for _ in range(attempts):
+            last_status = _container_status(container_name)
+            if last_status.startswith("Up"):
+                if _healthcheck_ready(runtime, runtime_settings):
+                    return
+            elif last_status.startswith(("Exited", "Dead")):
+                break
+            time.sleep(delay_seconds)
+
+        self._cleanup_failed_container(container_name)
+        raise RuntimeError(
+            f"container {container_name} failed startup verification (status={last_status})"
+        )
+
+    def _cleanup_failed_container(self, container_name: str) -> None:
+        """Best-effort cleanup after a failed startup verification."""
+        subprocess.run(
+            ["docker", "rm", "-f", container_name],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
 
 class HybridTemplateRuntime:
     """Prefer Docker when possible, otherwise fall back to the mock runtime."""
@@ -330,20 +410,16 @@ class HybridTemplateRuntime:
             try:
                 return self._docker_runtime.start_asset(binding_id, asset)
             except Exception as exc:
-                # Keep the controller->orchestrator loop resilient even when a
-                # local Docker pull/start fails on a developer machine.
-                record = self._mock_runtime.start_asset(binding_id, asset)
-                updated = record.model_copy(
-                    update={
-                        "settings": {
-                            **record.settings,
-                            "runtime_backend": "mock",
-                            "runtime_fallback_error": str(exc),
-                        }
-                    }
-                )
-                self._mock_runtime.upsert_record(updated)
-                return updated
+                failed = _runtime_record_from_asset(
+                    binding_id,
+                    asset,
+                    settings={
+                        **dict(asset.default_settings),
+                        "runtime_backend": "docker",
+                        "runtime_failure": str(exc),
+                    },
+                ).model_copy(update={"status": "failed"})
+                return self._mock_runtime.upsert_record(failed)
         return self._mock_runtime.start_asset(binding_id, asset)
 
     def monitoring_event_for(self, record: AssetRuntimeRecord) -> FalcoEvent:
@@ -356,6 +432,18 @@ class HybridTemplateRuntime:
         stopped.extend(self._mock_runtime.stop_binding_assets(binding_id))
         deduped: dict[str, AssetRuntimeRecord] = {record.runtime_id: record for record in stopped}
         return list(deduped.values())
+
+    def list_accessible_asset_ids(self, binding_id: str) -> list[str]:
+        """Return the union of currently reachable Docker and mock assets."""
+        asset_ids = self._docker_runtime.list_accessible_asset_ids(binding_id)
+        asset_ids.extend(self._mock_runtime.list_accessible_asset_ids(binding_id))
+        return list(dict.fromkeys(asset_ids))
+
+    def list_failed_asset_ids(self, binding_id: str) -> list[str]:
+        """Return the union of failed Docker and mock assets."""
+        asset_ids = self._docker_runtime.list_failed_asset_ids(binding_id)
+        asset_ids.extend(self._mock_runtime.list_failed_asset_ids(binding_id))
+        return list(dict.fromkeys(asset_ids))
 
 
 def _runtime_record_from_asset(
@@ -462,6 +550,95 @@ def _port_is_free(port: int) -> bool:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             sock.bind(("127.0.0.1", port))
+        except OSError:
+            return False
+    return True
+
+
+def _container_status(container_name: str) -> str:
+    """Return the current Docker status string for one container name."""
+    result = subprocess.run(
+        [
+            "docker",
+            "ps",
+            "-a",
+            "--filter",
+            f"name={container_name}",
+            "--format",
+            "{{.Status}}",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return "missing"
+    statuses = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    return statuses[0] if statuses else "missing"
+
+
+def _healthcheck_ready(
+    runtime: dict[str, object],
+    runtime_settings: dict[str, object],
+) -> bool:
+    """Return True when the configured runtime health check passes.
+
+    If a template does not declare a health check, container liveness alone is
+    enough for the MVP. For TCP-backed honeypots we can cheaply verify that the
+    mapped localhost port is actually listening before we claim success.
+    """
+    healthcheck = runtime.get("healthcheck")
+    if not isinstance(healthcheck, dict):
+        return True
+
+    if healthcheck.get("type") != "tcp":
+        return True
+
+    host = str(healthcheck.get("host", runtime_settings.get("host", "127.0.0.1")))
+    if healthcheck.get("port_setting") == "host_port":
+        port = runtime_settings.get("host_port")
+    else:
+        port = healthcheck.get("port")
+    if not isinstance(port, int):
+        return False
+    return _tcp_port_accepts_connections(host, port)
+
+
+def _runtime_record_is_accessible(record: AssetRuntimeRecord) -> bool:
+    """Return True when a runtime record should count as reachable now."""
+    if record.status != "running":
+        return False
+    backend = str(record.settings.get("runtime_backend", "mock"))
+    if backend != "docker":
+        return True
+    container_name = record.settings.get("container_name")
+    if not isinstance(container_name, str) or not container_name:
+        return False
+    return _container_status(container_name).startswith("Up")
+
+
+def _runtime_record_is_failed(record: AssetRuntimeRecord) -> bool:
+    """Return True when a runtime record should count as failed now."""
+    if record.status == "failed":
+        return True
+    if record.status != "running":
+        return False
+    backend = str(record.settings.get("runtime_backend", "mock"))
+    if backend != "docker":
+        return False
+    container_name = record.settings.get("container_name")
+    if not isinstance(container_name, str) or not container_name:
+        return True
+    status = _container_status(container_name)
+    return bool(status) and not status.startswith("Up")
+
+
+def _tcp_port_accepts_connections(host: str, port: int) -> bool:
+    """Return True when a TCP connect to host:port succeeds right now."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(0.5)
+        try:
+            sock.connect((host, port))
         except OSError:
             return False
     return True

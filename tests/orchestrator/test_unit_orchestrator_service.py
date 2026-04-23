@@ -21,6 +21,7 @@ from services.orchestrator.template_runtime import (
     _resolve_host_port,
     InMemoryTemplateRuntimeRepository,
     MockTemplateRuntime,
+    HybridTemplateRuntime,
 )
 
 
@@ -255,6 +256,8 @@ def test_docker_template_runtime_starts_catalog_driven_cowrie_asset(
     monkeypatch.setattr(template_runtime_module.shutil, "which", lambda name: "/usr/bin/docker")
     monkeypatch.setattr(template_runtime_module, "_port_is_free", lambda port: True)
     monkeypatch.setattr(template_runtime_module.subprocess, "run", fake_run)
+    monkeypatch.setattr(template_runtime_module, "_container_status", lambda name: "Up 3 seconds")
+    monkeypatch.setattr(template_runtime_module, "_healthcheck_ready", lambda runtime, settings: True)
 
     repository = InMemoryTemplateRuntimeRepository()
     runtime = DockerTemplateRuntime(repository)
@@ -289,7 +292,7 @@ def test_docker_template_runtime_starts_catalog_driven_cowrie_asset(
 
     record = runtime.start_asset("binding-cowrie", asset)
 
-    assert captured_args[:5] == ["docker", "run", "--rm", "-d", "--name"]
+    assert captured_args[:4] == ["docker", "run", "-d", "--name"]
     assert "honeynet.mvp=true" in captured_args
     assert "honeynet.asset_id=admin-jumpbox" in captured_args
     assert "-p" in captured_args
@@ -321,6 +324,8 @@ def test_docker_template_runtime_uses_tpot_wordpot_without_generated_web_root(
     monkeypatch.setattr(template_runtime_module.shutil, "which", lambda name: "/usr/bin/docker")
     monkeypatch.setattr(template_runtime_module, "_port_is_free", lambda port: True)
     monkeypatch.setattr(template_runtime_module.subprocess, "run", fake_run)
+    monkeypatch.setattr(template_runtime_module, "_container_status", lambda name: "Up 3 seconds")
+    monkeypatch.setattr(template_runtime_module, "_healthcheck_ready", lambda runtime, settings: True)
 
     runtime = DockerTemplateRuntime(InMemoryTemplateRuntimeRepository())
     asset = AssetDefinition(
@@ -354,3 +359,192 @@ def test_docker_template_runtime_uses_tpot_wordpot_without_generated_web_root(
     assert "-v" not in captured_args
     assert record.settings["runtime_backend"] == "docker"
     assert record.settings["image"] == "dtagdevsec/wordpot:24.04.1"
+
+
+def test_docker_template_runtime_raises_when_container_exits_immediately(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    commands: list[list[str]] = []
+
+    def fake_run(args, **kwargs):
+        commands.append(list(args))
+
+        class Result:
+            def __init__(self, stdout: str = "", returncode: int = 0) -> None:
+                self.returncode = returncode
+                self.stdout = stdout
+                self.stderr = ""
+
+        if args[:2] == ["docker", "run"]:
+            return Result(stdout="container-id")
+        if args[:3] == ["docker", "ps", "-a"]:
+            return Result(stdout="")
+        if args[:3] == ["docker", "rm", "-f"]:
+            return Result(stdout="")
+        raise AssertionError(f"unexpected subprocess call: {args}")
+
+    monkeypatch.setattr(template_runtime_module.shutil, "which", lambda name: "/usr/bin/docker")
+    monkeypatch.setattr(template_runtime_module, "_port_is_free", lambda port: True)
+    monkeypatch.setattr(template_runtime_module.time, "sleep", lambda _: None)
+    monkeypatch.setattr(template_runtime_module.subprocess, "run", fake_run)
+
+    runtime = DockerTemplateRuntime(InMemoryTemplateRuntimeRepository())
+    asset = AssetDefinition(
+        asset_id="redis-cache",
+        asset_name="Redis Cache",
+        exposure_type="internal",
+        interaction_level="medium",
+        template_family="redis-honeypot",
+        protocols=["redis"],
+        ports=[6379],
+        default_settings={
+            "runtime": {
+                "backend": "docker",
+                "image": "dtagdevsec/redishoneypot:24.04",
+                "port_mappings": [
+                    {
+                        "host": "127.0.0.1",
+                        "requested_host_port": 6379,
+                        "container_port": 6379,
+                    }
+                ],
+                "healthcheck": {
+                    "type": "tcp",
+                    "host": "127.0.0.1",
+                    "port_setting": "host_port",
+                },
+            }
+        },
+        covers_tactics=["Discovery"],
+    )
+
+    with pytest.raises(RuntimeError, match="failed startup verification"):
+        runtime.start_asset("binding-redis", asset)
+
+    assert any(command[:3] == ["docker", "rm", "-f"] for command in commands)
+
+
+def test_orchestrator_gateway_excludes_exited_docker_assets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    binding_service = BindingService(InMemoryBindingRepository())
+    gateway_service = GatewayService(InMemoryGatewayRouteRepository())
+    runtime_repository = InMemoryTemplateRuntimeRepository()
+    docker_runtime = DockerTemplateRuntime(runtime_repository)
+    mock_runtime = MockTemplateRuntime(runtime_repository)
+    orchestrator = OrchestratorService(
+        binding_service,
+        gateway_service,
+        InMemoryAssetRepository(
+            [
+                AssetDefinition(
+                    asset_id="internal-portal",
+                    asset_name="Internal Portal",
+                    exposure_type="internal",
+                    interaction_level="medium",
+                    template_family="web-honeypot",
+                    protocols=["http"],
+                    ports=[80],
+                    default_settings={
+                        "runtime": {
+                            "backend": "docker",
+                            "image": "dtagdevsec/wordpot:24.04.1",
+                            "port_mappings": [
+                                {
+                                    "host": "127.0.0.1",
+                                    "requested_host_port": 18080,
+                                    "container_port": 80,
+                                }
+                            ],
+                        }
+                    },
+                    covers_tactics=["Discovery"],
+                )
+            ]
+        ),
+        HybridTemplateRuntime(docker_runtime, mock_runtime),
+    )
+    binding = binding_service.resolve(ResolveBindingRequest(attacker_key="198.51.100.88"))
+
+    monkeypatch.setattr(template_runtime_module.shutil, "which", lambda name: "/usr/bin/docker")
+    monkeypatch.setattr(template_runtime_module, "_port_is_free", lambda port: True)
+    monkeypatch.setattr(
+        template_runtime_module.subprocess,
+        "run",
+        lambda args, **kwargs: type(
+            "Result",
+            (),
+            {"returncode": 0, "stdout": "container-id", "stderr": ""},
+        )(),
+    )
+    monkeypatch.setattr(template_runtime_module, "_healthcheck_ready", lambda runtime, settings: True)
+    status_calls = {"count": 0}
+
+    def fake_container_status(name: str) -> str:
+        status_calls["count"] += 1
+        if status_calls["count"] == 1:
+            return "Up 2 seconds"
+        return "Exited (1) 1 second ago"
+
+    monkeypatch.setattr(template_runtime_module, "_container_status", fake_container_status)
+
+    response = orchestrator.apply(
+        OrchestratorApplyRequest(
+            binding_id=binding.binding_id,
+            actions=[
+                ControllerAction(
+                    action_type=ActionType.unlock,
+                    binding_id=binding.binding_id,
+                    asset_id="internal-portal",
+                    reason="unlock portal",
+                )
+            ],
+        )
+    )
+
+    assert response.binding.unlocked_assets == ["internal-portal"]
+    gateway_state = gateway_service.get_state(binding.binding_id)
+    assert gateway_state.exposed_assets == []
+    assert gateway_state.failed_assets == ["internal-portal"]
+
+
+def test_hybrid_runtime_records_failed_asset_when_docker_start_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_repository = InMemoryTemplateRuntimeRepository()
+    runtime = HybridTemplateRuntime(
+        DockerTemplateRuntime(runtime_repository),
+        MockTemplateRuntime(runtime_repository),
+    )
+    asset = AssetDefinition(
+        asset_id="redis-cache",
+        asset_name="Redis Cache",
+        exposure_type="internal",
+        interaction_level="medium",
+        template_family="redis-honeypot",
+        protocols=["redis"],
+        ports=[6379],
+        default_settings={
+            "runtime": {
+                "backend": "docker",
+                "image": "dtagdevsec/redishoneypot:24.04",
+            }
+        },
+        covers_tactics=["Discovery"],
+    )
+
+    monkeypatch.setattr(template_runtime_module.shutil, "which", lambda name: "/usr/bin/docker")
+    monkeypatch.setattr(
+        template_runtime_module.subprocess,
+        "run",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("docker start failed")),
+    )
+
+    record = runtime.start_asset("binding-failed", asset)
+
+    assert record.status == "failed"
+    assert record.settings["runtime_backend"] == "docker"
+    assert isinstance(record.settings["runtime_failure"], str)
+    assert record.settings["runtime_failure"]
+    assert runtime.list_accessible_asset_ids("binding-failed") == []
+    assert runtime.list_failed_asset_ids("binding-failed") == ["redis-cache"]

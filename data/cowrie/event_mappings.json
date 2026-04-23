@@ -134,7 +134,7 @@
     },
     "cowrie.command.input": {
       "priority": "NOTICE",
-      "tags": ["mitre_execution", "T1059"],
+      "tags": ["cowrie_command_input"],
       "output_template": "cowrie.command.input from {src_ip}: {input}",
       "output_fields": [
         "source",

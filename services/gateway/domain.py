@@ -35,12 +35,19 @@ class GatewayService:
         existing = self._repository.get(request.binding.binding_id)
         route_updates = list(existing.route_updates) if existing else []
         route_updates.extend(request.route_updates)
+        exposed_assets = request.exposed_assets_override
+        if exposed_assets is None:
+            exposed_assets = list(request.binding.unlocked_assets)
+        failed_assets = request.failed_assets_override
+        if failed_assets is None:
+            failed_assets = []
         state = GatewayBindingState(
             binding_id=request.binding.binding_id,
             attacker_key=request.binding.attacker_key,
             backend_instance_id=request.binding.backend_instance_id,
             status=request.binding.status,
-            exposed_assets=list(request.binding.unlocked_assets),
+            exposed_assets=list(exposed_assets),
+            failed_assets=list(failed_assets),
             route_updates=route_updates,
             updated_at=utcnow(),
         )

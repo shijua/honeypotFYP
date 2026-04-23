@@ -16,7 +16,7 @@ def test_cowrie_api_ingests_command_event(cowrie_client: TestClient) -> None:
                 "timestamp": "2026-01-01T00:00:00Z",
                 "src_ip": "198.51.100.213",
                 "session": "s-4",
-                "input": "id",
+                "input": "totallycustom",
             }
         },
     )
@@ -24,4 +24,4 @@ def test_cowrie_api_ingests_command_event(cowrie_client: TestClient) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["observation"]["eventid"] == "cowrie.command.input"
-    assert body["profile"]["recent_tactics"] == ["Execution", "Discovery"]
+    assert body["profile"]["recent_tactics"] == []

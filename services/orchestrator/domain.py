@@ -82,7 +82,12 @@ class OrchestratorService:
                 route_updates.append(f"binding {request.binding_id} recycled")
 
         self._gateway_service.sync(
-            GatewaySyncRequest(binding=binding, route_updates=route_updates)
+            GatewaySyncRequest(
+                binding=binding,
+                route_updates=route_updates,
+                exposed_assets_override=self._accessible_asset_ids(binding.binding_id, binding),
+                failed_assets_override=self._failed_asset_ids(binding.binding_id),
+            )
         )
 
         return OrchestratorApplyResponse(
@@ -144,6 +149,28 @@ class OrchestratorService:
         if self._template_runtime is None:
             return []
         return self._template_runtime.stop_binding_assets(binding_id)
+
+    def _accessible_asset_ids(
+        self,
+        binding_id: str,
+        binding: BindingRecord,
+    ) -> list[str]:
+        """Return assets that should be treated as reachable by the gateway.
+
+        Default MVP rule:
+        - without runtime support, exposed == unlocked
+        - mock runtimes are reachable while marked running
+        - Docker runtimes are reachable only while the container is currently Up
+        """
+        if self._template_runtime is None:
+            return list(binding.unlocked_assets)
+        return self._template_runtime.list_accessible_asset_ids(binding_id)
+
+    def _failed_asset_ids(self, binding_id: str) -> list[str]:
+        """Return assets that were unlocked but whose runtime is currently failed."""
+        if self._template_runtime is None:
+            return []
+        return self._template_runtime.list_failed_asset_ids(binding_id)
 
 
 def _new_asset_ids_from_route_updates(route_updates: list[str]) -> list[str]:
