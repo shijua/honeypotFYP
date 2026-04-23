@@ -69,6 +69,36 @@ Current MVP flow:
 HTTP/Cowrie event -> resolve binding -> ingest evidence -> read profile -> controller tick -> orchestrator apply -> gateway sync
 ```
 
+## Current demo status
+
+The current adaptive demo has one verified real internal asset path:
+
+- `internal-portal` now uses a stable web runtime based on `nginx:alpine`
+- this asset is the first internal web foothold after Cowrie activity
+- `git-internal` and several later assets still remain mock-only unless explicitly backed by a real runtime
+- `redis-cache` is still known to fail in the current Docker-backed demo path and should be treated as an unresolved runtime issue rather than a controller decision issue
+
+The most useful short demo today is:
+
+```bash
+Cowrie interaction -> profile update -> controller unlocks internal-portal -> orchestrator opens 127.0.0.1:18080
+```
+
+Minimal validation commands:
+
+```bash
+./scripts/run_adaptive_cowrie_demo.sh cleanup
+./scripts/run_adaptive_cowrie_demo.sh
+docker ps -a --filter label=honeynet.mvp=true --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'
+.venv/bin/python scripts/summarize_adaptive_demo.py --write-report data/runtime/adaptive_demo_report.json
+```
+
+If the demo is healthy, `internal-portal` should appear as:
+
+```bash
+nginx:alpine   Up ...
+```
+
 ## Local Cowrie honeypot
 
 The repo includes a local Cowrie Docker setup in `deploy/cowrie/`.

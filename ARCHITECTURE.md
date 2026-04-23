@@ -78,6 +78,7 @@ This repository currently implements an MVP control loop across seven services:
 - Purpose: keep the live route/exposure view for each binding.
 - Core behavior:
   - sync the latest binding status and exposed assets
+  - track failed assets separately from currently reachable assets
   - retain route updates for each binding
   - expose a read API for the current gateway view
 
@@ -87,7 +88,7 @@ This repository currently implements an MVP control loop across seven services:
 - Core behavior:
   - update unlocked assets on the binding
   - start template runtime records from `data/assets/catalog.json`
-  - start real Docker containers for supported catalog runtimes, including T-Pot Wordpot and Cowrie images
+  - start real Docker containers for supported catalog runtimes
   - fall back to mock runtime records for unsupported templates
   - emit Falco-style monitoring events for asset lifecycle changes
   - sync route changes into the gateway state
@@ -173,9 +174,13 @@ Additional repositories now exist for:
   while Cowrie logs capture SSH attacker interaction telemetry.
 - Local Cowrie lab configuration lives in `deploy/cowrie/`; the log forwarder
   `scripts/forward_cowrie_json.py` bridges `cowrie.json` into the Cowrie API.
-- Orchestration records `AssetRuntimeRecord` entries and can start selected T-Pot image-backed Docker runtimes, including Wordpot for `internal-portal` and Cowrie for `admin-jumpbox`, but it does not manage Kubernetes pods/namespaces yet.
+- Orchestration records `AssetRuntimeRecord` entries and can start selected Docker-backed runtimes, but it does not manage Kubernetes pods/namespaces yet.
 - The controller now loads its asset catalog from `data/assets/catalog.json`.
   The catalog contains MVP template metadata such as protocol, port, family, default settings, source references, and selected Docker runtime specs. These are still MVP runtime specs, not full Docker Compose/Kubernetes manifests.
+- Current real-demo status:
+  - `internal-portal` is the first verified real internal asset and currently uses a stable `nginx:alpine` runtime.
+  - `gateway.exposed_assets` means currently reachable assets, while failed Docker starts/exited containers are tracked separately as failed assets.
+  - `redis-cache` is still a known failed Docker-backed asset in the local demo and should be treated as an unresolved runtime/integration issue.
 - Mock asset starts are converted into Falco-style `FalcoEvent` objects with
   `falco_rule="Honeynet asset template started"`. Real Falco will only observe
   these lifecycle events after a future Docker/Kubernetes adapter creates real

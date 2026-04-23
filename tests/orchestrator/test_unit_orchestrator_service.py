@@ -347,7 +347,6 @@ def test_docker_template_runtime_uses_stable_internal_portal_runtime(
                         "container_port": 80,
                     }
                 ],
-                "volumes": ["./deploy/internal-portal:/usr/share/nginx/html:ro"],
             }
         },
         covers_tactics=["Discovery"],
@@ -357,12 +356,10 @@ def test_docker_template_runtime_uses_stable_internal_portal_runtime(
 
     assert "nginx:alpine" in captured_args
     assert "--read-only" not in captured_args
-    assert "-v" in captured_args
-    assert "./deploy/internal-portal:/usr/share/nginx/html:ro" in captured_args
+    assert "-v" not in captured_args
     assert "127.0.0.1:18080:80" in captured_args
     assert record.settings["runtime_backend"] == "docker"
     assert record.settings["image"] == "nginx:alpine"
-    assert record.settings["volumes"] == ["./deploy/internal-portal:/usr/share/nginx/html:ro"]
 
 
 def test_docker_template_runtime_raises_when_container_exits_immediately(
@@ -460,7 +457,6 @@ def test_orchestrator_gateway_excludes_exited_docker_assets(
                                     "container_port": 80,
                                 }
                             ],
-                            "volumes": ["./deploy/internal-portal:/usr/share/nginx/html:ro"],
                         }
                     },
                     covers_tactics=["Discovery"],

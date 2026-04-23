@@ -4,15 +4,15 @@
     "asset_name": "Internal Portal",
     "exposure_type": "internal",
     "interaction_level": "medium",
-    "description": "A Wordpot-backed web lure used as the first internal foothold after public entrypoint interaction.",
+    "description": "A stable static web lure used as the first internal foothold after public entrypoint interaction.",
     "template_family": "web-honeypot",
     "protocols": ["http"],
     "ports": [80],
-    "source_refs": ["tpotce:wordpot"],
+    "source_refs": ["mvp:internal-portal-nginx"],
     "default_settings": {
       "runtime": {
         "backend": "docker",
-        "image": "dtagdevsec/wordpot:24.04.1",
+        "image": "nginx:alpine",
         "port_mappings": [
           {
             "host": "127.0.0.1",
@@ -25,9 +25,9 @@
           "host": "127.0.0.1",
           "port_setting": "host_port"
         },
-        "source": "tpotce/docker/wordpot"
+        "source": "mvp/internal-portal-nginx"
       },
-      "image_references": ["dtagdevsec/wordpot:24.04.1"],
+      "image_references": ["nginx:alpine"],
       "credential_hints": false,
       "log_profile_events": true
     },
