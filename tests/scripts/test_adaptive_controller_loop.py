@@ -78,7 +78,7 @@ def test_tick_once_applies_unlock_and_writes_decision_trace(
                     "template_family": "web-honeypot",
                     "settings": {
                         "runtime_backend": "docker",
-                        "image": "dtagdevsec/wordpot:24.04.1",
+                        "image": "nginx:alpine",
                         "port_mappings": [
                             {
                                 "host": "127.0.0.1",

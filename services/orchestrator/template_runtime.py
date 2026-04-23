@@ -297,6 +297,65 @@ class DockerTemplateRuntime:
             "image": image,
         }
 
+        restart_policy = runtime.get("restart_policy")
+        if isinstance(restart_policy, str) and restart_policy:
+            docker_args.extend(["--restart", restart_policy])
+            runtime_settings["restart_policy"] = restart_policy
+
+        sysctls = runtime.get("sysctls", {})
+        if isinstance(sysctls, dict):
+            normalized_sysctls: dict[str, str] = {}
+            for key, value in sysctls.items():
+                sysctl_key = str(key).strip()
+                if not sysctl_key:
+                    continue
+                sysctl_value = str(value)
+                docker_args.extend(["--sysctl", f"{sysctl_key}={sysctl_value}"])
+                normalized_sysctls[sysctl_key] = sysctl_value
+            if normalized_sysctls:
+                runtime_settings["sysctls"] = normalized_sysctls
+
+        cap_add = runtime.get("cap_add", [])
+        if isinstance(cap_add, list):
+            normalized_caps: list[str] = []
+            for cap in cap_add:
+                cap_name = str(cap).strip()
+                if not cap_name:
+                    continue
+                docker_args.extend(["--cap-add", cap_name])
+                normalized_caps.append(cap_name)
+            if normalized_caps:
+                runtime_settings["cap_add"] = normalized_caps
+
+        read_only = runtime.get("read_only")
+        if isinstance(read_only, bool) and read_only:
+            docker_args.append("--read-only")
+            runtime_settings["read_only"] = True
+
+        tmpfs_mounts = runtime.get("tmpfs", [])
+        if isinstance(tmpfs_mounts, list):
+            normalized_tmpfs: list[str] = []
+            for mount in tmpfs_mounts:
+                mount_path = str(mount).strip()
+                if not mount_path:
+                    continue
+                docker_args.extend(["--tmpfs", mount_path])
+                normalized_tmpfs.append(mount_path)
+            if normalized_tmpfs:
+                runtime_settings["tmpfs"] = normalized_tmpfs
+
+        volumes = runtime.get("volumes", [])
+        if isinstance(volumes, list):
+            normalized_volumes: list[str] = []
+            for volume in volumes:
+                mount = str(volume).strip()
+                if not mount:
+                    continue
+                docker_args.extend(["-v", mount])
+                normalized_volumes.append(mount)
+            if normalized_volumes:
+                runtime_settings["volumes"] = normalized_volumes
+
         port_records = _resolve_port_mappings(runtime)
         for port_record in port_records:
             docker_args.extend(

@@ -85,7 +85,7 @@ def test_summarize_demo_groups_behavior_profile_and_opened_ports(
                         "settings": {
                             "container_name": "honeynet-bind-internal-portal",
                             "runtime_backend": "docker",
-                            "image": "dtagdevsec/wordpot:24.04.1",
+                            "image": "nginx:alpine",
                             "port_mappings": [
                                 {
                                     "host": "127.0.0.1",
@@ -194,7 +194,7 @@ def test_summarize_demo_reports_docker_probe_unavailable(
                         "settings": {
                             "container_name": "honeynet-bind-internal-portal",
                             "runtime_backend": "docker",
-                            "image": "dtagdevsec/wordpot:24.04.1",
+                            "image": "nginx:alpine",
                             "port_mappings": [
                                 {
                                     "host": "127.0.0.1",

@@ -306,7 +306,7 @@ def test_docker_template_runtime_starts_catalog_driven_cowrie_asset(
     assert record.settings["container_port"] == 22
 
 
-def test_docker_template_runtime_uses_tpot_wordpot_without_generated_web_root(
+def test_docker_template_runtime_uses_stable_internal_portal_runtime(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured_args: list[str] = []
@@ -339,7 +339,7 @@ def test_docker_template_runtime_uses_tpot_wordpot_without_generated_web_root(
         default_settings={
             "runtime": {
                 "backend": "docker",
-                "image": "dtagdevsec/wordpot:24.04.1",
+                "image": "nginx:alpine",
                 "port_mappings": [
                     {
                         "host": "127.0.0.1",
@@ -347,6 +347,7 @@ def test_docker_template_runtime_uses_tpot_wordpot_without_generated_web_root(
                         "container_port": 80,
                     }
                 ],
+                "volumes": ["./deploy/internal-portal:/usr/share/nginx/html:ro"],
             }
         },
         covers_tactics=["Discovery"],
@@ -354,11 +355,14 @@ def test_docker_template_runtime_uses_tpot_wordpot_without_generated_web_root(
 
     record = runtime.start_asset("binding-wordpot", asset)
 
-    assert "dtagdevsec/wordpot:24.04.1" in captured_args
+    assert "nginx:alpine" in captured_args
+    assert "--read-only" not in captured_args
+    assert "-v" in captured_args
+    assert "./deploy/internal-portal:/usr/share/nginx/html:ro" in captured_args
     assert "127.0.0.1:18080:80" in captured_args
-    assert "-v" not in captured_args
     assert record.settings["runtime_backend"] == "docker"
-    assert record.settings["image"] == "dtagdevsec/wordpot:24.04.1"
+    assert record.settings["image"] == "nginx:alpine"
+    assert record.settings["volumes"] == ["./deploy/internal-portal:/usr/share/nginx/html:ro"]
 
 
 def test_docker_template_runtime_raises_when_container_exits_immediately(
@@ -448,7 +452,7 @@ def test_orchestrator_gateway_excludes_exited_docker_assets(
                     default_settings={
                         "runtime": {
                             "backend": "docker",
-                            "image": "dtagdevsec/wordpot:24.04.1",
+                            "image": "nginx:alpine",
                             "port_mappings": [
                                 {
                                     "host": "127.0.0.1",
@@ -456,6 +460,7 @@ def test_orchestrator_gateway_excludes_exited_docker_assets(
                                     "container_port": 80,
                                 }
                             ],
+                            "volumes": ["./deploy/internal-portal:/usr/share/nginx/html:ro"],
                         }
                     },
                     covers_tactics=["Discovery"],
