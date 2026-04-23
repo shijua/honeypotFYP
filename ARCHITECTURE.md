@@ -87,7 +87,7 @@ This repository currently implements an MVP control loop across seven services:
 - Core behavior:
   - update unlocked assets on the binding
   - start template runtime records from `data/assets/catalog.json`
-  - start a real Docker container for supported web templates
+  - start real Docker containers for supported catalog runtimes, including T-Pot Wordpot and Cowrie images
   - fall back to mock runtime records for unsupported templates
   - emit Falco-style monitoring events for asset lifecycle changes
   - sync route changes into the gateway state
@@ -173,13 +173,9 @@ Additional repositories now exist for:
   while Cowrie logs capture SSH attacker interaction telemetry.
 - Local Cowrie lab configuration lives in `deploy/cowrie/`; the log forwarder
   `scripts/forward_cowrie_json.py` bridges `cowrie.json` into the Cowrie API.
-- Orchestration is still a mock control-plane adapter; it records
-  `AssetRuntimeRecord` entries and can now start a small Docker-backed web
-  template, but it does not manage Kubernetes pods/namespaces yet.
+- Orchestration records `AssetRuntimeRecord` entries and can start selected T-Pot image-backed Docker runtimes, including Wordpot for `internal-portal` and Cowrie for `admin-jumpbox`, but it does not manage Kubernetes pods/namespaces yet.
 - The controller now loads its asset catalog from `data/assets/catalog.json`.
-  The catalog contains MVP template metadata such as protocol, port, family,
-  default settings, and source references, but these are not real
-  Docker/Kubernetes manifests yet.
+  The catalog contains MVP template metadata such as protocol, port, family, default settings, source references, and selected Docker runtime specs. These are still MVP runtime specs, not full Docker Compose/Kubernetes manifests.
 - Mock asset starts are converted into Falco-style `FalcoEvent` objects with
   `falco_rule="Honeynet asset template started"`. Real Falco will only observe
   these lifecycle events after a future Docker/Kubernetes adapter creates real

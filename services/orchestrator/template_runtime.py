@@ -143,28 +143,22 @@ class DockerTemplateRuntime:
     """Start a small safe subset of templates as real Docker containers.
 
     Current scope:
-    - `web-honeypot` templates with `default_settings.runtime.backend=docker`
+    - catalog-driven Docker honeypots such as Cowrie, Wordpot, Redishoneypot
 
-    Any unsupported asset should be handled by a higher-level fallback runtime.
+    The catalog owns image/port/command details. This adapter only translates
+    that runtime spec into a safe local `docker run` call and records the
+    resulting container metadata.
     """
 
     def __init__(
         self,
         repository: TemplateRuntimeRepository,
-        generated_dir: str | Path,
-        template_root: str | Path = "deploy/templates",
     ) -> None:
         self._repository = repository
-        self._generated_dir = Path(generated_dir)
-        self._template_root = Path(template_root)
 
     def supports(self, asset: AssetDefinition) -> bool:
         runtime = asset.default_settings.get("runtime", {})
-        return (
-            isinstance(runtime, dict)
-            and runtime.get("backend") == "docker"
-            and asset.template_family == "web-honeypot"
-        )
+        return isinstance(runtime, dict) and runtime.get("backend") == "docker"
 
     def start_asset(
         self,
@@ -182,45 +176,27 @@ class DockerTemplateRuntime:
             raise RuntimeError(f"asset {asset.asset_id} is not supported by DockerTemplateRuntime")
 
         runtime = dict(asset.default_settings.get("runtime", {}))
-        image = str(runtime.get("image", "nginx:alpine"))
-        container_port = int(runtime.get("container_port", 80))
-        requested_host_port = runtime.get("requested_host_port")
-        host_port = _resolve_host_port(requested_host_port)
+        image = runtime.get("image")
+        if not isinstance(image, str) or not image:
+            raise RuntimeError(f"asset {asset.asset_id} runtime is missing a Docker image")
         container_name = _container_name(binding_id, asset.asset_id)
-        web_root = self._prepare_web_root(binding_id, asset)
-        health_path = str(runtime.get("health_path", "/"))
+        docker_args, runtime_settings = self._docker_args_for_runtime(
+            binding_id,
+            asset,
+            runtime,
+            container_name,
+            image,
+        )
 
         subprocess.run(
-            [
-                "docker",
-                "run",
-                "--rm",
-                "-d",
-                "--name",
-                container_name,
-                "-p",
-                f"127.0.0.1:{host_port}:{container_port}",
-                "-v",
-                f"{web_root}:/usr/share/nginx/html:ro",
-                image,
-            ],
+            docker_args,
             check=True,
             capture_output=True,
             text=True,
         )
 
         settings = dict(asset.default_settings)
-        settings.update(
-            {
-                "runtime_backend": "docker",
-                "container_name": container_name,
-                "image": image,
-                "host_port": host_port,
-                "container_port": container_port,
-                "health_url": f"http://127.0.0.1:{host_port}{health_path}",
-                "generated_dir": str(web_root),
-            }
-        )
+        settings.update(runtime_settings)
         record = _runtime_record_from_asset(binding_id, asset, settings=settings)
         return self._repository.upsert(record)
 
@@ -247,26 +223,80 @@ class DockerTemplateRuntime:
             stopped.append(updated)
         return stopped
 
-    def _prepare_web_root(
+    def _docker_args_for_runtime(
         self,
         binding_id: str,
         asset: AssetDefinition,
-    ) -> Path:
-        """Render a tiny static site from an external template file."""
-        web_root = self._generated_dir / binding_id / asset.asset_id
-        web_root.mkdir(parents=True, exist_ok=True)
-        title = str(asset.default_settings.get("http_title", asset.asset_name))
-        description = asset.description or asset.asset_name
-        route_path = str(asset.default_settings.get("route_path", "/"))
-        template_path = self._template_root / "web" / "default" / "index.html.tpl"
-        template = template_path.read_text(encoding="utf-8")
-        index_html = template.format(
-            title=title,
-            description=description,
-            route_path=route_path,
-        )
-        (web_root / "index.html").write_text(index_html, encoding="utf-8")
-        return web_root
+        runtime: dict[str, object],
+        container_name: str,
+        image: str,
+    ) -> tuple[list[str], dict[str, object]]:
+        """Build a `docker run` command from the catalog runtime spec.
+
+        The same path handles real T-Pot-style honeypot images. Asset-specific
+        entrypoint, command, and port choices live in `catalog.json` so we do
+        not maintain custom honeypot implementations in Python.
+        """
+        docker_args = [
+            "docker",
+            "run",
+            "--rm",
+            "-d",
+            "--name",
+            container_name,
+            "--label",
+            "honeynet.mvp=true",
+            "--label",
+            f"honeynet.binding_id={binding_id}",
+            "--label",
+            f"honeynet.asset_id={asset.asset_id}",
+        ]
+        runtime_settings: dict[str, object] = {
+            "runtime_backend": "docker",
+            "container_name": container_name,
+            "image": image,
+        }
+
+        port_records = _resolve_port_mappings(runtime)
+        for port_record in port_records:
+            docker_args.extend(
+                [
+                    "-p",
+                    (
+                        f"{port_record['host']}:{port_record['host_port']}:"
+                        f"{port_record['container_port']}"
+                    ),
+                ]
+            )
+        if port_records:
+            first_port = port_records[0]
+            runtime_settings.update(
+                {
+                    "host": first_port["host"],
+                    "host_port": first_port["host_port"],
+                    "container_port": first_port["container_port"],
+                    "port_mappings": port_records,
+                }
+            )
+
+        env = runtime.get("env", {})
+        if isinstance(env, dict):
+            for key, value in env.items():
+                docker_args.extend(["-e", f"{key}={value}"])
+
+        entrypoint = runtime.get("entrypoint")
+        if isinstance(entrypoint, str) and entrypoint:
+            docker_args.extend(["--entrypoint", entrypoint])
+
+        docker_args.append(image)
+
+        command = runtime.get("command", [])
+        if isinstance(command, list):
+            docker_args.extend(str(part) for part in command)
+        elif isinstance(command, str) and command:
+            docker_args.append(command)
+
+        return docker_args, runtime_settings
 
     def _existing_record(
         self,
@@ -394,6 +424,36 @@ def _resolve_host_port(requested_host_port: object) -> int:
     if isinstance(requested_host_port, int) and _port_is_free(requested_host_port):
         return requested_host_port
     return _find_free_port()
+
+
+def _resolve_port_mappings(runtime: dict[str, object]) -> list[dict[str, int | str]]:
+    """Normalize old and new catalog port formats into Docker `-p` records."""
+    raw_mappings = runtime.get("port_mappings")
+    if isinstance(raw_mappings, list):
+        mappings = raw_mappings
+    else:
+        mappings = [
+            {
+                "host": "127.0.0.1",
+                "requested_host_port": runtime.get("requested_host_port"),
+                "container_port": runtime.get("container_port", 80),
+            }
+        ]
+
+    resolved: list[dict[str, int | str]] = []
+    for item in mappings:
+        if not isinstance(item, dict):
+            continue
+        container_port = int(item.get("container_port", 80))
+        host_port = _resolve_host_port(item.get("requested_host_port"))
+        resolved.append(
+            {
+                "host": str(item.get("host", "127.0.0.1")),
+                "host_port": host_port,
+                "container_port": container_port,
+            }
+        )
+    return resolved
 
 
 def _port_is_free(port: int) -> bool:

@@ -237,27 +237,120 @@ def test_resolve_host_port_falls_back_when_requested_port_is_busy() -> None:
     assert resolved == 28080
 
 
-def test_docker_template_runtime_renders_web_root_from_external_template(tmp_path) -> None:
-    runtime = DockerTemplateRuntime(
-        InMemoryTemplateRuntimeRepository(),
-        tmp_path / "generated",
+def test_docker_template_runtime_starts_catalog_driven_cowrie_asset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_args: list[str] = []
+
+    def fake_run(args, **kwargs):
+        captured_args.extend(args)
+
+        class Result:
+            returncode = 0
+            stdout = "container-id"
+            stderr = ""
+
+        return Result()
+
+    monkeypatch.setattr(template_runtime_module.shutil, "which", lambda name: "/usr/bin/docker")
+    monkeypatch.setattr(template_runtime_module, "_port_is_free", lambda port: True)
+    monkeypatch.setattr(template_runtime_module.subprocess, "run", fake_run)
+
+    repository = InMemoryTemplateRuntimeRepository()
+    runtime = DockerTemplateRuntime(repository)
+    asset = AssetDefinition(
+        asset_id="admin-jumpbox",
+        asset_name="Admin Jumpbox",
+        exposure_type="internal",
+        interaction_level="high",
+        template_family="ssh-honeypot",
+        protocols=["ssh"],
+        ports=[22],
+        default_settings={
+            "runtime": {
+                "backend": "docker",
+                "image": "ghcr.io/telekom-security/cowrie:24.04.1",
+                "entrypoint": "/bin/sh",
+                "command": [
+                    "-lc",
+                    "mkdir -p /tmp/cowrie /tmp/cowrie/data etc && exec cowrie",
+                ],
+                "port_mappings": [
+                    {
+                        "host": "127.0.0.1",
+                        "requested_host_port": 2222,
+                        "container_port": 22,
+                    }
+                ],
+            }
+        },
+        covers_tactics=["Lateral Movement"],
     )
+
+    record = runtime.start_asset("binding-cowrie", asset)
+
+    assert captured_args[:5] == ["docker", "run", "--rm", "-d", "--name"]
+    assert "honeynet.mvp=true" in captured_args
+    assert "honeynet.asset_id=admin-jumpbox" in captured_args
+    assert "-p" in captured_args
+    assert "127.0.0.1:2222:22" in captured_args
+    assert "--entrypoint" in captured_args
+    assert "/bin/sh" in captured_args
+    assert "ghcr.io/telekom-security/cowrie:24.04.1" in captured_args
+    assert "mkdir -p /tmp/cowrie /tmp/cowrie/data etc && exec cowrie" in captured_args
+    assert record.settings["runtime_backend"] == "docker"
+    assert record.settings["host_port"] == 2222
+    assert record.settings["container_port"] == 22
+
+
+def test_docker_template_runtime_uses_tpot_wordpot_without_generated_web_root(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_args: list[str] = []
+
+    def fake_run(args, **kwargs):
+        captured_args.extend(args)
+
+        class Result:
+            returncode = 0
+            stdout = "container-id"
+            stderr = ""
+
+        return Result()
+
+    monkeypatch.setattr(template_runtime_module.shutil, "which", lambda name: "/usr/bin/docker")
+    monkeypatch.setattr(template_runtime_module, "_port_is_free", lambda port: True)
+    monkeypatch.setattr(template_runtime_module.subprocess, "run", fake_run)
+
+    runtime = DockerTemplateRuntime(InMemoryTemplateRuntimeRepository())
     asset = AssetDefinition(
         asset_id="internal-portal",
         asset_name="Internal Portal",
         exposure_type="internal",
         interaction_level="medium",
-        description="Fake employee portal",
         template_family="web-honeypot",
         protocols=["http"],
         ports=[80],
-        default_settings={"http_title": "Employee Self Service", "route_path": "/portal"},
+        default_settings={
+            "runtime": {
+                "backend": "docker",
+                "image": "dtagdevsec/wordpot:24.04.1",
+                "port_mappings": [
+                    {
+                        "host": "127.0.0.1",
+                        "requested_host_port": 18080,
+                        "container_port": 80,
+                    }
+                ],
+            }
+        },
         covers_tactics=["Discovery"],
     )
 
-    web_root = runtime._prepare_web_root("binding-1", asset)
-    html = (web_root / "index.html").read_text(encoding="utf-8")
+    record = runtime.start_asset("binding-wordpot", asset)
 
-    assert "Employee Self Service" in html
-    assert "Fake employee portal" in html
-    assert "/portal" in html
+    assert "dtagdevsec/wordpot:24.04.1" in captured_args
+    assert "127.0.0.1:18080:80" in captured_args
+    assert "-v" not in captured_args
+    assert record.settings["runtime_backend"] == "docker"
+    assert record.settings["image"] == "dtagdevsec/wordpot:24.04.1"

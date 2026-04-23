@@ -24,4 +24,4 @@ def test_cowrie_api_ingests_command_event(cowrie_client: TestClient) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["observation"]["eventid"] == "cowrie.command.input"
-    assert body["profile"]["recent_tactics"] == ["Execution"]
+    assert body["profile"]["recent_tactics"] == ["Execution", "Discovery"]

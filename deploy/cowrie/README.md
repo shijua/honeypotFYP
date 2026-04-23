@@ -28,6 +28,29 @@ JSON shapes when the adapter starts:
 - `data/runtime/evidence.json`
 - `data/runtime/profiles.json`
 
+## Adaptive port-opening demo
+
+To test the full local behavior loop where Cowrie commands update the profile
+and trigger the controller/orchestrator to open new internal asset ports, run:
+
+```bash
+./scripts/run_adaptive_cowrie_demo.sh
+```
+
+Inside the Cowrie shell, try `id`, `whoami`, `uname -a`, or `ls -la /tmp`.
+Watch the adaptive controller output with:
+
+```bash
+tail -f deploy/cowrie/var/adaptive-controller-loop.log
+```
+
+If a run is interrupted, clean up containers, service processes, and runtime
+JSON state with:
+
+```bash
+./scripts/run_adaptive_cowrie_demo.sh cleanup
+```
+
 At startup the script stops:
 
 - its previous `dynamic-honeynet-cowrie` compose container

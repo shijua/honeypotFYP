@@ -24,7 +24,6 @@ class RuntimeConfig:
     level2_threshold: int = 3
     binding_ttl_seconds: int = 7 * 24 * 60 * 60
     state_dir: str = "data/runtime"
-    generated_template_dir: str = "data/runtime/generated_templates"
     asset_catalog_path: str = "data/assets/catalog.json"
     cowrie_event_mapping_path: str = "data/cowrie/event_mappings.json"
     cowrie_command_mapping_path: str = "data/cowrie/command_mapping_rules.json"

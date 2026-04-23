@@ -29,10 +29,7 @@ _asset_repository = FileAssetRepository(_config.asset_catalog_path)
 _template_runtime_repository = FileTemplateRuntimeRepository(
     f"{_config.state_dir}/asset_runtime.json"
 )
-_docker_template_runtime = DockerTemplateRuntime(
-    _template_runtime_repository,
-    _config.generated_template_dir,
-)
+_docker_template_runtime = DockerTemplateRuntime(_template_runtime_repository)
 _mock_template_runtime = MockTemplateRuntime(_template_runtime_repository)
 _template_runtime = HybridTemplateRuntime(
     _docker_template_runtime,

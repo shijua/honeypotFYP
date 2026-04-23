@@ -4,21 +4,30 @@
     "asset_name": "Internal Portal",
     "exposure_type": "internal",
     "interaction_level": "medium",
-    "description": "A fake employee portal used as the first internal foothold after public entrypoint interaction.",
+    "description": "A Wordpot-backed web lure used as the first internal foothold after public entrypoint interaction.",
     "template_family": "web-honeypot",
-    "protocols": ["http", "https"],
-    "ports": [80, 443],
-    "source_refs": ["tpotce:snare", "tpotce:tanner", "tpotce:wordpot"],
+    "protocols": ["http"],
+    "ports": [80],
+    "source_refs": ["tpotce:wordpot"],
     "default_settings": {
       "runtime": {
         "backend": "docker",
-        "image": "nginx:alpine",
-        "container_port": 80,
-        "requested_host_port": 18080,
-        "health_path": "/"
+        "image": "dtagdevsec/wordpot:24.04.1",
+        "port_mappings": [
+          {
+            "host": "127.0.0.1",
+            "requested_host_port": 18080,
+            "container_port": 80
+          }
+        ],
+        "healthcheck": {
+          "type": "tcp",
+          "host": "127.0.0.1",
+          "port_setting": "host_port"
+        },
+        "source": "tpotce/docker/wordpot"
       },
-      "route_path": "/portal",
-      "http_title": "Employee Self Service",
+      "image_references": ["dtagdevsec/wordpot:24.04.1"],
       "credential_hints": false,
       "log_profile_events": true
     },
@@ -39,7 +48,8 @@
       "share_name": "FINANCE",
       "seed_documents": ["budget.xlsx", "payroll-archive.zip"],
       "credential_hints": true,
-      "read_only": true
+      "read_only": true,
+      "image_references": ["ghcr.io/telekom-security/dionaea:24.04.1"]
     },
     "covers_tactics": ["Credential Access", "Collection"],
     "dependencies": ["internal-portal"]
@@ -58,7 +68,8 @@
       "repo_names": ["infra-deploy", "customer-portal"],
       "expose_fake_secrets": true,
       "allow_clone": false,
-      "route_path": "/git"
+      "route_path": "/git",
+      "image_references": ["ghcr.io/telekom-security/honeytrap:24.04.1"]
     },
     "covers_tactics": ["Credential Access", "Discovery"],
     "dependencies": ["internal-portal"]
@@ -72,12 +83,13 @@
     "template_family": "database-honeypot",
     "protocols": ["mysql", "postgresql"],
     "ports": [3306, 5432],
-    "source_refs": ["tpotce:honeytrap", "tpotce:glutton"],
+    "source_refs": ["tpotce:dionaea", "tpotce:honeytrap"],
     "default_settings": {
       "database_names": ["ops", "inventory"],
       "auth_mode": "fake-login",
       "query_logging": true,
-      "sample_rows": 25
+      "sample_rows": 25,
+      "image_references": ["ghcr.io/telekom-security/dionaea:24.04.1"]
     },
     "covers_tactics": ["Credential Access", "Collection"],
     "dependencies": ["git-internal"]
@@ -87,16 +99,36 @@
     "asset_name": "Admin Jumpbox",
     "exposure_type": "internal",
     "interaction_level": "high",
-    "description": "A fake SSH administration host for observing credential reuse, shell commands, and lateral movement attempts.",
+    "description": "A Cowrie-backed SSH lure for observing credential reuse, shell commands, and lateral movement attempts.",
     "template_family": "ssh-honeypot",
     "protocols": ["ssh"],
     "ports": [22],
-    "source_refs": ["tpotce:cowrie", "tpotce:heralding"],
+    "source_refs": ["tpotce:cowrie"],
     "default_settings": {
+      "runtime": {
+        "backend": "docker",
+        "image": "ghcr.io/telekom-security/cowrie:24.04.1",
+        "entrypoint": "/bin/sh",
+        "command": [
+          "-lc",
+          "mkdir -p /tmp/cowrie /tmp/cowrie/data etc && exec /usr/bin/twistd --nodaemon -y cowrie.tac --pidfile /tmp/cowrie/cowrie.pid cowrie"
+        ],
+        "port_mappings": [
+          {
+            "host": "127.0.0.1",
+            "requested_host_port": 2222,
+            "container_port": 22
+          }
+        ],
+        "healthcheck": {
+          "type": "tcp",
+          "host": "127.0.0.1",
+          "port_setting": "host_port"
+        },
+        "source": "tpotce/docker/cowrie"
+      },
       "hostname": "admin-jumpbox-01",
-      "ssh_banner": "SSH-2.0-OpenSSH_8.2p1 Ubuntu-4ubuntu0.13",
-      "accept_passwords": true,
-      "shell_profile": "linux-admin"
+      "image_references": ["ghcr.io/telekom-security/cowrie:24.04.1"]
     },
     "covers_tactics": ["Lateral Movement", "Privilege Escalation"],
     "dependencies": ["git-internal"]
@@ -106,15 +138,30 @@
     "asset_name": "Redis Cache",
     "exposure_type": "internal",
     "interaction_level": "medium",
-    "description": "A fake Redis cache advertising session and queue names to attract service discovery and credential probing.",
+    "description": "A Redishoneypot-backed Redis lure for service discovery and credential probing.",
     "template_family": "redis-honeypot",
     "protocols": ["redis"],
     "ports": [6379],
     "source_refs": ["tpotce:redishoneypot"],
     "default_settings": {
-      "requirepass": false,
-      "fake_keys": ["session:*", "queue:payments", "cache:users"],
-      "allow_write": false
+      "runtime": {
+        "backend": "docker",
+        "image": "dtagdevsec/redishoneypot:24.04",
+        "port_mappings": [
+          {
+            "host": "127.0.0.1",
+            "requested_host_port": 6379,
+            "container_port": 6379
+          }
+        ],
+        "healthcheck": {
+          "type": "tcp",
+          "host": "127.0.0.1",
+          "port_setting": "host_port"
+        },
+        "source": "tpotce/docker/redishoneypot"
+      },
+      "image_references": ["dtagdevsec/redishoneypot:24.04"]
     },
     "covers_tactics": ["Credential Access", "Discovery", "Collection"],
     "dependencies": ["internal-portal"]
@@ -124,16 +171,32 @@
     "asset_name": "Mail Relay",
     "exposure_type": "internal",
     "interaction_level": "medium",
-    "description": "A fake mail relay for observing SMTP/IMAP enumeration, credential attempts, and mailbox collection behavior.",
+    "description": "A Mailoney-backed mail lure for SMTP enumeration and credential attempts.",
     "template_family": "mail-honeypot",
-    "protocols": ["smtp", "imap", "pop3"],
-    "ports": [25, 110, 143, 587],
-    "source_refs": ["tpotce:mailoney", "tpotce:heralding"],
+    "protocols": ["smtp"],
+    "ports": [25],
+    "source_refs": ["tpotce:mailoney"],
     "default_settings": {
+      "runtime": {
+        "backend": "docker",
+        "image": "dtagdevsec/mailoney:24.04",
+        "port_mappings": [
+          {
+            "host": "127.0.0.1",
+            "requested_host_port": 2525,
+            "container_port": 25
+          }
+        ],
+        "healthcheck": {
+          "type": "tcp",
+          "host": "127.0.0.1",
+          "port_setting": "host_port"
+        },
+        "source": "tpotce/docker/mailoney"
+      },
       "domains": ["corp.example"],
       "mailboxes": ["admin", "finance", "it-support"],
-      "accept_auth": false,
-      "capture_rcpt_to": true
+      "image_references": ["dtagdevsec/mailoney:24.04"]
     },
     "covers_tactics": ["Credential Access", "Discovery", "Collection"],
     "dependencies": ["internal-portal"]
@@ -143,7 +206,7 @@
     "asset_name": "Plant PLC",
     "exposure_type": "internal",
     "interaction_level": "high",
-    "description": "A fake industrial control endpoint for observing Modbus/ICS probing after network service discovery.",
+    "description": "A Conpot-style industrial control endpoint for observing Modbus/ICS probing.",
     "template_family": "ics-honeypot",
     "protocols": ["modbus", "http"],
     "ports": [502, 80],
@@ -151,8 +214,7 @@
     "default_settings": {
       "plant_profile": "water-treatment",
       "modbus_unit_ids": [1, 2],
-      "http_title": "PLC Maintenance Console",
-      "write_operations": "log-only"
+      "image_references": ["ghcr.io/telekom-security/conpot:24.04.1"]
     },
     "covers_tactics": ["Discovery", "Collection", "Lateral Movement"],
     "dependencies": ["internal-portal"]
@@ -162,23 +224,15 @@
     "asset_name": "Legacy Java App",
     "exposure_type": "internal",
     "interaction_level": "medium",
-    "description": "A fake legacy Java service that can later emulate Log4Shell-style probes without running a vulnerable service.",
+    "description": "A Log4Pot-style legacy Java lure for Log4Shell probe collection.",
     "template_family": "vulnerable-webapp-honeypot",
     "protocols": ["http"],
     "ports": [8080],
     "source_refs": ["tpotce:log4pot", "tpotce:beelzebub"],
     "default_settings": {
-      "runtime": {
-        "backend": "docker",
-        "image": "nginx:alpine",
-        "container_port": 80,
-        "requested_host_port": 18081,
-        "health_path": "/"
-      },
-      "route_path": "/legacy",
-      "http_title": "Legacy Billing Service",
       "detect_jndi_strings": true,
-      "emulate_vulnerability": false
+      "emulate_vulnerability": false,
+      "image_references": ["ghcr.io/telekom-security/log4pot:24.04.1"]
     },
     "covers_tactics": ["Initial Access", "Execution", "Discovery"],
     "dependencies": ["internal-portal"]
@@ -197,7 +251,11 @@
       "vendor_skin": "generic-vpn",
       "login_realm": "Employees",
       "mfa_prompt": true,
-      "capture_usernames": true
+      "capture_usernames": true,
+      "image_references": [
+        "ghcr.io/telekom-security/ciscoasa:24.04.1",
+        "ghcr.io/telekom-security/citrixhoneypot:24.04.1"
+      ]
     },
     "covers_tactics": ["Initial Access", "Credential Access", "Discovery"],
     "dependencies": ["internal-portal"]
@@ -207,16 +265,19 @@
     "asset_name": "Malware Drop Sink",
     "exposure_type": "internal",
     "interaction_level": "high",
-    "description": "A generic service sink for observing binary drops, downloader behavior, and post-exploitation callbacks.",
+    "description": "A Dionaea/Honeytrap-style service sink for observing binary drops and downloader behavior.",
     "template_family": "malware-capture-honeypot",
     "protocols": ["http", "ftp", "smb"],
     "ports": [80, 21, 445],
-    "source_refs": ["tpotce:dionaea", "tpotce:glutton", "tpotce:honeytrap"],
+    "source_refs": ["tpotce:dionaea", "tpotce:honeytrap"],
     "default_settings": {
       "capture_binaries": false,
       "download_sink": "metadata-only",
-      "protocol_banner": "generic-service",
-      "max_payload_bytes": 0
+      "max_payload_bytes": 0,
+      "image_references": [
+        "ghcr.io/telekom-security/dionaea:24.04.1",
+        "ghcr.io/telekom-security/honeytrap:24.04.1"
+      ]
     },
     "covers_tactics": ["Command and Control", "Execution", "Collection"],
     "dependencies": ["internal-portal"]

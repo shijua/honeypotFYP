@@ -87,7 +87,12 @@ def test_file_asset_repository_reads_external_catalog(tmp_path) -> None:
                     "template_family": "web-honeypot",
                     "protocols": ["http"],
                     "ports": [80],
-                    "source_refs": ["tpotce:snare"],
+                    "source_refs": ["tpotce:wordpot"],
+                    "default_settings": {
+                        "image_references": [
+                            "dtagdevsec/wordpot:24.04.1",
+                        ]
+                    },
                     "covers_tactics": ["Discovery"],
                     "dependencies": [],
                 }
@@ -103,7 +108,10 @@ def test_file_asset_repository_reads_external_catalog(tmp_path) -> None:
     assert asset.template_family == "web-honeypot"
     assert asset.protocols == ["http"]
     assert asset.ports == [80]
-    assert asset.source_refs == ["tpotce:snare"]
+    assert asset.source_refs == ["tpotce:wordpot"]
+    assert asset.default_settings["image_references"] == [
+        "dtagdevsec/wordpot:24.04.1",
+    ]
 
 
 def test_file_gateway_repository_persists_route_state(tmp_path) -> None:
