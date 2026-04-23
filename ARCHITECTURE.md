@@ -11,6 +11,58 @@ This repository currently implements an MVP control loop across seven services:
 - `gateway`
 - `orchestrator`
 
+## Environment Model
+The intended deployment model is now organized into three visibility layers:
+
+### 1) Benign user surface
+- Purpose: the normal user-facing area that makes the environment look like a real enterprise.
+- Typical content:
+  - public website pages
+  - normal login pages or portals
+  - routine employee-facing or customer-facing pages
+- Design role:
+  - provide baseline context before the system sees explicit attacker behavior
+  - support cold-start profiling by recording anomalous navigation, login attempts, path probing, and scan-like access patterns
+
+### 2) Attacker-facing entrypoints
+- Purpose: the first explicitly suspicious interaction points exposed to scanning, probing, and credential attempts.
+- Current examples:
+  - `entrypoint` for low-interaction HTTP capture
+  - `cowrie` for SSH interaction telemetry
+  - future Web / multi-protocol entrypoints such as `SNARE + TANNER` and `Chameleon`
+- Design role:
+  - collect high-signal early attack telemetry
+  - refine the initial attacker profile produced from benign-surface anomalies
+
+### 3) Adaptive internal assets
+- Purpose: internal services that are not all exposed at once and are instead released gradually based on attacker behavior.
+- Current examples:
+  - `internal-portal`
+  - `git-internal`
+  - `mail-relay`
+  - `redis-cache`
+  - later-stage assets such as `admin-jumpbox` or future vulnerable environments
+- Design role:
+  - implement the adaptive deception step
+  - guide the attacker deeper into the controlled environment using the current profile
+
+## Cold-start profiling idea
+The system does not treat entrypoint activity as the only source of initial judgment.
+Instead, it combines:
+
+- anomalous behavior observed on the benign user surface
+- explicit attack behavior observed on attacker-facing entrypoints
+
+to build an initial attacker profile before selecting which internal assets to expose.
+
+In short:
+
+```text
+benign-surface signals provide baseline context
++ attacker-entrypoint telemetry provides explicit attack evidence
+= initial attacker profile for adaptive internal asset selection
+```
+
 ## Components
 
 ### 1) Contracts layer
@@ -136,13 +188,14 @@ Additional repositories now exist for:
   - `POST /v1/orchestration/apply`
 
 ## Request Flow
-1. `entrypoint` captures an HTTP probe or `cowrie` ingests an SSH honeypot event.
-2. `binding_service` resolves a sticky binding for that attacker.
-3. `profiler` ingests the normalized event and refreshes the attacker profile.
-4. `controller` reads the profile plus current unlocked assets and returns actions.
-5. `orchestrator` applies those actions back onto the binding state.
-6. `gateway` mirrors the current exposure/routing view for that binding.
-7. Shared contracts keep the loop testable across service boundaries.
+1. A user or attacker first interacts with the benign user surface, attacker-facing entrypoints, or both.
+2. `entrypoint` captures HTTP anomalies and `cowrie` ingests SSH honeypot events.
+3. `binding_service` resolves a sticky binding for that attacker.
+4. `profiler` ingests normalized events and builds an initial or refined attacker profile.
+5. `controller` reads the current profile plus unlocked assets and returns actions.
+6. `orchestrator` applies those actions back onto the binding state and attempts to start any newly selected assets.
+7. `gateway` mirrors the current exposure/routing view for that binding, separating reachable assets from failed ones.
+8. Shared contracts keep the loop testable across service boundaries.
 
 ## Testing
 - Unit: `tests/binding_service/test_unit_binding_service.py`

@@ -13,6 +13,22 @@ This repository implements a profiling-driven dynamic honeynet MVP with independ
 - `libs/common`
 - `data/assets/catalog.json`
 
+## Environment model
+
+The intended deployment model has three visibility layers:
+
+- `Benign user surface`: normal user-facing pages and services that make the environment look like a real enterprise
+- `Attacker-facing entrypoints`: the first public-facing collection points such as HTTP entrypoints and SSH honeypots
+- `Adaptive internal assets`: internal services that are released gradually based on the current attacker profile
+
+The profiling idea is:
+
+```text
+benign-surface anomalies provide baseline context
++ attacker-entrypoint telemetry provides explicit attack evidence
+= initial attacker profile for adaptive internal asset selection
+```
+
 ## Setup
 
 ```bash

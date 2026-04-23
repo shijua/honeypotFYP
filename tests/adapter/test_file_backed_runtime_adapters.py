@@ -87,7 +87,7 @@ def test_file_asset_repository_reads_external_catalog(tmp_path) -> None:
                     "template_family": "web-honeypot",
                     "protocols": ["http"],
                     "ports": [80],
-                    "source_refs": ["mvp:internal-portal-static"],
+                    "source_refs": ["mvp:internal-portal-nginx"],
                     "default_settings": {
                         "image_references": [
                             "nginx:alpine",
@@ -108,7 +108,7 @@ def test_file_asset_repository_reads_external_catalog(tmp_path) -> None:
     assert asset.template_family == "web-honeypot"
     assert asset.protocols == ["http"]
     assert asset.ports == [80]
-    assert asset.source_refs == ["mvp:internal-portal-static"]
+    assert asset.source_refs == ["mvp:internal-portal-nginx"]
     assert asset.default_settings["image_references"] == [
         "nginx:alpine",
     ]
