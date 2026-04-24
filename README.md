@@ -179,5 +179,41 @@ The default local runtime now persists state under `data/runtime/`:
 
 The controller asset catalog is now externalized at `data/assets/catalog.json`.
 Cowrie event mappings are externalized at `data/cowrie/event_mappings.json`.
-The profiler resolves tactic/technique relationships from the official MITRE
-ATT&CK `attack-stix-data` bundle at `data/mitre/enterprise-attack.json`.
+The profiler resolves tactic/technique relationships from the official MITRE ATT&CK `attack-stix-data` bundle at `data/mitre/enterprise-attack.json`.
+
+## Enterprise Compose Draft
+
+The enterprise-network deployment draft uses two default compose files plus one future-integration file:
+
+- `docker-compose.control.yml` runs the control plane.
+- `docker-compose.enterprise.yml` runs the enterprise-facing services and attacker entrypoints.
+- `docker-compose.future.yml` holds optional integrations such as SNARE/TANNER and Chameleon until their logging paths are finalized.
+
+Copy `.env.example` to `.env` if local ports need to change.
+
+Start the current runnable slice with a shared compose project name:
+
+```bash
+docker-compose -p honeynet -f docker-compose.control.yml up -d
+docker-compose -p honeynet -f docker-compose.enterprise.yml up -d
+```
+
+Optional or unfinished integrations are kept in a separate future compose file:
+
+```bash
+docker-compose -p honeynet -f docker-compose.future.yml config
+```
+
+Manual actor simulation after startup:
+
+```bash
+curl http://127.0.0.1:8080/
+curl -i -A "sqlmap/1.8 manual-test" http://127.0.0.1:8083/.env
+ssh -p 2222 root@127.0.0.1
+BINDING_ID="$(jq -r '.records[-1].binding_id' data/runtime/bindings.json)"
+docker run --rm --network honeynet_net_control curlimages/curl:latest -fsS http://gateway:8004/v1/gateway/bindings/$BINDING_ID | jq
+```
+
+The default compose stack includes an adaptive loop, so new entrypoint/Cowrie profile evidence can trigger controller/orchestrator asset unlocks without manually calling those APIs.
+
+The full rationale and Kubernetes mapping are in `DEPLOYMENT_DRAFT.md`.

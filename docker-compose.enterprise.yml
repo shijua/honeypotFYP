@@ -1,0 +1,95 @@
+version: "3.3"
+
+services:
+  public-portal:
+    image: nginx:alpine
+    ports:
+      - "${HOST_BIND_ADDRESS:-127.0.0.1}:${PUBLIC_PORTAL_PORT:-8080}:80"
+    networks:
+      - net_public
+      - net_dmz
+    restart: unless-stopped
+
+  cowrie:
+    image: cowrie/cowrie:latest
+    ports:
+      - "${HOST_BIND_ADDRESS:-127.0.0.1}:${COWRIE_SSH_PORT:-2222}:2222"
+    volumes:
+      - ./deploy/cowrie/cowrie.cfg:/cowrie/cowrie-git/etc/cowrie.cfg:ro
+      - ./deploy/cowrie/var:/cowrie/cowrie-git/var
+    networks:
+      - net_public
+      - net_dmz
+    restart: unless-stopped
+
+  entrypoint-observer:
+    image: python:3.10-slim
+    working_dir: /app
+    command: >
+      bash -lc "pip install -q fastapi uvicorn pydantic &&
+      python -m uvicorn services.entrypoint.app:app --host 0.0.0.0 --port 8010"
+    ports:
+      - "${HOST_BIND_ADDRESS:-127.0.0.1}:${ENTRYPOINT_OBSERVER_PORT:-8083}:8010"
+    environment:
+      PYTHONPATH: /app
+    volumes:
+      - .:/app
+    expose:
+      - "8010"
+    networks:
+      - net_dmz
+      - net_control
+    restart: unless-stopped
+
+  cowrie-adapter:
+    image: python:3.10-slim
+    working_dir: /app
+    command: >
+      bash -lc "pip install -q fastapi uvicorn pydantic &&
+      python -m uvicorn services.cowrie.app:app --host 0.0.0.0 --port 8011"
+    environment:
+      PYTHONPATH: /app
+    volumes:
+      - .:/app
+    expose:
+      - "8011"
+    networks:
+      - net_dmz
+      - net_control
+    restart: unless-stopped
+
+  cowrie-forwarder:
+    image: python:3.10-slim
+    working_dir: /app
+    command: >
+      bash -lc "python scripts/forward_cowrie_json.py
+      --log-file /cowrie-var/log/cowrie/cowrie.json
+      --adapter-url http://cowrie-adapter:8011/v1/cowrie/events
+      --poll-seconds 0.5"
+    environment:
+      PYTHONPATH: /app
+    volumes:
+      - .:/app
+      - ./deploy/cowrie/var:/cowrie-var
+    networks:
+      - net_control
+    depends_on:
+      - cowrie
+      - cowrie-adapter
+    restart: unless-stopped
+
+  internal-portal:
+    image: nginx:alpine
+    expose:
+      - "80"
+    networks:
+      - net_internal
+    restart: unless-stopped
+
+networks:
+  net_public: {}
+  net_dmz: {}
+  net_internal: {}
+  net_control:
+    external:
+      name: honeynet_net_control

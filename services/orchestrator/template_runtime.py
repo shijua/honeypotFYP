@@ -14,6 +14,7 @@ wired in.
 from __future__ import annotations
 
 from collections.abc import Iterable
+import os
 from pathlib import Path
 import shutil
 import socket
@@ -356,7 +357,7 @@ class DockerTemplateRuntime:
             if normalized_volumes:
                 runtime_settings["volumes"] = normalized_volumes
 
-        port_records = _resolve_port_mappings(runtime)
+        port_records = _resolve_port_mappings(runtime, asset.asset_id)
         for port_record in port_records:
             docker_args.extend(
                 [
@@ -566,14 +567,20 @@ def _find_free_port() -> int:
         return int(sock.getsockname()[1])
 
 
-def _resolve_host_port(requested_host_port: object) -> int:
+def _resolve_host_port(requested_host_port: object, asset_id: str | None = None) -> int:
     """Use the requested port when available, otherwise fall back to a free one."""
+    env_port = _asset_port_override(asset_id)
+    if env_port is not None and _port_is_free(env_port):
+        return env_port
     if isinstance(requested_host_port, int) and _port_is_free(requested_host_port):
         return requested_host_port
     return _find_free_port()
 
 
-def _resolve_port_mappings(runtime: dict[str, object]) -> list[dict[str, int | str]]:
+def _resolve_port_mappings(
+    runtime: dict[str, object],
+    asset_id: str | None = None,
+) -> list[dict[str, int | str]]:
     """Normalize old and new catalog port formats into Docker `-p` records."""
     raw_mappings = runtime.get("port_mappings")
     if isinstance(raw_mappings, list):
@@ -592,15 +599,40 @@ def _resolve_port_mappings(runtime: dict[str, object]) -> list[dict[str, int | s
         if not isinstance(item, dict):
             continue
         container_port = int(item.get("container_port", 80))
-        host_port = _resolve_host_port(item.get("requested_host_port"))
+        host_port = _resolve_host_port(item.get("requested_host_port"), asset_id)
         resolved.append(
             {
-                "host": str(item.get("host", "127.0.0.1")),
+                "host": _resolve_host_bind(item.get("host", "127.0.0.1")),
                 "host_port": host_port,
                 "container_port": container_port,
             }
         )
     return resolved
+
+
+def _resolve_host_bind(default_host: object) -> str:
+    """Resolve the host IP used for dynamically opened Docker asset ports."""
+    override = os.environ.get("HONEYPOT_RUNTIME_HOST_BIND", "").strip()
+    if override:
+        return override
+    return str(default_host)
+
+
+def _asset_port_override(asset_id: str | None) -> int | None:
+    """Return an env-driven port override for one asset id when configured."""
+    if not asset_id:
+        return None
+    suffix = asset_id.upper().replace("-", "_")
+    raw = os.environ.get(f"HONEYPOT_ASSET_{suffix}_PORT", "").strip()
+    if not raw:
+        return None
+    try:
+        port = int(raw)
+    except ValueError:
+        return None
+    if 1 <= port <= 65535:
+        return port
+    return None
 
 
 def _port_is_free(port: int) -> bool:
@@ -646,6 +678,9 @@ def _healthcheck_ready(
     enough for the MVP. For TCP-backed honeypots we can cheaply verify that the
     mapped localhost port is actually listening before we claim success.
     """
+    if _skip_runtime_tcp_healthcheck():
+        return True
+
     healthcheck = runtime.get("healthcheck")
     if not isinstance(healthcheck, dict):
         return True
@@ -661,6 +696,12 @@ def _healthcheck_ready(
     if not isinstance(port, int):
         return False
     return _tcp_port_accepts_connections(host, port)
+
+
+def _skip_runtime_tcp_healthcheck() -> bool:
+    """Allow compose-contained orchestrators to trust Docker container liveness."""
+    value = os.environ.get("HONEYPOT_SKIP_RUNTIME_TCP_HEALTHCHECK", "")
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _runtime_record_is_accessible(record: AssetRuntimeRecord) -> bool:

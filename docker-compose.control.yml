@@ -1,0 +1,113 @@
+version: "3.3"
+
+services:
+  binding-service:
+    image: python:3.10-slim
+    working_dir: /app
+    command: >
+      bash -lc "pip install -q fastapi uvicorn pydantic &&
+      python -m uvicorn services.binding_service.app:app --host 0.0.0.0 --port 8001"
+    environment:
+      PYTHONPATH: /app
+    volumes:
+      - .:/app
+    expose:
+      - "8001"
+    networks:
+      - net_control
+    restart: unless-stopped
+
+  profiler:
+    image: python:3.10-slim
+    working_dir: /app
+    command: >
+      bash -lc "pip install -q fastapi uvicorn pydantic &&
+      python -m uvicorn services.profiler.app:app --host 0.0.0.0 --port 8002"
+    environment:
+      PYTHONPATH: /app
+    volumes:
+      - .:/app
+    expose:
+      - "8002"
+    networks:
+      - net_control
+    restart: unless-stopped
+
+  controller:
+    image: python:3.10-slim
+    working_dir: /app
+    command: >
+      bash -lc "pip install -q fastapi uvicorn pydantic &&
+      python -m uvicorn services.controller.app:app --host 0.0.0.0 --port 8003"
+    environment:
+      PYTHONPATH: /app
+    volumes:
+      - .:/app
+    expose:
+      - "8003"
+    networks:
+      - net_control
+    restart: unless-stopped
+
+  gateway:
+    image: python:3.10-slim
+    working_dir: /app
+    command: >
+      bash -lc "pip install -q fastapi uvicorn pydantic &&
+      python -m uvicorn services.gateway.app:app --host 0.0.0.0 --port 8004"
+    environment:
+      PYTHONPATH: /app
+    volumes:
+      - .:/app
+    expose:
+      - "8004"
+    networks:
+      - net_control
+    restart: unless-stopped
+
+  orchestrator:
+    image: python:3.10-slim
+    working_dir: /app
+    command: >
+      bash -lc "pip install -q fastapi uvicorn pydantic &&
+      python -m uvicorn services.orchestrator.app:app --host 0.0.0.0 --port 8005"
+    environment:
+      PYTHONPATH: /app
+      HONEYPOT_SKIP_RUNTIME_TCP_HEALTHCHECK: "1"
+      HONEYPOT_RUNTIME_HOST_BIND: "${HOST_BIND_ADDRESS:-127.0.0.1}"
+      HONEYPOT_ASSET_INTERNAL_PORTAL_PORT: "${INTERNAL_PORTAL_PORT:-18080}"
+    volumes:
+      - .:/app
+      - ${DOCKER_CLI_PATH:-/usr/bin/docker}:/usr/bin/docker:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    expose:
+      - "8005"
+    networks:
+      - net_control
+    restart: unless-stopped
+
+  adaptive-loop:
+    image: python:3.10-slim
+    working_dir: /app
+    command: >
+      bash -lc "python scripts/adaptive_controller_loop.py
+      --state-dir data/runtime
+      --controller-url http://controller:8003
+      --orchestrator-url http://orchestrator:8005
+      --trace-file data/runtime/decision_trace.json
+      --loop-state-file data/runtime/adaptive_loop_state.json
+      --max-actions-per-trigger 1
+      --poll-seconds 2"
+    environment:
+      PYTHONPATH: /app
+    volumes:
+      - .:/app
+    networks:
+      - net_control
+    depends_on:
+      - controller
+      - orchestrator
+    restart: unless-stopped
+
+networks:
+  net_control: {}
