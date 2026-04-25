@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Honeynet Dashboard</title>
+  <link rel="stylesheet" href="/static/dashboard.css">
+</head>
+<body data-refresh-seconds="__REFRESH_SECONDS__">
+  <div class="page">
+    <div class="topbar">
+      <div>
+        <h1>Live Honeynet Dashboard</h1>
+        <p class="subtle">Benign surface, attacker entrypoints, adaptive internal assets, and control-plane state in one place.</p>
+      </div>
+      <div class="pill">
+        <span class="status-dot"></span>
+        <span id="refresh-label">Loading...</span>
+      </div>
+    </div>
+
+    <section class="metrics" id="metrics"></section>
+
+    <section class="grid">
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <h2>Containers And Ports</h2>
+            <p class="subtle">Compose services plus dynamically opened runtime assets.</p>
+          </div>
+        </div>
+        <div class="panel-body" id="containers-panel"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <h2>Bindings And Routes</h2>
+            <p class="subtle">Current attacker bindings and what the gateway thinks is exposed.</p>
+          </div>
+        </div>
+        <div class="panel-body" id="bindings-panel"></div>
+      </div>
+    </section>
+
+    <section class="panel full-width">
+      <div class="panel-header">
+        <div>
+          <h2>Attacker Profiles</h2>
+          <p class="subtle">Recent tactics, commands, decisions, current assets, and failures per attacker.</p>
+        </div>
+      </div>
+      <div class="panel-body" id="attackers-panel"></div>
+    </section>
+
+    <section class="grid">
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <h2>Recent Entrypoint Requests</h2>
+            <p class="subtle">HTTP probes captured before or alongside explicit attack telemetry.</p>
+          </div>
+        </div>
+        <div class="panel-body" id="entrypoint-panel"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <h2>Recent Cowrie Activity</h2>
+            <p class="subtle">SSH login attempts and command input forwarded into the profiler path.</p>
+          </div>
+        </div>
+        <div class="panel-body" id="cowrie-panel"></div>
+      </div>
+    </section>
+  </div>
+
+  <script src="/static/dashboard.js"></script>
+</body>
+</html>

@@ -3,13 +3,23 @@ set -euo pipefail
 
 CONTROL_FILE="docker-compose.control.yml"
 ENTERPRISE_FILE="docker-compose.enterprise.yml"
+
+if [[ -f .env ]]; then
+  set -a
+  . ./.env
+  set +a
+fi
+
 PROJECT_NAME="${PROJECT_NAME:-honeynet}"
+CLIENT_TARGET_HOST="${CLIENT_TARGET_HOST:-127.0.0.1}"
 PUBLIC_PORTAL_PORT="${PUBLIC_PORTAL_PORT:-8080}"
 ENTRYPOINT_OBSERVER_PORT="${ENTRYPOINT_OBSERVER_PORT:-8083}"
 ATTACKER_IP="${ATTACKER_IP:-198.51.$((RANDOM % 100)).$((RANDOM % 254 + 1))}"
 SESSION_ID="${SESSION_ID:-enterprise-sim-$(date +%s)}"
 WAIT_RETRIES="${WAIT_RETRIES:-60}"
 WAIT_DELAY_SECONDS="${WAIT_DELAY_SECONDS:-2}"
+RESET_BEFORE_RUN="${RESET_BEFORE_RUN:-1}"
+RESET_RUNTIME_STATE="${RESET_RUNTIME_STATE:-1}"
 
 if docker compose version >/dev/null 2>&1; then
   COMPOSE=(docker compose)
@@ -24,11 +34,6 @@ if ! command -v jq >/dev/null 2>&1; then
   echo "jq is required for this simulation." >&2
   exit 1
 fi
-
-wait_for_host_http() {
-  local url="$1"
-  curl -fs --retry "$WAIT_RETRIES" --retry-connrefused --retry-delay "$WAIT_DELAY_SECONDS" --max-time 5 "$url" >/dev/null
-}
 
 wait_for_docker_http() {
   local network="$1"
@@ -83,6 +88,14 @@ cowrie_event_payload() {
     }'
 }
 
+if [[ "$RESET_BEFORE_RUN" == "1" ]]; then
+  reset_args=(--quiet)
+  if [[ "$RESET_RUNTIME_STATE" != "1" ]]; then
+    reset_args+=(--keep-state)
+  fi
+  PROJECT_NAME="$PROJECT_NAME" ./scripts/reset_enterprise_runtime.sh "${reset_args[@]}"
+fi
+
 echo "Starting enterprise compose slice..."
 COMPOSE_IGNORE_ORPHANS=True "${COMPOSE[@]}" -p "$PROJECT_NAME" -f "$CONTROL_FILE" up -d
 COMPOSE_IGNORE_ORPHANS=True "${COMPOSE[@]}" -p "$PROJECT_NAME" -f "$ENTERPRISE_FILE" up -d
@@ -98,22 +111,22 @@ wait_for_docker_http "${PROJECT_NAME}_net_control" "http://gateway:8004/docs"
 echo
 echo "Normal user surface:"
 normal_status="$(docker_http_status "${PROJECT_NAME}_net_public" "http://public-portal/")"
-host_status="$(curl -s -o /dev/null -w "%{http_code}" --max-time 2 "http://127.0.0.1:$PUBLIC_PORTAL_PORT/" || true)"
+host_status="$(curl -s -o /dev/null -w "%{http_code}" --max-time 2 "http://$CLIENT_TARGET_HOST:$PUBLIC_PORTAL_PORT/" || true)"
 echo "  synthetic normal client -> public-portal / -> HTTP $normal_status"
 if [[ "$host_status" != "000" && -n "$host_status" ]]; then
-  echo "  host port 127.0.0.1:$PUBLIC_PORTAL_PORT -> HTTP $host_status"
+  echo "  host port $CLIENT_TARGET_HOST:$PUBLIC_PORTAL_PORT -> HTTP $host_status"
 else
-  echo "  host port 127.0.0.1:$PUBLIC_PORTAL_PORT was not reachable from this shell"
+  echo "  host port $CLIENT_TARGET_HOST:$PUBLIC_PORTAL_PORT was not reachable from this shell"
 fi
 
 echo
 echo "Attacker-facing HTTP probe:"
-http_probe_status="$(curl -s -o /dev/null -w "%{http_code}" -A "sqlmap/1.8 enterprise-sim" "http://127.0.0.1:$ENTRYPOINT_OBSERVER_PORT/.env")"
+http_probe_status="$(curl -s -o /dev/null -w "%{http_code}" -A "sqlmap/1.8 enterprise-sim" "http://$CLIENT_TARGET_HOST:$ENTRYPOINT_OBSERVER_PORT/.env")"
 echo "  host attacker -> entrypoint-observer /.env -> HTTP $http_probe_status"
 
 echo
 echo "Attacker SSH telemetry:"
-login_response="$(cowrie_event_payload "cowrie.login.failed" | docker_post_json "${PROJECT_NAME}_net_control" "http://cowrie-adapter:8011/v1/cowrie/events")"
+cowrie_event_payload "cowrie.login.failed" | docker_post_json "${PROJECT_NAME}_net_control" "http://cowrie-adapter:8011/v1/cowrie/events" >/dev/null
 command_response="$(cowrie_event_payload "cowrie.command.input" "cat /etc/passwd" | docker_post_json "${PROJECT_NAME}_net_control" "http://cowrie-adapter:8011/v1/cowrie/events")"
 binding_id="$(echo "$command_response" | jq -r ".binding.binding_id")"
 profile="$(echo "$command_response" | jq ".profile")"
@@ -166,5 +179,4 @@ echo "$gateway_state" | jq "{binding_id, attacker_key, exposed_assets, failed_as
 
 echo
 echo "Simulation complete. Cleanup when done with:"
-echo "  docker-compose -p $PROJECT_NAME -f $ENTERPRISE_FILE down --remove-orphans"
-echo "  docker-compose -p $PROJECT_NAME -f $CONTROL_FILE down --remove-orphans"
+echo "  ./scripts/reset_enterprise_runtime.sh"

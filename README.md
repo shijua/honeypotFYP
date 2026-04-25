@@ -189,7 +189,13 @@ The enterprise-network deployment draft uses two default compose files plus one 
 - `docker-compose.enterprise.yml` runs the enterprise-facing services and attacker entrypoints.
 - `docker-compose.future.yml` holds optional integrations such as SNARE/TANNER and Chameleon until their logging paths are finalized.
 
-Copy `.env.example` to `.env` if local ports need to change.
+Copy `.env.example` to `.env` if local ports or bind addresses need to change. Keep `HOST_BIND_ADDRESS=127.0.0.1` for SSH-tunnel/local-only testing; use `HOST_BIND_ADDRESS=0.0.0.0` or a specific private IP if you want browser/terminal access from your LAN/VPN.
+
+Reset old containers and runtime state before a fresh run:
+
+```bash
+./scripts/reset_enterprise_runtime.sh
+```
 
 Start the current runnable slice with a shared compose project name:
 
@@ -204,15 +210,28 @@ Optional or unfinished integrations are kept in a separate future compose file:
 docker-compose -p honeynet -f docker-compose.future.yml config
 ```
 
+Live monitoring dashboard:
+
+```bash
+TARGET_HOST=127.0.0.1
+curl http://$TARGET_HOST:${DASHBOARD_PORT:-8090}/healthz
+```
+
+Then open `http://$TARGET_HOST:${DASHBOARD_PORT:-8090}/` in a browser.
+
 Manual actor simulation after startup:
 
 ```bash
-curl http://127.0.0.1:8080/
-curl -i -A "sqlmap/1.8 manual-test" http://127.0.0.1:8083/.env
-ssh -p 2222 root@127.0.0.1
+TARGET_HOST=127.0.0.1
+curl http://$TARGET_HOST:8080/
+curl -i -A "sqlmap/1.8 manual-test" http://$TARGET_HOST:8083/.env
+ssh -p 2222 root@$TARGET_HOST
 BINDING_ID="$(jq -r '.records[-1].binding_id' data/runtime/bindings.json)"
 docker run --rm --network honeynet_net_control curlimages/curl:latest -fsS http://gateway:8004/v1/gateway/bindings/$BINDING_ID | jq
+curl http://$TARGET_HOST:18080/
 ```
+
+`scripts/run_enterprise_actor_simulation.sh` now resets old compose containers, stale dynamic assets, and runtime JSON state by default before it starts. Set `RESET_BEFORE_RUN=0` if you want to reuse the current stack.
 
 The default compose stack includes an adaptive loop, so new entrypoint/Cowrie profile evidence can trigger controller/orchestrator asset unlocks without manually calling those APIs.
 

@@ -4,9 +4,17 @@ set -euo pipefail
 CONTROL_FILE="docker-compose.control.yml"
 ENTERPRISE_FILE="docker-compose.enterprise.yml"
 FUTURE_FILE="docker-compose.future.yml"
+
+if [[ -f .env ]]; then
+  set -a
+  . ./.env
+  set +a
+fi
+
 PROJECT_NAME="honeynet"
 WAIT_RETRIES="${WAIT_RETRIES:-60}"
 WAIT_DELAY_SECONDS="${WAIT_DELAY_SECONDS:-2}"
+RESET_BEFORE_RUN="${RESET_BEFORE_RUN:-1}"
 
 if docker compose version >/dev/null 2>&1; then
   COMPOSE=(docker compose)
@@ -82,6 +90,10 @@ echo "Checking compose syntax..."
 "${COMPOSE[@]}" -p "$PROJECT_NAME" -f "$ENTERPRISE_FILE" config >/tmp/honeynet-enterprise-compose-check.yaml
 "${COMPOSE[@]}" -p "$PROJECT_NAME" -f "$FUTURE_FILE" config >/tmp/honeynet-future-compose-check.yaml
 "${COMPOSE[@]}" -p "$PROJECT_NAME" -f "$CONTROL_FILE" -f "$ENTERPRISE_FILE" config >/tmp/honeynet-combined-compose-check.yaml
+
+if [[ "$RESET_BEFORE_RUN" == "1" ]]; then
+  PROJECT_NAME="$PROJECT_NAME" ./scripts/reset_enterprise_runtime.sh --quiet
+fi
 
 echo "Starting control plane..."
 COMPOSE_IGNORE_ORPHANS=True "${COMPOSE[@]}" -p "$PROJECT_NAME" -f "$CONTROL_FILE" up -d
