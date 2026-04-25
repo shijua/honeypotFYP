@@ -3,7 +3,6 @@ set -euo pipefail
 
 CONTROL_FILE="docker-compose.control.yml"
 ENTERPRISE_FILE="docker-compose.enterprise.yml"
-FUTURE_FILE="docker-compose.future.yml"
 
 if [[ -f .env ]]; then
   set -a
@@ -14,7 +13,6 @@ fi
 PROJECT_NAME="${PROJECT_NAME:-honeynet}"
 RESET_BEFORE_START="${RESET_BEFORE_START:-1}"
 KEEP_STATE=0
-INCLUDE_FUTURE=0
 WAIT_FOR_SERVICES=1
 WAIT_RETRIES="${WAIT_RETRIES:-60}"
 WAIT_DELAY_SECONDS="${WAIT_DELAY_SECONDS:-2}"
@@ -28,7 +26,6 @@ Starts the control plane and enterprise slice without generating attacker traffi
 Options:
   --no-reset       Do not stop containers or clear runtime state before starting.
   --keep-state     Stop/recreate containers but preserve data/runtime JSON state.
-  --with-future    Also start docker-compose.future.yml.
   --no-wait        Do not wait for HTTP health checks.
   --project-name   Compose project name. Default: honeynet.
   -h, --help       Show this help.
@@ -42,9 +39,6 @@ while [[ $# -gt 0 ]]; do
       ;;
     --keep-state)
       KEEP_STATE=1
-      ;;
-    --with-future)
-      INCLUDE_FUTURE=1
       ;;
     --no-wait)
       WAIT_FOR_SERVICES=0
@@ -85,9 +79,6 @@ wait_for_docker_http() {
 echo "Checking compose syntax..."
 "${COMPOSE[@]}" -p "$PROJECT_NAME" -f "$CONTROL_FILE" config >/tmp/honeynet-control-compose-check.yaml
 "${COMPOSE[@]}" -p "$PROJECT_NAME" -f "$ENTERPRISE_FILE" config >/tmp/honeynet-enterprise-compose-check.yaml
-if [[ "$INCLUDE_FUTURE" == "1" ]]; then
-  "${COMPOSE[@]}" -p "$PROJECT_NAME" -f "$FUTURE_FILE" config >/tmp/honeynet-future-compose-check.yaml
-fi
 
 if [[ "$RESET_BEFORE_START" == "1" ]]; then
   reset_args=(--quiet --project-name "$PROJECT_NAME")
@@ -103,11 +94,6 @@ COMPOSE_IGNORE_ORPHANS=True "${COMPOSE[@]}" -p "$PROJECT_NAME" -f "$CONTROL_FILE
 
 echo "Starting enterprise slice..."
 COMPOSE_IGNORE_ORPHANS=True "${COMPOSE[@]}" -p "$PROJECT_NAME" -f "$ENTERPRISE_FILE" up -d
-
-if [[ "$INCLUDE_FUTURE" == "1" ]]; then
-  echo "Starting future integrations..."
-  COMPOSE_IGNORE_ORPHANS=True "${COMPOSE[@]}" -p "$PROJECT_NAME" -f "$FUTURE_FILE" up -d
-fi
 
 if [[ "$WAIT_FOR_SERVICES" == "1" ]]; then
   echo "Waiting for services..."
@@ -127,6 +113,11 @@ echo "Public portal:   http://${CLIENT_TARGET_HOST:-127.0.0.1}:${PUBLIC_PORTAL_P
 echo "HTTP observer:   http://${CLIENT_TARGET_HOST:-127.0.0.1}:${ENTRYPOINT_OBSERVER_PORT:-8083}/.env"
 echo "Dashboard:       http://${CLIENT_TARGET_HOST:-127.0.0.1}:${DASHBOARD_PORT:-8090}/"
 echo "Cowrie SSH:      ssh -p ${COWRIE_SSH_PORT:-2222} root@${CLIENT_TARGET_HOST:-127.0.0.1}"
+echo "SNARE HTTP:      http://${CLIENT_TARGET_HOST:-127.0.0.1}:${SNARE_HTTP_PORT:-8081}/"
+echo "Chameleon HTTP:  http://${CLIENT_TARGET_HOST:-127.0.0.1}:${CHAMELEON_HTTP_PORT:-8082}/"
+echo "Chameleon SSH:   ssh -p ${CHAMELEON_SSH_PORT:-2224} root@${CLIENT_TARGET_HOST:-127.0.0.1}"
+echo "Chameleon Redis: ${CLIENT_TARGET_HOST:-127.0.0.1}:${CHAMELEON_REDIS_PORT:-6380}"
+echo "Chameleon MySQL: ${CLIENT_TARGET_HOST:-127.0.0.1}:${CHAMELEON_MYSQL_PORT:-3307}"
 echo
 echo "For local browser access over SSH tunnel:"
 echo "  ssh -N -L 18090:127.0.0.1:${DASHBOARD_PORT:-8090} vm"

@@ -26,6 +26,8 @@ function renderMetrics(data) {
     ["Cowrie Events", data.metrics.cowrie_event_count, "Sanitized SSH telemetry events"],
     ["Containers Up", data.metrics.containers_up, "Compose services or runtime assets currently up"],
     ["Published Ports", data.metrics.published_port_count, "Host-reachable ports in current container view"],
+    ["Healthy Stages", data.metrics.healthy_chain_stages, "Pipeline health stages currently green"],
+    ["Warnings", data.metrics.warning_chain_stages, "Pipeline stages waiting for data or reporting failure"],
   ];
   document.getElementById("metrics").innerHTML = metrics.map(([label, value, hint]) => `
     <div class="metric">
@@ -34,6 +36,34 @@ function renderMetrics(data) {
       <div class="hint">${escapeHtml(hint)}</div>
     </div>
   `).join("");
+}
+
+function statusBadge(status) {
+  const label = status || "unknown";
+  const className = label === "ok" ? "good" : label === "bad" ? "bad" : "warn";
+  return `<span class="status-badge ${className}">${escapeHtml(label)}</span>`;
+}
+
+function renderHealth(stages) {
+  if (!stages.length) {
+    return '<div class="empty">No pipeline health data.</div>';
+  }
+  return `<table>
+    <thead>
+      <tr><th>Stage</th><th>Status</th><th>Component</th><th>Signal</th><th>Detail</th></tr>
+    </thead>
+    <tbody>
+      ${stages.map(stage => `
+        <tr>
+          <td>${escapeHtml(stage.stage)}</td>
+          <td>${statusBadge(stage.status)}</td>
+          <td class="mono">${escapeHtml(stage.component || "-")}</td>
+          <td class="mono">${escapeHtml(stage.signal || "-")}</td>
+          <td>${escapeHtml(stage.detail || "-")}</td>
+        </tr>
+      `).join("")}
+    </tbody>
+  </table>`;
 }
 
 function renderContainerTable(containers) {
@@ -138,6 +168,10 @@ async function loadData() {
   }
   const data = await response.json();
   renderMetrics(data);
+  const healthPanel = document.getElementById("health-panel");
+  if (healthPanel) {
+    healthPanel.innerHTML = renderHealth(data.chain_health || []);
+  }
   document.getElementById("containers-panel").innerHTML = renderContainerTable(data.containers || []);
   document.getElementById("bindings-panel").innerHTML = renderBindings(data.bindings || [], data.gateway_routes || []);
   document.getElementById("attackers-panel").innerHTML = renderAttackers(data.attackers || []);

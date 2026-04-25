@@ -164,6 +164,35 @@ th {
   color: #f0b4b4;
 }
 
+.status-badge {
+  display: inline-block;
+  min-width: 54px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.status-badge.good {
+  background: rgba(47, 191, 113, 0.14);
+  color: #9be7bb;
+  border: 1px solid rgba(47, 191, 113, 0.3);
+}
+
+.status-badge.warn {
+  background: rgba(240, 180, 41, 0.14);
+  color: #f8d78a;
+  border: 1px solid rgba(240, 180, 41, 0.3);
+}
+
+.status-badge.bad {
+  background: rgba(224, 93, 93, 0.14);
+  color: #f0b4b4;
+  border: 1px solid rgba(224, 93, 93, 0.3);
+}
+
 .attacker-list {
   display: grid;
   gap: 12px;

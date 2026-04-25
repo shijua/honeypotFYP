@@ -112,11 +112,10 @@ Use the manual flow in `ATTACK_TESTING_GUIDE.md` when you want to drive the atta
 
 ## Enterprise Compose Draft
 
-The enterprise-network deployment draft uses two default compose files plus one future-integration file:
+The enterprise-network deployment uses two compose files:
 
 - `docker-compose.control.yml` runs the control plane.
-- `docker-compose.enterprise.yml` runs the enterprise-facing services and attacker entrypoints.
-- `docker-compose.future.yml` holds optional integrations such as SNARE/TANNER and Chameleon until their logging paths are finalized.
+- `docker-compose.enterprise.yml` runs the benign surface, attacker entrypoints, and currently real enterprise assets.
 
 Copy `.env.example` to `.env` if local ports or bind addresses need to change. Keep `HOST_BIND_ADDRESS=127.0.0.1` for SSH-tunnel/local-only testing; use `HOST_BIND_ADDRESS=0.0.0.0` or a specific private IP if you want browser/terminal access from your LAN/VPN.
 
@@ -126,17 +125,21 @@ Reset old containers and runtime state before a fresh run:
 ./scripts/reset_enterprise_runtime.sh
 ```
 
-Start the current runnable slice without generating attacker traffic:
+Start the runnable stack without generating attacker traffic:
 
 ```bash
 ./scripts/start_enterprise_stack.sh
 ```
 
-Optional or unfinished integrations are kept in a separate future compose file:
+The enterprise slice includes `public-portal`, Cowrie, the HTTP observer, `SNARE + TANNER`, `Chameleon`, `mail-relay`, and the first internal portal. Chameleon publishes a deliberately small protocol subset: HTTP, SSH, Redis, and MySQL.
+
+To attach one locally cloned Vulhub scenario to the honeynet internal network:
 
 ```bash
-docker-compose -p honeynet -f docker-compose.future.yml config
+./scripts/start_vulhub_asset.sh --root vendor/vulhub --scenario spring/CVE-2022-22947
 ```
+
+Clone Vulhub outside the normal committed source tree or under `vendor/vulhub/`, which is ignored by git. The helper script is a temporary bridge for local testing; the correct long-term integration is a compose-backed internal asset runtime in the orchestrator. Only run Vulhub scenarios in an isolated lab.
 
 Live monitoring dashboard:
 
@@ -146,6 +149,8 @@ curl http://$TARGET_HOST:${DASHBOARD_PORT:-8090}/healthz
 ```
 
 Then open `http://$TARGET_HOST:${DASHBOARD_PORT:-8090}/` in a browser.
+
+The dashboard includes a Pipeline Health panel that traces the live path from public surface to HTTP/Cowrie entrypoints, forwarder, adapter, profile/controller, gateway, and dashboard state. This is the first place to look when raw Cowrie commands or HTTP probes do not appear in the profile view.
 
 Manual actor check after startup:
 

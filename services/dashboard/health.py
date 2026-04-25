@@ -1,0 +1,330 @@
+"""Pipeline health helpers for the live honeynet dashboard."""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+from pathlib import Path
+from typing import Any
+
+
+def build_chain_health(
+    *,
+    project_name: str,
+    state_dir: Path,
+    containers: list[dict[str, str]],
+    bindings: list[dict[str, Any]],
+    gateway_routes: list[dict[str, Any]],
+    attackers: list[dict[str, Any]],
+    entrypoint_observations: list[dict[str, Any]],
+    cowrie_observations: list[dict[str, Any]],
+    decision_trace: list[dict[str, Any]],
+) -> list[dict[str, str]]:
+    """Build a visible health trace for the attacker telemetry pipeline."""
+    raw_cowrie_event = _last_cowrie_log_event(_cowrie_log_path())
+    forwarder = _container_for_service(project_name, containers, "cowrie-forwarder")
+    forwarder_log = _last_forwarder_log_line(forwarder.get("name") if forwarder else "")
+    latest_entrypoint = _latest_record(entrypoint_observations, "ts")
+    latest_cowrie = _latest_record(cowrie_observations, "ts")
+    latest_decision = _latest_record(decision_trace, "ts")
+    latest_route = _latest_record(gateway_routes, "updated_at")
+
+    return [
+        _service_stage(
+            project_name,
+            containers,
+            service_name="public-portal",
+            stage="Benign surface",
+            detail="public portal container",
+        ),
+        _service_stage(
+            project_name,
+            containers,
+            service_name="entrypoint-observer",
+            stage="HTTP entrypoint",
+            detail=_record_detail(latest_entrypoint, ["method", "path", "attacker_key"]),
+            empty_detail="waiting for HTTP probe",
+        ),
+        _raw_cowrie_stage(raw_cowrie_event),
+        _forwarder_stage(forwarder, forwarder_log),
+        _service_stage(
+            project_name,
+            containers,
+            service_name="cowrie-adapter",
+            stage="Cowrie adapter",
+            detail=_record_detail(latest_cowrie, ["eventid", "command", "attacker_key"]),
+            empty_detail="adapter is up, waiting for stored Cowrie observation",
+        ),
+        _profile_stage(attackers, bindings, latest_decision),
+        _gateway_stage(latest_route),
+        _service_stage(
+            project_name,
+            containers,
+            service_name="dashboard",
+            stage="Dashboard",
+            detail=f"state dir {state_dir}",
+        ),
+    ]
+
+
+def _service_stage(
+    project_name: str,
+    containers: list[dict[str, str]],
+    *,
+    service_name: str,
+    stage: str,
+    detail: str,
+    empty_detail: str | None = None,
+) -> dict[str, str]:
+    container = _container_for_service(project_name, containers, service_name)
+    status = _container_health_status(container)
+    if status == "ok":
+        stage_detail = detail or empty_detail or "container is running"
+    elif container is None:
+        stage_detail = "container not found"
+    else:
+        stage_detail = container.get("status", "container is not running")
+    return _health_stage(
+        stage=stage,
+        component=service_name,
+        status=status,
+        signal=container.get("status", "missing") if container else "missing",
+        detail=stage_detail,
+    )
+
+
+def _raw_cowrie_stage(event: dict[str, Any] | None) -> dict[str, str]:
+    if event is None:
+        return _health_stage(
+            stage="Cowrie raw log",
+            component="deploy/cowrie/var/log/cowrie/cowrie.json",
+            status="warn",
+            signal="no raw event",
+            detail="waiting for Cowrie to write a JSON event",
+        )
+    return _health_stage(
+        stage="Cowrie raw log",
+        component="cowrie.json",
+        status="ok",
+        signal=str(event.get("eventid", "event")),
+        detail=_record_detail(event, ["timestamp", "src_ip", "input", "session"]),
+    )
+
+
+def _forwarder_stage(
+    container: dict[str, str] | None,
+    log_line: str,
+) -> dict[str, str]:
+    container_status = _container_health_status(container)
+    if container_status != "ok":
+        return _health_stage(
+            stage="Cowrie forwarder",
+            component="cowrie-forwarder",
+            status=container_status,
+            signal=container.get("status", "missing") if container else "missing",
+            detail="forwarder container is not running",
+        )
+    if not log_line:
+        return _health_stage(
+            stage="Cowrie forwarder",
+            component="cowrie-forwarder",
+            status="warn",
+            signal=container.get("status", "running") if container else "running",
+            detail="running, no forwarded event logged yet",
+        )
+    if "Could not reach" in log_line or "Adapter rejected" in log_line:
+        status = "bad"
+    elif log_line.startswith("Forwarded "):
+        status = "ok"
+    else:
+        status = "warn"
+    return _health_stage(
+        stage="Cowrie forwarder",
+        component="cowrie-forwarder",
+        status=status,
+        signal=log_line,
+        detail="tails Cowrie JSON and POSTs events into cowrie-adapter",
+    )
+
+
+def _profile_stage(
+    attackers: list[dict[str, Any]],
+    bindings: list[dict[str, Any]],
+    latest_decision: dict[str, Any] | None,
+) -> dict[str, str]:
+    if not attackers:
+        return _health_stage(
+            stage="Profile/controller",
+            component="profiler + controller",
+            status="warn",
+            signal="no attacker profile",
+            detail=f"{len(bindings)} binding records, waiting for profile evidence",
+        )
+    detail = _record_detail(latest_decision, ["ts", "attacker_key", "candidate_asset_ids"])
+    return _health_stage(
+        stage="Profile/controller",
+        component="profiler + controller",
+        status="ok",
+        signal=f"{len(attackers)} attacker profiles",
+        detail=detail or "profiles available",
+    )
+
+
+def _gateway_stage(latest_route: dict[str, Any] | None) -> dict[str, str]:
+    if latest_route is None:
+        return _health_stage(
+            stage="Gateway/assets",
+            component="gateway + orchestrator",
+            status="warn",
+            signal="no route",
+            detail="waiting for controller/orchestrator route update",
+        )
+    failed_assets = latest_route.get("failed_assets", [])
+    failed_assets = failed_assets if isinstance(failed_assets, list) else []
+    exposed_assets = latest_route.get("exposed_assets", [])
+    exposed_assets = exposed_assets if isinstance(exposed_assets, list) else []
+    status = "bad" if failed_assets else "ok"
+    signal = "failed assets" if failed_assets else f"{len(exposed_assets)} exposed assets"
+    detail = _record_detail(
+        latest_route,
+        ["updated_at", "attacker_key", "exposed_assets", "failed_assets"],
+    )
+    return _health_stage(
+        stage="Gateway/assets",
+        component="gateway + orchestrator",
+        status=status,
+        signal=signal,
+        detail=detail,
+    )
+
+
+def _health_stage(
+    *,
+    stage: str,
+    component: str,
+    status: str,
+    signal: str,
+    detail: str,
+) -> dict[str, str]:
+    return {
+        "stage": stage,
+        "component": component,
+        "status": status,
+        "signal": signal,
+        "detail": detail,
+    }
+
+
+def _container_for_service(
+    project_name: str,
+    containers: list[dict[str, str]],
+    service_name: str,
+) -> dict[str, str] | None:
+    expected = f"{project_name}_{service_name}_1"
+    for container in containers:
+        if container.get("name") == expected:
+            return container
+    return None
+
+
+def _container_health_status(container: dict[str, str] | None) -> str:
+    if container is None:
+        return "bad"
+    status = container.get("status", "")
+    if status.startswith("Up"):
+        return "ok"
+    return "bad"
+
+
+def _latest_record(records: list[dict[str, Any]], key: str) -> dict[str, Any] | None:
+    if not records:
+        return None
+    return sorted(records, key=lambda item: str(item.get(key, "")))[-1]
+
+
+def _record_detail(record: dict[str, Any] | None, fields: list[str]) -> str:
+    if not record:
+        return ""
+    parts: list[str] = []
+    for field in fields:
+        value = record.get(field)
+        if value in (None, "", [], {}):
+            continue
+        if isinstance(value, (list, dict)):
+            value = json.dumps(value, sort_keys=True)
+        parts.append(f"{field}={value}")
+    return ", ".join(parts)
+
+
+def _cowrie_log_path() -> Path:
+    return Path(
+        os.getenv(
+            "HONEYPOT_COWRIE_LOG_PATH",
+            "deploy/cowrie/var/log/cowrie/cowrie.json",
+        )
+    )
+
+
+def _last_cowrie_log_event(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    try:
+        with path.open("rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            size = handle.tell()
+            handle.seek(max(size - 65536, 0), os.SEEK_SET)
+            payload = handle.read().decode("utf-8", errors="ignore")
+    except OSError:
+        return None
+    for line in reversed(payload.splitlines()):
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(event, dict):
+            return _safe_cowrie_log_event(event)
+    return None
+
+
+def _safe_cowrie_log_event(event: dict[str, Any]) -> dict[str, Any]:
+    safe_fields = ["eventid", "timestamp", "src_ip", "session", "input"]
+    return {
+        field: event[field]
+        for field in safe_fields
+        if isinstance(event.get(field), (str, int, float, bool))
+    }
+
+
+def _last_forwarder_log_line(container_name: str) -> str:
+    if not container_name:
+        return ""
+    lines = _probe_container_logs(container_name)
+    for line in reversed(lines):
+        if (
+            line.startswith("Forwarded ")
+            or line.startswith("Skipped ")
+            or "Could not reach" in line
+            or "Adapter rejected" in line
+        ):
+            return line
+    return ""
+
+
+def _probe_container_logs(container_name: str) -> list[str]:
+    try:
+        result = subprocess.run(
+            ["docker", "logs", "--tail", "80", container_name],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except Exception:
+        return []
+    if result.returncode != 0:
+        return []
+    return [
+        line.strip()
+        for line in f"{result.stdout}\n{result.stderr}".splitlines()
+        if line.strip()
+    ]

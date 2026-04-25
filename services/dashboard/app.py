@@ -6,7 +6,6 @@ import json
 import os
 import subprocess
 from datetime import datetime, timezone
-from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 
 from libs.common.config import RuntimeConfig
+from services.dashboard.health import build_chain_health
 from services.dashboard.summary import summarize_demo
 
 app = FastAPI(title="dashboard", version="0.1.0")
@@ -62,12 +62,24 @@ def api_summary() -> dict[str, Any]:
         state_dir / "cowrie_observations.json",
         "observations",
     )
+    decision_trace = _read_items(state_dir / "decision_trace.json", "records")
     containers = _probe_project_containers(project_name)
     attackers = [
         attacker
         for attacker in report.get("attackers", [])
         if isinstance(attacker, dict)
     ]
+    chain_health = build_chain_health(
+        project_name=project_name,
+        state_dir=state_dir,
+        containers=containers,
+        bindings=bindings,
+        gateway_routes=gateway_routes,
+        attackers=attackers,
+        entrypoint_observations=entrypoint_observations,
+        cowrie_observations=cowrie_observations,
+        decision_trace=decision_trace,
+    )
 
     return {
         "schema_version": "v1",
@@ -80,8 +92,10 @@ def api_summary() -> dict[str, Any]:
             entrypoint_observations=entrypoint_observations,
             cowrie_observations=cowrie_observations,
             containers=containers,
+            chain_health=chain_health,
         ),
         "containers": containers,
+        "chain_health": chain_health,
         "bindings": bindings,
         "gateway_routes": gateway_routes,
         "attackers": attackers,
@@ -90,9 +104,8 @@ def api_summary() -> dict[str, Any]:
     }
 
 
-@lru_cache(maxsize=1)
 def _load_dashboard_html() -> str:
-    """Load the dashboard HTML once and inject the refresh interval."""
+    """Load dashboard HTML and inject the refresh interval."""
     return INDEX_HTML_PATH.read_text(encoding="utf-8").replace(
         "__REFRESH_SECONDS__",
         str(REFRESH_SECONDS),
@@ -106,6 +119,7 @@ def _build_metrics(
     entrypoint_observations: list[dict[str, Any]],
     cowrie_observations: list[dict[str, Any]],
     containers: list[dict[str, str]],
+    chain_health: list[dict[str, str]],
 ) -> dict[str, int]:
     """Compute dashboard counters from one snapshot."""
     return {
@@ -134,6 +148,16 @@ def _build_metrics(
             1
             for container in containers
             if isinstance(container.get("ports"), str) and container.get("ports")
+        ),
+        "healthy_chain_stages": sum(
+            1
+            for stage in chain_health
+            if stage.get("status") == "ok"
+        ),
+        "warning_chain_stages": sum(
+            1
+            for stage in chain_health
+            if stage.get("status") in {"warn", "bad"}
         ),
     }
 
