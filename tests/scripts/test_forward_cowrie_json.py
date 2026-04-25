@@ -7,6 +7,7 @@ from scripts.forward_cowrie_json import (
     follow_log_file,
     iter_json_events,
     normalize_event,
+    _refresh_log_handle,
 )
 
 
@@ -69,3 +70,57 @@ def test_follow_log_file_creates_missing_file_in_tail_mode(tmp_path) -> None:
 
     assert forwarded == 0
     assert log_file.exists()
+
+
+def test_refresh_log_handle_reopens_after_rotation(tmp_path) -> None:
+    log_file = tmp_path / "cowrie.json"
+    log_file.write_text('{"eventid": "old"}\n', encoding="utf-8")
+    current = _refresh_log_handle(
+        log_file,
+        None,
+        from_start=False,
+        initial_open=True,
+    )
+    assert current.position == len(log_file.read_text(encoding="utf-8"))
+
+    log_file.unlink()
+    log_file.write_text('{}\n', encoding="utf-8")
+
+    reopened = _refresh_log_handle(
+        log_file,
+        current,
+        from_start=False,
+        initial_open=False,
+    )
+    try:
+        assert reopened.identity != current.identity
+        assert reopened.position == 0
+        assert reopened.handle.readline().strip() == "{}"
+    finally:
+        reopened.handle.close()
+
+
+def test_refresh_log_handle_reopens_after_truncate(tmp_path) -> None:
+    log_file = tmp_path / "cowrie.json"
+    log_file.write_text('{"eventid": "old"}\n', encoding="utf-8")
+    current = _refresh_log_handle(
+        log_file,
+        None,
+        from_start=False,
+        initial_open=True,
+    )
+    assert current.position > 0
+
+    log_file.write_text('{}\n', encoding="utf-8")
+
+    reopened = _refresh_log_handle(
+        log_file,
+        current,
+        from_start=False,
+        initial_open=False,
+    )
+    try:
+        assert reopened.position == 0
+        assert reopened.handle.readline().strip() == "{}"
+    finally:
+        reopened.handle.close()

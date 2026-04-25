@@ -11,10 +11,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
-from typing import Iterable, Iterator
+from typing import IO, Iterable, Iterator, NamedTuple
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -118,6 +119,12 @@ def forward_lines(
     return forwarded
 
 
+class _OpenLog(NamedTuple):
+    handle: IO[str]
+    identity: tuple[int, int]
+    position: int
+
+
 def follow_log_file(
     log_file: Path,
     adapter_url: str,
@@ -128,22 +135,20 @@ def follow_log_file(
     timeout_seconds: float,
 ) -> int:
     """Tail a Cowrie JSON log file and forward new events to the adapter."""
-    if not log_file.exists():
-        # Create the path eagerly so the runner can start before Cowrie has
-        # emitted its first event. In --once mode this simply forwards 0 events.
-        log_file.parent.mkdir(parents=True, exist_ok=True)
-        log_file.touch()
-        # Local Docker Cowrie runs as a container user; keep a pre-created file
-        # writable by that user if the forwarder starts first.
-        log_file.chmod(0o666)
-
     forwarded = 0
-    with log_file.open("r", encoding="utf-8") as handle:
-        if not from_start:
-            handle.seek(0, 2)
-
+    current_log: _OpenLog | None = None
+    initial_open = True
+    try:
         while True:
-            line = handle.readline()
+            current_log = _refresh_log_handle(
+                log_file,
+                current_log,
+                from_start=from_start,
+                initial_open=initial_open,
+            )
+            initial_open = False
+
+            line = current_log.handle.readline()
             if line:
                 forwarded += forward_lines(
                     [line],
@@ -151,10 +156,56 @@ def follow_log_file(
                     protocol=protocol,
                     timeout_seconds=timeout_seconds,
                 )
+                current_log = current_log._replace(position=current_log.handle.tell())
                 continue
             if once:
                 return forwarded
             time.sleep(poll_seconds)
+    finally:
+        if current_log is not None:
+            current_log.handle.close()
+
+
+def _refresh_log_handle(
+    log_file: Path,
+    current_log: _OpenLog | None,
+    *,
+    from_start: bool,
+    initial_open: bool,
+) -> _OpenLog:
+    """Open or reopen the log file when Cowrie rotates or truncates it."""
+    _ensure_log_file(log_file)
+    stat_result = log_file.stat()
+    identity = (stat_result.st_dev, stat_result.st_ino)
+    should_reopen = (
+        current_log is None
+        or current_log.identity != identity
+        or stat_result.st_size < current_log.position
+    )
+    if not should_reopen:
+        return current_log
+
+    if current_log is not None:
+        current_log.handle.close()
+
+    handle = log_file.open("r", encoding="utf-8")
+    if initial_open and not from_start:
+        handle.seek(0, os.SEEK_END)
+    else:
+        handle.seek(0)
+    return _OpenLog(handle=handle, identity=identity, position=handle.tell())
+
+
+def _ensure_log_file(log_file: Path) -> None:
+    if log_file.exists():
+        return
+    # Create the path eagerly so the runner can start before Cowrie has emitted
+    # its first event. In --once mode this simply forwards 0 events.
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    log_file.touch()
+    # Local Docker Cowrie runs as a container user; keep a pre-created file
+    # writable by that user if the forwarder starts first.
+    log_file.chmod(0o666)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:

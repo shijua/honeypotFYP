@@ -126,11 +126,10 @@ Reset old containers and runtime state before a fresh run:
 ./scripts/reset_enterprise_runtime.sh
 ```
 
-Start the current runnable slice with a shared compose project name:
+Start the current runnable slice without generating attacker traffic:
 
 ```bash
-docker-compose -p honeynet -f docker-compose.control.yml up -d
-docker-compose -p honeynet -f docker-compose.enterprise.yml up -d
+./scripts/start_enterprise_stack.sh
 ```
 
 Optional or unfinished integrations are kept in a separate future compose file:
