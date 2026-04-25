@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 
 from libs.common.config import RuntimeConfig
-from scripts.summarize_adaptive_demo import summarize_demo
+from services.dashboard.summary import summarize_demo
 
 app = FastAPI(title="dashboard", version="0.1.0")
 

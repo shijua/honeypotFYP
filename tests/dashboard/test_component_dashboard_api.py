@@ -4,9 +4,8 @@ import json
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
 
-from scripts import summarize_adaptive_demo
+from services.dashboard import summary as dashboard_summary
 from services.dashboard import app as dashboard_app
 
 
@@ -141,9 +140,9 @@ def test_dashboard_summary_endpoint_returns_live_snapshot(
     monkeypatch.setenv("HONEYPOT_STATE_DIR", str(state_dir))
     monkeypatch.setenv("HONEYPOT_PROJECT_NAME", "honeynet")
     monkeypatch.setattr(
-        summarize_adaptive_demo,
+        dashboard_summary,
         "current_docker_status",
-        lambda: summarize_adaptive_demo.DockerStatusProbe(
+        lambda: dashboard_summary.DockerStatusProbe(
             statuses={"honeynet-bind-internal-portal": "Up 5 seconds"},
             error=None,
         ),
@@ -169,11 +168,8 @@ def test_dashboard_summary_endpoint_returns_live_snapshot(
         ],
     )
 
-    with TestClient(dashboard_app.app) as client:
-        response = client.get("/api/summary")
+    payload = dashboard_app.api_summary()
 
-    assert response.status_code == 200
-    payload = response.json()
     assert payload["metrics"]["attacker_count"] == 1
     assert payload["metrics"]["active_bindings"] == 1
     assert payload["metrics"]["running_assets"] == 1
@@ -186,16 +182,14 @@ def test_dashboard_summary_endpoint_returns_live_snapshot(
 
 
 def test_dashboard_index_serves_html() -> None:
-    with TestClient(dashboard_app.app) as client:
-        response = client.get("/")
-        css_response = client.get("/static/dashboard.css")
-        js_response = client.get("/static/dashboard.js")
+    dashboard_app._load_dashboard_html.cache_clear()
+    response = dashboard_app.dashboard_index()
+    css = (dashboard_app.STATIC_DIR / "dashboard.css").read_text(encoding="utf-8")
+    js = (dashboard_app.STATIC_DIR / "dashboard.js").read_text(encoding="utf-8")
 
     assert response.status_code == 200
-    assert "Live Honeynet Dashboard" in response.text
-    assert '/static/dashboard.css' in response.text
-    assert '/static/dashboard.js' in response.text
-    assert css_response.status_code == 200
-    assert ".metrics" in css_response.text
-    assert js_response.status_code == 200
-    assert "async function loadData()" in js_response.text
+    assert "Live Honeynet Dashboard" in response.body.decode("utf-8")
+    assert '/static/dashboard.css' in response.body.decode("utf-8")
+    assert '/static/dashboard.js' in response.body.decode("utf-8")
+    assert ".metrics" in css
+    assert "async function loadData()" in js

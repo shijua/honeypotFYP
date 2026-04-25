@@ -47,8 +47,7 @@ The intended deployment model is now organized into three visibility layers:
   - guide the attacker deeper into the controlled environment using the current profile
 
 ## Cold-start profiling idea
-The system does not treat entrypoint activity as the only source of initial judgment.
-Instead, it combines:
+The system does not treat entrypoint activity as the only source of initial judgment. Instead, it combines:
 
 - anomalous behavior observed on the benign user surface
 - explicit attack behavior observed on attacker-facing entrypoints
@@ -220,24 +219,16 @@ Additional repositories now exist for:
 ## Notes
 - Default local storage is file-backed under `data/runtime/`.
 - Cowrie observations are stored in `data/runtime/cowrie_observations.json`.
-- Cowrie profiler evidence is stored separately in `data/runtime/evidence.json`;
-  observations are intake/audit records, while evidence affects profiles and controller decisions.
+- Cowrie profiler evidence is stored separately in `data/runtime/evidence.json`; observations are intake/audit records, while evidence affects profiles and controller decisions.
 - Entrypoint observations are stored in `data/runtime/entrypoint_observations.json`.
-- Falco should later run outside honeypot containers as node/runtime telemetry,
-  while Cowrie logs capture SSH attacker interaction telemetry.
-- Local Cowrie lab configuration lives in `deploy/cowrie/`; the log forwarder
-  `scripts/forward_cowrie_json.py` bridges `cowrie.json` into the Cowrie API.
+- Falco should later run outside honeypot containers as node/runtime telemetry, while Cowrie logs capture SSH attacker interaction telemetry.
+- Local Cowrie lab configuration lives in `deploy/cowrie/`; the log forwarder `scripts/forward_cowrie_json.py` bridges `cowrie.json` into the Cowrie API.
 - Orchestration records `AssetRuntimeRecord` entries and can start selected Docker-backed runtimes, but it does not manage Kubernetes pods/namespaces yet.
-- The controller now loads its asset catalog from `data/assets/catalog.json`.
-  The catalog contains MVP template metadata such as protocol, port, family, default settings, source references, and selected Docker runtime specs. These are still MVP runtime specs, not full Docker Compose/Kubernetes manifests.
+- The controller now loads its asset catalog from `data/assets/catalog.json`. The catalog contains MVP template metadata such as protocol, port, family, default settings, source references, and selected Docker runtime specs. These are still MVP runtime specs, not full Docker Compose/Kubernetes manifests.
 - Current real-demo status:
   - `internal-portal` is the first verified real internal asset and currently uses a stable `nginx:alpine` runtime.
   - `gateway.exposed_assets` means currently reachable assets, while failed Docker starts/exited containers are tracked separately as failed assets.
   - `redis-cache` is still a known failed Docker-backed asset in the local demo and should be treated as an unresolved runtime/integration issue.
-- Mock asset starts are converted into Falco-style `FalcoEvent` objects with
-  `falco_rule="Honeynet asset template started"`. Real Falco will only observe
-  these lifecycle events after a future Docker/Kubernetes adapter creates real
-  workloads.
-- Cowrie event priority, ATT&CK tags, descriptive `cowrie_*` tags, and
-  profiler output fields are loaded from `data/cowrie/event_mappings.json`.
+- Mock asset starts are converted into Falco-style `FalcoEvent` objects with `falco_rule="Honeynet asset template started"`. Real Falco will only observe these lifecycle events after a future Docker/Kubernetes adapter creates real workloads.
+- Cowrie event priority, ATT&CK tags, descriptive `cowrie_*` tags, and profiler output fields are loaded from `data/cowrie/event_mappings.json`.
 - Attack-graph generation is still planned but not implemented.
