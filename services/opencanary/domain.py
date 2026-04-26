@@ -30,14 +30,13 @@ _SENSITIVE_KEYS = {
     "token",
 }
 _PORT_SERVICE_HINTS = {
+    21: "ftp",
     22: "ssh",
+    23: "telnet",
     80: "http",
     443: "https",
     3306: "mysql",
-    3307: "mysql",
     6379: "redis",
-    6380: "redis",
-    8082: "http",
     9418: "git",
 }
 

@@ -38,6 +38,12 @@ print_debug() {
   "${COMPOSE[@]}" -p "$PROJECT_NAME" -f "$ENTERPRISE_FILE" ps || true
   echo "Recent profiler logs:"
   "${COMPOSE[@]}" -p "$PROJECT_NAME" -f "$CONTROL_FILE" logs --tail=80 profiler || true
+  echo "Recent OpenCanary adapter logs:"
+  "${COMPOSE[@]}" -p "$PROJECT_NAME" -f "$ENTERPRISE_FILE" logs --tail=40 opencanary-adapter || true
+  echo "Recent OpenCanary forwarder logs:"
+  "${COMPOSE[@]}" -p "$PROJECT_NAME" -f "$ENTERPRISE_FILE" logs --tail=40 opencanary-forwarder || true
+  echo "Recent public portal forwarder logs:"
+  "${COMPOSE[@]}" -p "$PROJECT_NAME" -f "$ENTERPRISE_FILE" logs --tail=40 public-portal-forwarder || true
   echo "Recent public portal logs:"
   "${COMPOSE[@]}" -p "$PROJECT_NAME" -f "$ENTERPRISE_FILE" logs --tail=40 public-portal || true
 }
@@ -115,5 +121,7 @@ fi
 
 echo "Checking control plane is reachable inside Docker network..."
 wait_for_docker_http honeynet_net_control http://profiler:8002/docs
+wait_for_docker_http honeynet_net_control http://opencanary-adapter:8012/healthz
+wait_for_docker_http honeynet_net_control http://entrypoint-observer:8010/healthz
 
 echo "Compose smoke test passed."

@@ -10,6 +10,10 @@ vendor/vulhub/
 data/runtime/
 data/mitre/enterprise-attack.json
 deploy/cowrie/var/
+deploy/opencanary/var/*
+!deploy/opencanary/var/.gitkeep
+deploy/public-portal/logs/*
+!deploy/public-portal/logs/.gitkeep
 dist/
 build/
 *.egg-info/

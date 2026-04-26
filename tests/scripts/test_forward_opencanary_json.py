@@ -20,14 +20,14 @@ def test_iter_json_events_skips_invalid_lines() -> None:
         iter_json_events(
             [
                 "\n",
-                '{"src_host": "198.51.100.1", "dst_port": 6380}\n',
+                '{"src_host": "198.51.100.1", "dst_port": 6379}\n',
                 "not-json\n",
                 "[1, 2, 3]\n",
             ]
         )
     )
 
-    assert events == [{"src_host": "198.51.100.1", "dst_port": 6380}]
+    assert events == [{"src_host": "198.51.100.1", "dst_port": 6379}]
 
 
 def test_build_adapter_payload_wraps_event_and_protocol() -> None:
@@ -39,7 +39,7 @@ def test_build_adapter_payload_wraps_event_and_protocol() -> None:
 
 
 def test_normalize_event_skips_missing_source_host() -> None:
-    assert normalize_event({"dst_port": 6380}) is None
+    assert normalize_event({"dst_port": 6379}) is None
 
 
 def test_normalize_event_converts_structured_logdata() -> None:
@@ -67,7 +67,7 @@ def test_forward_lines_posts_normalized_events(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr(forwarder, "post_event", _post_event)
 
     forwarded = forwarder.forward_lines(
-        ['{"src_host": "198.51.100.2", "dst_port": 8082}\n', '{"dst_port": 8082}\n'],
+        ['{"src_host": "198.51.100.2", "dst_port": 80}\n', '{"dst_port": 80}\n'],
         adapter_url="http://127.0.0.1:8012/v1/opencanary/events",
         protocol="http",
         timeout_seconds=0.01,
@@ -76,7 +76,7 @@ def test_forward_lines_posts_normalized_events(monkeypatch: pytest.MonkeyPatch) 
     assert forwarded == 1
     assert calls == [
         {
-            "event": {"src_host": "198.51.100.2", "dst_port": 8082, "logdata": {}},
+            "event": {"src_host": "198.51.100.2", "dst_port": 80, "logdata": {}},
             "protocol": "http",
         }
     ]
@@ -125,4 +125,3 @@ def test_refresh_log_handle_reopens_after_rotation(tmp_path) -> None:
         assert reopened.handle.readline().strip() == "{}"
     finally:
         reopened.handle.close()
-

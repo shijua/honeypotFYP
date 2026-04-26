@@ -33,6 +33,14 @@ def build_chain_health(
     cowrie_forwarder_log = _last_forwarder_log_line(
         cowrie_forwarder.get("name") if cowrie_forwarder else ""
     )
+    public_portal_forwarder = _container_for_service(
+        project_name,
+        containers,
+        "public-portal-forwarder",
+    )
+    public_portal_forwarder_log = _last_forwarder_log_line(
+        public_portal_forwarder.get("name") if public_portal_forwarder else ""
+    )
     opencanary_forwarder = _container_for_service(
         project_name,
         containers,
@@ -55,20 +63,20 @@ def build_chain_health(
             stage="Benign surface",
             detail="public portal container",
         ),
-        _service_stage(
-            project_name,
-            containers,
-            service_name="entrypoint-observer",
-            stage="HTTP entrypoint",
-            detail=_record_detail(latest_entrypoint, ["method", "path", "attacker_key"]),
-            empty_detail="waiting for HTTP probe",
+        _forwarder_stage(
+            public_portal_forwarder,
+            public_portal_forwarder_log,
+            stage="Benign surface forwarder",
+            component="public-portal-forwarder",
+            target="public website HTTP backend",
         ),
         _service_stage(
             project_name,
             containers,
-            service_name="opencanary-entrypoint",
-            stage="OpenCanary entrypoint",
-            detail="multi-protocol OpenCanary container",
+            service_name="entrypoint-observer",
+            stage="Public HTTP backend",
+            detail=_record_detail(latest_entrypoint, ["method", "path", "attacker_key"]),
+            empty_detail="waiting for public portal breadcrumb or direct HTTP probe",
         ),
         _raw_opencanary_stage(raw_opencanary_event),
         _forwarder_stage(
@@ -168,7 +176,7 @@ def _raw_opencanary_stage(event: dict[str, Any] | None) -> dict[str, str]:
             component="deploy/opencanary/var/opencanary.log",
             status="warn",
             signal="no raw event",
-            detail="waiting for OpenCanary to write a JSON event",
+            detail="waiting for an unlocked OpenCanary internal asset to write a JSON event",
         )
     return _health_stage(
         stage="OpenCanary raw log",
@@ -204,7 +212,12 @@ def _forwarder_stage(
             signal=container.get("status", "running") if container else "running",
             detail="running, no forwarded event logged yet",
         )
-    if "Could not reach" in log_line or "Adapter rejected" in log_line:
+    if (
+        "Could not reach" in log_line
+        or "Adapter rejected" in log_line
+        or "Observer rejected" in log_line
+        or "Observer returned" in log_line
+    ):
         status = "bad"
     elif log_line.startswith("Forwarded "):
         status = "ok"
@@ -429,6 +442,8 @@ def _last_forwarder_log_line(container_name: str) -> str:
             or line.startswith("Skipped ")
             or "Could not reach" in line
             or "Adapter rejected" in line
+            or "Observer rejected" in line
+            or "Observer returned" in line
         ):
             return line
     return ""
@@ -439,7 +454,8 @@ def _probe_container_logs(container_name: str) -> list[str]:
         result = subprocess.run(
             ["docker", "logs", "--tail", "80", container_name],
             check=False,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             text=True,
         )
     except Exception:
@@ -448,6 +464,6 @@ def _probe_container_logs(container_name: str) -> list[str]:
         return []
     return [
         line.strip()
-        for line in f"{result.stdout}\n{result.stderr}".splitlines()
+        for line in result.stdout.splitlines()
         if line.strip()
     ]

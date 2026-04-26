@@ -298,6 +298,18 @@ class DockerTemplateRuntime:
             "container_name": container_name,
             "image": image,
         }
+        format_context = _runtime_format_context(binding_id, asset.asset_id)
+
+        network = runtime.get("network")
+        if isinstance(network, str) and network.strip():
+            network_name = _format_runtime_string(network, format_context)
+            docker_args.extend(["--network", network_name])
+            runtime_settings["network"] = network_name
+
+        memory_limit = runtime.get("memory_limit")
+        if isinstance(memory_limit, str) and memory_limit.strip():
+            docker_args.extend(["--memory", memory_limit.strip()])
+            runtime_settings["memory_limit"] = memory_limit.strip()
 
         restart_policy = runtime.get("restart_policy")
         if isinstance(restart_policy, str) and restart_policy:
@@ -350,7 +362,7 @@ class DockerTemplateRuntime:
         if isinstance(volumes, list):
             normalized_volumes: list[str] = []
             for volume in volumes:
-                mount = str(volume).strip()
+                mount = _format_runtime_string(str(volume).strip(), format_context)
                 if not mount:
                     continue
                 docker_args.extend(["-v", mount])
@@ -383,19 +395,25 @@ class DockerTemplateRuntime:
         env = runtime.get("env", {})
         if isinstance(env, dict):
             for key, value in env.items():
-                docker_args.extend(["-e", f"{key}={value}"])
+                formatted_value = _format_runtime_string(str(value), format_context)
+                docker_args.extend(["-e", f"{key}={formatted_value}"])
 
         entrypoint = runtime.get("entrypoint")
         if isinstance(entrypoint, str) and entrypoint:
-            docker_args.extend(["--entrypoint", entrypoint])
+            docker_args.extend(
+                ["--entrypoint", _format_runtime_string(entrypoint, format_context)]
+            )
 
         docker_args.append(image)
 
         command = runtime.get("command", [])
         if isinstance(command, list):
-            docker_args.extend(str(part) for part in command)
+            docker_args.extend(
+                _format_runtime_string(str(part), format_context)
+                for part in command
+            )
         elif isinstance(command, str) and command:
-            docker_args.append(command)
+            docker_args.append(_format_runtime_string(command, format_context))
 
         return docker_args, runtime_settings
 
@@ -699,6 +717,26 @@ def _monitoring_event_for_record(
 def _container_name(binding_id: str, asset_id: str) -> str:
     """Generate a stable Docker container name for one binding+asset pair."""
     return f"honeynet-{binding_id[:8]}-{asset_id}"
+
+
+def _runtime_format_context(binding_id: str, asset_id: str) -> dict[str, str]:
+    """Return placeholders supported in catalog Docker runtime strings."""
+    return {
+        "binding_id": binding_id,
+        "binding_id_short": binding_id[:8],
+        "asset_id": asset_id,
+        "project_name": _honeynet_project_name(),
+        "container_project_root": str(_container_project_root()),
+        "host_project_root": str(_host_project_root()),
+    }
+
+
+def _format_runtime_string(value: str, context: dict[str, str]) -> str:
+    """Format one catalog runtime string with a clear error on bad placeholders."""
+    try:
+        return value.format(**context)
+    except KeyError as exc:
+        raise RuntimeError(f"unknown runtime placeholder: {exc.args[0]}") from exc
 
 
 def _find_free_port() -> int:

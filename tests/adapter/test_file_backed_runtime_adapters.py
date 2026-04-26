@@ -201,7 +201,7 @@ def test_file_opencanary_repository_persists_observations(tmp_path) -> None:
         binding_id="binding-6",
         service="redis",
         src_host="198.51.100.95",
-        dst_port=6380,
+        dst_port=6379,
         tags=["mitre_discovery", "T1046"],
         profiler_evidence_ids=["e-3"],
     )

@@ -8,6 +8,7 @@ This repository implements a profiling-driven dynamic honeynet MVP with independ
 - `services/profiler`
 - `services/controller`
 - `services/gateway`
+- `services/opencanary`
 - `services/orchestrator`
 - `libs/contracts`
 - `libs/common`
@@ -18,7 +19,7 @@ This repository implements a profiling-driven dynamic honeynet MVP with independ
 The intended deployment model has three visibility layers:
 
 - `Benign user surface`: normal user-facing pages and services that make the environment look like a real enterprise
-- `Attacker-facing entrypoints`: the first public-facing collection points such as HTTP entrypoints and SSH honeypots
+- `Attacker-facing entrypoints`: the first public-facing collection points such as the public website HTTP backend and SSH honeypots
 - `Adaptive internal assets`: internal services that are released gradually based on the current attacker profile
 
 The profiling idea is:
@@ -62,7 +63,7 @@ pytest -m adapter
 Run the current MVP suite with:
 
 ```bash
-pytest -q tests/binding_service tests/cowrie tests/entrypoint tests/profiler tests/controller tests/orchestrator tests/gateway tests/contracts tests/adapter tests/test_mvp_smoke.py
+pytest -q tests/binding_service tests/cowrie tests/entrypoint tests/opencanary tests/profiler tests/controller tests/orchestrator tests/gateway tests/contracts tests/adapter tests/test_mvp_smoke.py
 ```
 
 Simulation helpers and dashboard/script tests are kept in the main tree so they stay synchronized with the current compose stack.
@@ -77,12 +78,13 @@ Each service has a FastAPI app object in `services/*/app.py`. Implemented entryp
 - `uvicorn services.profiler.app:app --reload`
 - `uvicorn services.controller.app:app --reload`
 - `uvicorn services.gateway.app:app --reload`
+- `uvicorn services.opencanary.app:app --reload`
 - `uvicorn services.orchestrator.app:app --reload`
 
 Current MVP flow:
 
 ```bash
-HTTP/Cowrie event -> resolve binding -> ingest evidence -> read profile -> controller tick -> orchestrator apply -> gateway sync
+HTTP/Cowrie/OpenCanary event -> resolve binding -> ingest evidence -> read profile -> controller tick -> orchestrator apply -> gateway sync
 ```
 
 ## Runtime storage
@@ -92,6 +94,7 @@ The default local runtime now persists state under `data/runtime/`:
 - `bindings.json`
 - `cowrie_observations.json`
 - `entrypoint_observations.json`
+- `opencanary_observations.json`
 - `evidence.json`
 - `profiles.json`
 - `gateway_routes.json`
@@ -132,7 +135,34 @@ Start the runnable stack without generating attacker traffic:
 ./scripts/start_enterprise_stack.sh
 ```
 
-The enterprise slice includes `public-portal`, Cowrie, the HTTP observer, `SNARE + TANNER`, an OpenCanary multi-protocol entrypoint, `mail-relay`, and the first internal portal. The public portal now implements the proposalv2 benign-surface breadcrumbs: login/support/status/API pages, `/robots.txt`, fake backup files, fake `.env.old`, `phpinfo.php`, and frontend source-map honeytokens. OpenCanary publishes a deliberately small protocol subset: HTTP on `8082`, SSH on `2224`, Redis on `6380`, MySQL on `3307`, and Git on `9418`.
+The enterprise slice includes `public-portal`, a public-portal access-log forwarder, Cowrie, the public website HTTP backend, `SNARE + TANNER`, OpenCanary telemetry plumbing, and the first internal portal. The public portal implements the proposalv2 benign-surface breadcrumbs: login/support/status/API pages, `/robots.txt`, fake backup files, fake `.env.old`, `phpinfo.php`, and frontend source-map honeytokens. Public portal nginx access logs are forwarded into the HTTP backend, so suspicious benign-surface visits become `entrypoint_observations` and cold-start profile evidence.
+
+Current service roles:
+
+| Service | Layer | Host port | Purpose |
+| --- | --- | --- | --- |
+| `public-portal` | benign user surface | `8080` | Real-looking public site and breadcrumb files such as `/robots.txt`, `/.env.old`, and source maps |
+| `public-portal-forwarder` | telemetry bridge | none | Tails public portal nginx access logs and posts them to `entrypoint-observer` |
+| `entrypoint-observer` | public website backend + direct HTTP test entrypoint | `8083` | Receives public portal breadcrumbs and handles explicit low-interaction HTTP probes |
+| `cowrie` | attacker-facing entrypoint | `2222` | SSH interaction and command telemetry |
+| `snare` + `tanner` | optional attacker-facing web clone | `8081` | Realistic cloned-web entrypoint when the images start cleanly |
+| `opencanary-adapter` + `opencanary-forwarder` | adaptive asset telemetry | none | Collect logs from OpenCanary-backed internal assets after they are unlocked |
+| `internal-portal` | internal baseline service | internal only in compose, `18080` when dynamically unlocked | First internal asset in the adaptive path |
+| `binding-service`, `profiler`, `controller`, `orchestrator`, `gateway`, `adaptive-loop`, `dashboard` | control plane | dashboard on `8090`; APIs internal | Profiling, asset selection, runtime start, route state, and live monitoring |
+
+OpenCanary is no longer an always-on attacker-facing entrypoint. OpenCanary telemetry is collected through `scripts/forward_opencanary_json.py`, which tails `deploy/opencanary/var/opencanary.log` and posts events into `services/opencanary`. Adaptive internal OpenCanary assets mount that shared log directory, so their Git/MySQL/Redis/HTTP/FTP/SSH/Telnet events flow into the dashboard after the controller unlocks them.
+
+The adaptive internal catalog includes standalone OpenCanary assets for Git, MySQL, Redis, HTTP, FTP, SSH, and Telnet. They are not enabled by changing one shared OpenCanary configuration; the orchestrator starts a separate container per asset when the controller unlocks it. Default host ports can be overridden in `.env`:
+
+```bash
+GIT_INTERNAL_PORT=19418
+OPS_DB_PORT=13306
+REDIS_CACHE_PORT=16379
+WEB_ADMIN_CONSOLE_PORT=18081
+FTP_ARCHIVE_PORT=12121
+SSH_CANARY_PORT=12222
+LEGACY_TELNET_PORT=12323
+```
 
 Vulnerable internal assets are now represented in the normal asset catalog. Clone Vulhub under the ignored `vendor/vulhub/` path before triggering `log4shell-app`:
 
@@ -140,7 +170,7 @@ Vulnerable internal assets are now represented in the normal asset catalog. Clon
 git clone --depth 1 https://github.com/vulhub/vulhub.git vendor/vulhub
 ```
 
-`log4shell-app` points at `vendor/vulhub/log4j/CVE-2021-44228/docker-compose.yml` and is started by the orchestrator through the compose-backed internal asset runtime after its dependency chain is satisfied. Only run Vulhub scenarios in an isolated lab.
+`log4shell-app` points at `vendor/vulhub/log4j/CVE-2021-44228/docker-compose.yml` and is started by the orchestrator through the compose-backed internal asset runtime after its dependency chain is satisfied. If that compose file is missing, the orchestrator records `log4shell-app` as a failed asset so the dashboard shows the missing dependency clearly. Only run Vulhub scenarios in an isolated lab.
 
 The manual Vulhub helper remains available for isolated experiments that should not go through the adaptive path:
 
@@ -164,7 +194,7 @@ curl http://$TARGET_HOST:${DASHBOARD_PORT:-8090}/healthz
 
 Then open `http://$TARGET_HOST:${DASHBOARD_PORT:-8090}/` in a browser.
 
-The dashboard includes a Pipeline Health panel that traces the live path from public surface to HTTP/Cowrie entrypoints, forwarder, adapter, profile/controller, gateway, and dashboard state. This is the first place to look when raw Cowrie commands or HTTP probes do not appear in the profile view.
+The dashboard includes a Pipeline Health panel that traces the live path from public surface access logs to HTTP/Cowrie/OpenCanary forwarders, adapters, profile/controller, gateway, and dashboard state. This is the first place to look when public portal probes, raw Cowrie commands, OpenCanary internal asset probes, or public website backend probes do not appear in the profile view.
 
 Manual actor check after startup:
 

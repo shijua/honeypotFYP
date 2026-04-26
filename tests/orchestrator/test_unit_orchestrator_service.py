@@ -363,6 +363,77 @@ def test_docker_template_runtime_uses_stable_internal_portal_runtime(
     assert record.settings["image"] == "nginx:alpine"
 
 
+def test_docker_template_runtime_starts_internal_opencanary_asset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_args: list[str] = []
+
+    def fake_run(args, **kwargs):
+        captured_args.extend(args)
+
+        class Result:
+            returncode = 0
+            stdout = "container-id"
+            stderr = ""
+
+        return Result()
+
+    monkeypatch.setattr(template_runtime_module.shutil, "which", lambda name: "/usr/bin/docker")
+    monkeypatch.setattr(template_runtime_module, "_port_is_free", lambda port: True)
+    monkeypatch.setattr(template_runtime_module.subprocess, "run", fake_run)
+    monkeypatch.setattr(template_runtime_module, "_container_status", lambda name: "Up 3 seconds")
+    monkeypatch.setattr(template_runtime_module, "_healthcheck_ready", lambda runtime, settings: True)
+    monkeypatch.setenv("HONEYPOT_PROJECT_NAME", "honeynet")
+    monkeypatch.setenv("HONEYPOT_HOST_PROJECT_ROOT", "/srv/honeypot")
+
+    runtime = DockerTemplateRuntime(InMemoryTemplateRuntimeRepository())
+    asset = AssetDefinition(
+        asset_id="git-internal",
+        asset_name="Internal Git",
+        exposure_type="internal",
+        interaction_level="medium",
+        template_family="developer-service-honeypot",
+        protocols=["git"],
+        ports=[9418],
+        source_refs=["opencanary:git"],
+        default_settings={
+            "runtime": {
+                "backend": "docker",
+                "image": "thinkst/opencanary",
+                "network": "{project_name}_net_internal",
+                "memory_limit": "256m",
+                "volumes": [
+                    "{host_project_root}/deploy/opencanary/internal/git.conf:/root/.opencanary.conf:ro",
+                    "{host_project_root}/deploy/opencanary/var:/var/tmp",
+                ],
+                "port_mappings": [
+                    {
+                        "host": "127.0.0.1",
+                        "requested_host_port": 19418,
+                        "container_port": 9418,
+                    }
+                ],
+            }
+        },
+        covers_tactics=["Discovery"],
+        dependencies=["internal-portal"],
+    )
+
+    record = runtime.start_asset("binding-git", asset)
+
+    assert "--network" in captured_args
+    assert "honeynet_net_internal" in captured_args
+    assert "--memory" in captured_args
+    assert "256m" in captured_args
+    assert "/srv/honeypot/deploy/opencanary/internal/git.conf:/root/.opencanary.conf:ro" in captured_args
+    assert "/srv/honeypot/deploy/opencanary/var:/var/tmp" in captured_args
+    assert "127.0.0.1:19418:9418" in captured_args
+    assert "thinkst/opencanary" in captured_args
+    assert record.settings["runtime_backend"] == "docker"
+    assert record.settings["network"] == "honeynet_net_internal"
+    assert record.settings["memory_limit"] == "256m"
+
+
 def test_compose_template_runtime_starts_catalog_driven_vulhub_asset(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,

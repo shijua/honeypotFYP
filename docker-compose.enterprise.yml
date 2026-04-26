@@ -8,9 +8,30 @@ services:
     volumes:
       - ./deploy/public-portal/html:/usr/share/nginx/html:ro
       - ./deploy/public-portal/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./deploy/public-portal/logs:/var/log/nginx
     networks:
       - net_public
       - net_dmz
+    restart: unless-stopped
+
+  public-portal-forwarder:
+    image: python:3.10-slim
+    working_dir: /app
+    command: >
+      bash -lc "python scripts/forward_public_portal_access_log.py
+      --log-file /public-portal-logs/access.log
+      --observer-url http://entrypoint-observer:8010/v1/entrypoint/events
+      --poll-seconds 0.5"
+    environment:
+      PYTHONPATH: /app
+    volumes:
+      - .:/app
+      - ./deploy/public-portal/logs:/public-portal-logs
+    networks:
+      - net_control
+    depends_on:
+      - public-portal
+      - entrypoint-observer
     restart: unless-stopped
 
   cowrie:
@@ -48,19 +69,6 @@ services:
       honeynet.integration: tanner
     restart: unless-stopped
 
-  opencanary-entrypoint:
-    image: "${OPENCANARY_IMAGE:-thinkst/opencanary}"
-    network_mode: host
-    tmpfs:
-      - /run
-    volumes:
-      - ./deploy/opencanary/opencanary.conf:/root/.opencanary.conf:ro
-      - ./deploy/opencanary/var:/var/tmp
-    labels:
-      honeynet.layer: attacker-entrypoint
-      honeynet.integration: opencanary
-    restart: unless-stopped
-
   opencanary-adapter:
     image: python:3.10-slim
     working_dir: /app
@@ -93,7 +101,6 @@ services:
     networks:
       - net_control
     depends_on:
-      - opencanary-entrypoint
       - opencanary-adapter
     restart: unless-stopped
 
@@ -114,6 +121,9 @@ services:
     networks:
       - net_dmz
       - net_control
+    labels:
+      honeynet.layer: public-website-backend
+      honeynet.integration: entrypoint-observer
     restart: unless-stopped
 
   cowrie-adapter:
@@ -159,17 +169,6 @@ services:
       - "80"
     networks:
       - net_internal
-    restart: unless-stopped
-
-  mail-relay:
-    image: dtagdevsec/mailoney:24.04
-    ports:
-      - "${HOST_BIND_ADDRESS:-127.0.0.1}:${MAIL_RELAY_PORT:-2525}:25"
-    networks:
-      - net_internal
-    labels:
-      honeynet.layer: adaptive-internal
-      honeynet.integration: mailoney
     restart: unless-stopped
 
 networks:

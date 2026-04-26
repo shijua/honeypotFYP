@@ -148,7 +148,7 @@ def test_dashboard_summary_endpoint_returns_live_snapshot(
                     "ts": "2026-01-01T00:00:02Z",
                     "service": "redis",
                     "src_host": "198.51.100.10",
-                    "dst_port": 6380,
+                    "dst_port": 6379,
                     "password_seen": False,
                 }
             ]
@@ -175,7 +175,7 @@ def test_dashboard_summary_endpoint_returns_live_snapshot(
             {
                 "utc_time": "2026-01-01T00:00:02Z",
                 "src_host": "198.51.100.10",
-                "dst_port": 6380,
+                "dst_port": 6379,
                 "logdata": {"SERVICE": "redis", "PASSWORD": "do-not-render"},
             }
         )
@@ -221,8 +221,8 @@ def test_dashboard_summary_endpoint_returns_live_snapshot(
                 "kind": "compose",
             },
             {
-                "name": "honeynet_opencanary-entrypoint_1",
-                "image": "thinkst/opencanary",
+                "name": "honeynet_public-portal-forwarder_1",
+                "image": "python:3.10-slim",
                 "status": "Up 12 seconds",
                 "ports": "",
                 "kind": "compose",
@@ -285,6 +285,10 @@ def test_dashboard_summary_endpoint_returns_live_snapshot(
         stage["stage"]: stage["status"]
         for stage in payload["chain_health"]
     }["Cowrie forwarder"] == "ok"
+    assert {
+        stage["stage"]: stage["status"]
+        for stage in payload["chain_health"]
+    }["Benign surface forwarder"] == "ok"
     assert {
         stage["stage"]: stage["status"]
         for stage in payload["chain_health"]

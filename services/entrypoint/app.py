@@ -1,7 +1,11 @@
-"""FastAPI app for the low-interaction public web honeypot.
+"""FastAPI app for public website HTTP telemetry.
 
-All non-health HTTP paths are treated as honeypot probes: the request is
-captured, persisted, sent to the profiler, and answered with a plain 404.
+The same service has two roles:
+- backend ingestion for public-portal access-log events
+- direct low-interaction HTTP probe handling for manual or attacker tests
+
+Captured requests are persisted, sent to the profiler, and answered with a
+plain 404 when the service is reached directly.
 """
 
 from __future__ import annotations
@@ -10,7 +14,7 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.responses import PlainTextResponse, Response
 
 from libs.common.config import RuntimeConfig
-from libs.contracts.models import EntrypointCaptureRequest
+from libs.contracts.models import EntrypointCaptureRequest, EntrypointCaptureResponse
 from services.entrypoint.domain import EntrypointService
 from services.entrypoint.runtime import get_runtime_service
 
@@ -27,6 +31,15 @@ def get_service() -> EntrypointService:
 def healthz() -> dict[str, str]:
     """Return a basic health check for deployment probes."""
     return {"status": "ok"}
+
+
+@app.post("/v1/entrypoint/events", response_model=EntrypointCaptureResponse)
+def ingest_entrypoint_event(
+    event: EntrypointCaptureRequest,
+    service: EntrypointService = Depends(get_service),
+) -> EntrypointCaptureResponse:
+    """Ingest a normalized public website observation from an edge component."""
+    return service.capture_http_request(event)
 
 
 @app.api_route(

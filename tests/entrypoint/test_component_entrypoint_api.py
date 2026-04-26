@@ -26,3 +26,25 @@ def test_entrypoint_healthz_is_not_captured(entrypoint_client: TestClient) -> No
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_entrypoint_ingests_normalized_public_portal_event(
+    entrypoint_client: TestClient,
+) -> None:
+    response = entrypoint_client.post(
+        "/v1/entrypoint/events",
+        json={
+            "attacker_key": "198.51.100.10",
+            "method": "GET",
+            "path": "/.env.old",
+            "query_string": "",
+            "headers": {"user-agent": "curl/8.0"},
+            "protocol": "http",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["observation"]["path"] == "/.env.old"
+    assert payload["observation"]["attacker_key"] == "198.51.100.10"
+    assert payload["profile"]["attacker_key"] == "198.51.100.10"

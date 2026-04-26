@@ -63,6 +63,17 @@ write_state() {
   mv -f "$tmp" "$path"
 }
 
+truncate_log() {
+  local path="$1"
+  local dir
+  local tmp
+  dir="$(dirname "$path")"
+  mkdir -p "$dir"
+  tmp="$(mktemp "$dir/.reset-log.XXXXXX")"
+  chmod 666 "$tmp" || true
+  mv -f "$tmp" "$path"
+}
+
 log "Stopping enterprise containers for project $PROJECT_NAME..."
 COMPOSE_IGNORE_ORPHANS=True "${COMPOSE[@]}" -p "$PROJECT_NAME" -f "$ENTERPRISE_FILE" down --remove-orphans >/dev/null 2>&1 || true
 COMPOSE_IGNORE_ORPHANS=True "${COMPOSE[@]}" -p "$PROJECT_NAME" -f "$CONTROL_FILE" down --remove-orphans >/dev/null 2>&1 || true
@@ -92,5 +103,7 @@ write_state "$STATE_DIR/asset_runtime.json" '{"records": []}'
 write_state "$STATE_DIR/decision_trace.json" '{"records": []}'
 write_state "$STATE_DIR/adaptive_loop_state.json" '{"processed_evidence_ids_by_attacker": {}}'
 write_state "$STATE_DIR/adaptive_demo_report.json" '{"schema_version": "v1", "attackers": []}'
+truncate_log "deploy/public-portal/logs/access.log"
+truncate_log "deploy/opencanary/var/opencanary.log"
 
 log "Enterprise runtime reset complete."

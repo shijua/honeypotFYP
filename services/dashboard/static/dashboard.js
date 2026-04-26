@@ -16,13 +16,25 @@ function badgeList(items, className = "") {
   return items.map(item => `<span class="badge ${className}">${escapeHtml(item)}</span>`).join("");
 }
 
+function renderGatewayAssets(exposed, failed) {
+  const exposedItems = exposed || [];
+  const failedItems = failed || [];
+  if (exposedItems.length === 0 && failedItems.length === 0) {
+    return '<span class="subtle">none</span>';
+  }
+  return [
+    exposedItems.map(item => `<span class="badge">${escapeHtml(item)}</span>`).join(""),
+    failedItems.map(item => `<span class="badge bad">${escapeHtml(item)}</span>`).join(""),
+  ].filter(Boolean).join(" ");
+}
+
 function renderMetrics(data) {
   const metrics = [
     ["Attackers", data.metrics.attacker_count, "Distinct attacker keys with profile or observation data"],
     ["Active Bindings", data.metrics.active_bindings, "Bindings currently marked active"],
     ["Running Assets", data.metrics.running_assets, "Docker-backed adaptive assets still up"],
     ["Failed Assets", data.metrics.failed_assets, "Assets recorded as failed for any binding"],
-    ["Entrypoint Events", data.metrics.entrypoint_event_count, "Captured public HTTP probes"],
+    ["Public HTTP Events", data.metrics.entrypoint_event_count, "Captured public portal breadcrumbs and direct HTTP probes"],
     ["Cowrie Events", data.metrics.cowrie_event_count, "Sanitized SSH telemetry events"],
     ["OpenCanary Events", data.metrics.opencanary_event_count, "Sanitized multi-protocol telemetry events"],
     ["Containers Up", data.metrics.containers_up, "Compose services or runtime assets currently up"],
@@ -108,10 +120,7 @@ function renderBindings(bindings, routes) {
             <td class="mono">${escapeHtml(binding.attacker_key)}</td>
             <td>${escapeHtml(binding.status || "unknown")}</td>
             <td>${badgeList(binding.unlocked_assets || [])}</td>
-            <td>
-              ${badgeList(exposed)}
-              ${badgeList(failed, "bad")}
-            </td>
+            <td>${renderGatewayAssets(exposed, failed)}</td>
           </tr>
         `;
       }).join("")}

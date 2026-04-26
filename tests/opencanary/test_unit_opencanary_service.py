@@ -42,10 +42,10 @@ def test_redis_probe_maps_to_network_service_discovery() -> None:
                 src_host="198.51.100.30",
                 src_port=53000,
                 dst_host="146.169.44.23",
-                dst_port=6380,
+                dst_port=6379,
                 utc_time=datetime(2026, 1, 1, tzinfo=timezone.utc),
                 logtype=5001,
-                node_id="opencanary-entrypoint-01",
+                node_id="opencanary-internal-redis",
                 logdata={"SERVICE": "redis", "COMMAND": "INFO"},
             )
         )
@@ -65,7 +65,7 @@ def test_login_probe_maps_to_credential_access_without_storing_password() -> Non
         OpenCanaryIngestRequest(
             event=OpenCanaryLogEvent(
                 src_host="198.51.100.31",
-                dst_port=2224,
+                dst_port=22,
                 utc_time=datetime(2026, 1, 1, tzinfo=timezone.utc),
                 logdata={
                     "SERVICE": "ssh",
@@ -84,4 +84,3 @@ def test_login_probe_maps_to_credential_access_without_storing_password() -> Non
     assert "letmein" not in str(observation.model_dump())
     assert response.profile.recent_tactics == ["Credential Access"]
     assert response.profile.recent_techniques == ["T1110"]
-

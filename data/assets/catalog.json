@@ -59,17 +59,41 @@
     "asset_name": "Internal Git",
     "exposure_type": "internal",
     "interaction_level": "medium",
-    "description": "A fake source-code service containing internal project names, config files, and deployment hints.",
+    "description": "An OpenCanary-backed Git lure exposed as a standalone internal canary asset.",
     "template_family": "developer-service-honeypot",
-    "protocols": ["http", "git"],
-    "ports": [80, 9418],
-    "source_refs": ["tpotce:honeytrap", "tpotce:glutton"],
+    "protocols": ["git"],
+    "ports": [9418],
+    "source_refs": ["opencanary:git"],
     "default_settings": {
+      "runtime": {
+        "backend": "docker",
+        "image": "thinkst/opencanary",
+        "network": "{project_name}_net_internal",
+        "memory_limit": "256m",
+        "tmpfs": ["/run"],
+        "volumes": [
+          "{host_project_root}/deploy/opencanary/internal/git.conf:/root/.opencanary.conf:ro",
+          "{host_project_root}/deploy/opencanary/var:/var/tmp"
+        ],
+        "port_mappings": [
+          {
+            "host": "127.0.0.1",
+            "requested_host_port": 19418,
+            "container_port": 9418
+          }
+        ],
+        "healthcheck": {
+          "type": "tcp",
+          "host": "127.0.0.1",
+          "port_setting": "host_port"
+        },
+        "source": "opencanary/git"
+      },
       "repo_names": ["infra-deploy", "customer-portal"],
       "expose_fake_secrets": true,
       "allow_clone": false,
       "route_path": "/git",
-      "image_references": ["ghcr.io/telekom-security/honeytrap:24.04.1"]
+      "image_references": ["thinkst/opencanary"]
     },
     "covers_tactics": ["Credential Access", "Discovery"],
     "dependencies": ["internal-portal"]
@@ -79,17 +103,41 @@
     "asset_name": "Operations Database",
     "exposure_type": "internal",
     "interaction_level": "medium",
-    "description": "A fake operations database endpoint exposed only after the attacker finds internal developer context.",
+    "description": "An OpenCanary-backed MySQL lure exposed only after the attacker finds internal developer context.",
     "template_family": "database-honeypot",
-    "protocols": ["mysql", "postgresql"],
-    "ports": [3306, 5432],
-    "source_refs": ["tpotce:dionaea", "tpotce:honeytrap"],
+    "protocols": ["mysql"],
+    "ports": [3306],
+    "source_refs": ["opencanary:mysql"],
     "default_settings": {
+      "runtime": {
+        "backend": "docker",
+        "image": "thinkst/opencanary",
+        "network": "{project_name}_net_internal",
+        "memory_limit": "256m",
+        "tmpfs": ["/run"],
+        "volumes": [
+          "{host_project_root}/deploy/opencanary/internal/mysql.conf:/root/.opencanary.conf:ro",
+          "{host_project_root}/deploy/opencanary/var:/var/tmp"
+        ],
+        "port_mappings": [
+          {
+            "host": "127.0.0.1",
+            "requested_host_port": 13306,
+            "container_port": 3306
+          }
+        ],
+        "healthcheck": {
+          "type": "tcp",
+          "host": "127.0.0.1",
+          "port_setting": "host_port"
+        },
+        "source": "opencanary/mysql"
+      },
       "database_names": ["ops", "inventory"],
       "auth_mode": "fake-login",
       "query_logging": true,
       "sample_rows": 25,
-      "image_references": ["ghcr.io/telekom-security/dionaea:24.04.1"]
+      "image_references": ["thinkst/opencanary"]
     },
     "covers_tactics": ["Credential Access", "Collection"],
     "dependencies": ["git-internal"]
@@ -138,19 +186,26 @@
     "asset_name": "Redis Cache",
     "exposure_type": "internal",
     "interaction_level": "medium",
-    "description": "A Redishoneypot-backed Redis lure for service discovery and credential probing.",
+    "description": "An OpenCanary-backed Redis lure for service discovery and credential probing.",
     "template_family": "redis-honeypot",
     "protocols": ["redis"],
     "ports": [6379],
-    "source_refs": ["tpotce:redishoneypot"],
+    "source_refs": ["opencanary:redis"],
     "default_settings": {
       "runtime": {
         "backend": "docker",
-        "image": "dtagdevsec/redishoneypot:24.04",
+        "image": "thinkst/opencanary",
+        "network": "{project_name}_net_internal",
+        "memory_limit": "256m",
+        "tmpfs": ["/run"],
+        "volumes": [
+          "{host_project_root}/deploy/opencanary/internal/redis.conf:/root/.opencanary.conf:ro",
+          "{host_project_root}/deploy/opencanary/var:/var/tmp"
+        ],
         "port_mappings": [
           {
             "host": "127.0.0.1",
-            "requested_host_port": 6379,
+            "requested_host_port": 16379,
             "container_port": 6379
           }
         ],
@@ -159,11 +214,175 @@
           "host": "127.0.0.1",
           "port_setting": "host_port"
         },
-        "source": "tpotce/docker/redishoneypot"
+        "source": "opencanary/redis"
       },
-      "image_references": ["dtagdevsec/redishoneypot:24.04"]
+      "image_references": ["thinkst/opencanary"]
     },
     "covers_tactics": ["Credential Access", "Discovery", "Collection"],
+    "dependencies": ["internal-portal"]
+  },
+  {
+    "asset_id": "web-admin-console",
+    "asset_name": "Web Admin Console",
+    "exposure_type": "internal",
+    "interaction_level": "medium",
+    "description": "An OpenCanary-backed HTTP login lure exposed as an internal admin console.",
+    "template_family": "web-honeypot",
+    "protocols": ["http"],
+    "ports": [80],
+    "source_refs": ["opencanary:http"],
+    "default_settings": {
+      "runtime": {
+        "backend": "docker",
+        "image": "thinkst/opencanary",
+        "network": "{project_name}_net_internal",
+        "memory_limit": "256m",
+        "tmpfs": ["/run"],
+        "volumes": [
+          "{host_project_root}/deploy/opencanary/internal/http.conf:/root/.opencanary.conf:ro",
+          "{host_project_root}/deploy/opencanary/var:/var/tmp"
+        ],
+        "port_mappings": [
+          {
+            "host": "127.0.0.1",
+            "requested_host_port": 18081,
+            "container_port": 80
+          }
+        ],
+        "healthcheck": {
+          "type": "tcp",
+          "host": "127.0.0.1",
+          "port_setting": "host_port"
+        },
+        "source": "opencanary/http"
+      },
+      "login_realm": "Admin",
+      "image_references": ["thinkst/opencanary"]
+    },
+    "covers_tactics": ["Credential Access", "Discovery"],
+    "dependencies": ["internal-portal"]
+  },
+  {
+    "asset_id": "ftp-archive",
+    "asset_name": "FTP Archive",
+    "exposure_type": "internal",
+    "interaction_level": "medium",
+    "description": "An OpenCanary-backed FTP lure for archive discovery and credential probes.",
+    "template_family": "file-transfer-honeypot",
+    "protocols": ["ftp"],
+    "ports": [21],
+    "source_refs": ["opencanary:ftp"],
+    "default_settings": {
+      "runtime": {
+        "backend": "docker",
+        "image": "thinkst/opencanary",
+        "network": "{project_name}_net_internal",
+        "memory_limit": "256m",
+        "tmpfs": ["/run"],
+        "volumes": [
+          "{host_project_root}/deploy/opencanary/internal/ftp.conf:/root/.opencanary.conf:ro",
+          "{host_project_root}/deploy/opencanary/var:/var/tmp"
+        ],
+        "port_mappings": [
+          {
+            "host": "127.0.0.1",
+            "requested_host_port": 12121,
+            "container_port": 21
+          }
+        ],
+        "healthcheck": {
+          "type": "tcp",
+          "host": "127.0.0.1",
+          "port_setting": "host_port"
+        },
+        "source": "opencanary/ftp"
+      },
+      "archive_names": ["finance-drop", "backups"],
+      "image_references": ["thinkst/opencanary"]
+    },
+    "covers_tactics": ["Credential Access", "Collection", "Discovery"],
+    "dependencies": ["internal-portal"]
+  },
+  {
+    "asset_id": "ssh-canary",
+    "asset_name": "SSH Canary",
+    "exposure_type": "internal",
+    "interaction_level": "medium",
+    "description": "An OpenCanary-backed SSH credential lure for lightweight internal login attempts.",
+    "template_family": "ssh-honeypot",
+    "protocols": ["ssh"],
+    "ports": [22],
+    "source_refs": ["opencanary:ssh"],
+    "default_settings": {
+      "runtime": {
+        "backend": "docker",
+        "image": "thinkst/opencanary",
+        "network": "{project_name}_net_internal",
+        "memory_limit": "256m",
+        "tmpfs": ["/run"],
+        "volumes": [
+          "{host_project_root}/deploy/opencanary/internal/ssh.conf:/root/.opencanary.conf:ro",
+          "{host_project_root}/deploy/opencanary/var:/var/tmp"
+        ],
+        "port_mappings": [
+          {
+            "host": "127.0.0.1",
+            "requested_host_port": 12222,
+            "container_port": 22
+          }
+        ],
+        "healthcheck": {
+          "type": "tcp",
+          "host": "127.0.0.1",
+          "port_setting": "host_port"
+        },
+        "source": "opencanary/ssh"
+      },
+      "hostname": "ssh-gw-02",
+      "image_references": ["thinkst/opencanary"]
+    },
+    "covers_tactics": ["Credential Access", "Discovery"],
+    "dependencies": ["internal-portal"]
+  },
+  {
+    "asset_id": "legacy-telnet",
+    "asset_name": "Legacy Telnet",
+    "exposure_type": "internal",
+    "interaction_level": "medium",
+    "description": "An OpenCanary-backed Telnet lure for legacy service probing.",
+    "template_family": "legacy-service-honeypot",
+    "protocols": ["telnet"],
+    "ports": [23],
+    "source_refs": ["opencanary:telnet"],
+    "default_settings": {
+      "runtime": {
+        "backend": "docker",
+        "image": "thinkst/opencanary",
+        "network": "{project_name}_net_internal",
+        "memory_limit": "256m",
+        "tmpfs": ["/run"],
+        "volumes": [
+          "{host_project_root}/deploy/opencanary/internal/telnet.conf:/root/.opencanary.conf:ro",
+          "{host_project_root}/deploy/opencanary/var:/var/tmp"
+        ],
+        "port_mappings": [
+          {
+            "host": "127.0.0.1",
+            "requested_host_port": 12323,
+            "container_port": 23
+          }
+        ],
+        "healthcheck": {
+          "type": "tcp",
+          "host": "127.0.0.1",
+          "port_setting": "host_port"
+        },
+        "source": "opencanary/telnet"
+      },
+      "hostname": "legacy-switch-01",
+      "image_references": ["thinkst/opencanary"]
+    },
+    "covers_tactics": ["Credential Access", "Discovery", "Lateral Movement"],
     "dependencies": ["internal-portal"]
   },
   {
@@ -180,6 +399,8 @@
       "runtime": {
         "backend": "docker",
         "image": "dtagdevsec/mailoney:24.04",
+        "network": "{project_name}_net_internal",
+        "memory_limit": "256m",
         "port_mappings": [
           {
             "host": "127.0.0.1",
