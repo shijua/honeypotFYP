@@ -55,9 +55,46 @@ services:
       - /run
     volumes:
       - ./deploy/opencanary/opencanary.conf:/root/.opencanary.conf:ro
+      - ./deploy/opencanary/var:/var/tmp
     labels:
       honeynet.layer: attacker-entrypoint
       honeynet.integration: opencanary
+    restart: unless-stopped
+
+  opencanary-adapter:
+    image: python:3.10-slim
+    working_dir: /app
+    command: >
+      bash -lc "pip install -q fastapi uvicorn pydantic &&
+      python -m uvicorn services.opencanary.app:app --host 0.0.0.0 --port 8012"
+    environment:
+      PYTHONPATH: /app
+    volumes:
+      - .:/app
+    expose:
+      - "8012"
+    networks:
+      - net_control
+    restart: unless-stopped
+
+  opencanary-forwarder:
+    image: python:3.10-slim
+    working_dir: /app
+    command: >
+      bash -lc "python scripts/forward_opencanary_json.py
+      --log-file /opencanary-var/opencanary.log
+      --adapter-url http://opencanary-adapter:8012/v1/opencanary/events
+      --poll-seconds 0.5"
+    environment:
+      PYTHONPATH: /app
+    volumes:
+      - .:/app
+      - ./deploy/opencanary/var:/opencanary-var
+    networks:
+      - net_control
+    depends_on:
+      - opencanary-entrypoint
+      - opencanary-adapter
     restart: unless-stopped
 
   entrypoint-observer:

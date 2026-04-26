@@ -19,14 +19,31 @@ def build_chain_health(
     attackers: list[dict[str, Any]],
     entrypoint_observations: list[dict[str, Any]],
     cowrie_observations: list[dict[str, Any]],
+    opencanary_observations: list[dict[str, Any]],
     decision_trace: list[dict[str, Any]],
 ) -> list[dict[str, str]]:
     """Build a visible health trace for the attacker telemetry pipeline."""
     raw_cowrie_event = _last_cowrie_log_event(_cowrie_log_path())
-    forwarder = _container_for_service(project_name, containers, "cowrie-forwarder")
-    forwarder_log = _last_forwarder_log_line(forwarder.get("name") if forwarder else "")
+    raw_opencanary_event = _last_opencanary_log_event(_opencanary_log_path())
+    cowrie_forwarder = _container_for_service(
+        project_name,
+        containers,
+        "cowrie-forwarder",
+    )
+    cowrie_forwarder_log = _last_forwarder_log_line(
+        cowrie_forwarder.get("name") if cowrie_forwarder else ""
+    )
+    opencanary_forwarder = _container_for_service(
+        project_name,
+        containers,
+        "opencanary-forwarder",
+    )
+    opencanary_forwarder_log = _last_forwarder_log_line(
+        opencanary_forwarder.get("name") if opencanary_forwarder else ""
+    )
     latest_entrypoint = _latest_record(entrypoint_observations, "ts")
     latest_cowrie = _latest_record(cowrie_observations, "ts")
+    latest_opencanary = _latest_record(opencanary_observations, "ts")
     latest_decision = _latest_record(decision_trace, "ts")
     latest_route = _latest_record(gateway_routes, "updated_at")
 
@@ -46,8 +63,40 @@ def build_chain_health(
             detail=_record_detail(latest_entrypoint, ["method", "path", "attacker_key"]),
             empty_detail="waiting for HTTP probe",
         ),
+        _service_stage(
+            project_name,
+            containers,
+            service_name="opencanary-entrypoint",
+            stage="OpenCanary entrypoint",
+            detail="multi-protocol OpenCanary container",
+        ),
+        _raw_opencanary_stage(raw_opencanary_event),
+        _forwarder_stage(
+            opencanary_forwarder,
+            opencanary_forwarder_log,
+            stage="OpenCanary forwarder",
+            component="opencanary-forwarder",
+            target="opencanary-adapter",
+        ),
+        _service_stage(
+            project_name,
+            containers,
+            service_name="opencanary-adapter",
+            stage="OpenCanary adapter",
+            detail=_record_detail(
+                latest_opencanary,
+                ["service", "dst_port", "attacker_key"],
+            ),
+            empty_detail="adapter is up, waiting for stored OpenCanary observation",
+        ),
         _raw_cowrie_stage(raw_cowrie_event),
-        _forwarder_stage(forwarder, forwarder_log),
+        _forwarder_stage(
+            cowrie_forwarder,
+            cowrie_forwarder_log,
+            stage="Cowrie forwarder",
+            component="cowrie-forwarder",
+            target="cowrie-adapter",
+        ),
         _service_stage(
             project_name,
             containers,
@@ -112,23 +161,45 @@ def _raw_cowrie_stage(event: dict[str, Any] | None) -> dict[str, str]:
     )
 
 
+def _raw_opencanary_stage(event: dict[str, Any] | None) -> dict[str, str]:
+    if event is None:
+        return _health_stage(
+            stage="OpenCanary raw log",
+            component="deploy/opencanary/var/opencanary.log",
+            status="warn",
+            signal="no raw event",
+            detail="waiting for OpenCanary to write a JSON event",
+        )
+    return _health_stage(
+        stage="OpenCanary raw log",
+        component="opencanary.log",
+        status="ok",
+        signal=str(event.get("service", event.get("dst_port", "event"))),
+        detail=_record_detail(event, ["utc_time", "src_host", "dst_port", "service"]),
+    )
+
+
 def _forwarder_stage(
     container: dict[str, str] | None,
     log_line: str,
+    *,
+    stage: str,
+    component: str,
+    target: str,
 ) -> dict[str, str]:
     container_status = _container_health_status(container)
     if container_status != "ok":
         return _health_stage(
-            stage="Cowrie forwarder",
-            component="cowrie-forwarder",
+            stage=stage,
+            component=component,
             status=container_status,
             signal=container.get("status", "missing") if container else "missing",
             detail="forwarder container is not running",
         )
     if not log_line:
         return _health_stage(
-            stage="Cowrie forwarder",
-            component="cowrie-forwarder",
+            stage=stage,
+            component=component,
             status="warn",
             signal=container.get("status", "running") if container else "running",
             detail="running, no forwarded event logged yet",
@@ -140,11 +211,11 @@ def _forwarder_stage(
     else:
         status = "warn"
     return _health_stage(
-        stage="Cowrie forwarder",
-        component="cowrie-forwarder",
+        stage=stage,
+        component=component,
         status=status,
         signal=log_line,
-        detail="tails Cowrie JSON and POSTs events into cowrie-adapter",
+        detail=f"tails JSON logs and POSTs events into {target}",
     )
 
 
@@ -266,6 +337,15 @@ def _cowrie_log_path() -> Path:
     )
 
 
+def _opencanary_log_path() -> Path:
+    return Path(
+        os.getenv(
+            "HONEYPOT_OPENCANARY_LOG_PATH",
+            "deploy/opencanary/var/opencanary.log",
+        )
+    )
+
+
 def _last_cowrie_log_event(path: Path) -> dict[str, Any] | None:
     if not path.exists():
         return None
@@ -294,6 +374,49 @@ def _safe_cowrie_log_event(event: dict[str, Any]) -> dict[str, Any]:
         for field in safe_fields
         if isinstance(event.get(field), (str, int, float, bool))
     }
+
+
+def _last_opencanary_log_event(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    try:
+        with path.open("rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            size = handle.tell()
+            handle.seek(max(size - 65536, 0), os.SEEK_SET)
+            payload = handle.read().decode("utf-8", errors="ignore")
+    except OSError:
+        return None
+    for line in reversed(payload.splitlines()):
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(event, dict):
+            return _safe_opencanary_log_event(event)
+    return None
+
+
+def _safe_opencanary_log_event(event: dict[str, Any]) -> dict[str, Any]:
+    safe_fields = [
+        "utc_time",
+        "src_host",
+        "src_port",
+        "dst_host",
+        "dst_port",
+        "logtype",
+    ]
+    safe = {
+        field: event[field]
+        for field in safe_fields
+        if isinstance(event.get(field), (str, int, float, bool))
+    }
+    logdata = event.get("logdata")
+    if isinstance(logdata, dict):
+        for key, value in logdata.items():
+            if key.lower() == "service" and isinstance(value, str):
+                safe["service"] = value
+    return safe
 
 
 def _last_forwarder_log_line(container_name: str) -> str:

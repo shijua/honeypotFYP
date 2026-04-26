@@ -106,6 +106,7 @@ if [[ "$WAIT_FOR_SERVICES" == "1" ]]; then
   wait_for_docker_http "${PROJECT_NAME}_net_control" "http://orchestrator:8005/docs"
   wait_for_docker_http "${PROJECT_NAME}_net_control" "http://gateway:8004/docs"
   wait_for_docker_http "${PROJECT_NAME}_net_control" "http://cowrie-adapter:8011/healthz"
+  wait_for_docker_http "${PROJECT_NAME}_net_control" "http://opencanary-adapter:8012/healthz"
   wait_for_docker_http "${PROJECT_NAME}_net_control" "http://entrypoint-observer:8010/healthz"
 fi
 

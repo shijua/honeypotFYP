@@ -24,6 +24,7 @@ function renderMetrics(data) {
     ["Failed Assets", data.metrics.failed_assets, "Assets recorded as failed for any binding"],
     ["Entrypoint Events", data.metrics.entrypoint_event_count, "Captured public HTTP probes"],
     ["Cowrie Events", data.metrics.cowrie_event_count, "Sanitized SSH telemetry events"],
+    ["OpenCanary Events", data.metrics.opencanary_event_count, "Sanitized multi-protocol telemetry events"],
     ["Containers Up", data.metrics.containers_up, "Compose services or runtime assets currently up"],
     ["Published Ports", data.metrics.published_port_count, "Host-reachable ports in current container view"],
     ["Healthy Stages", data.metrics.healthy_chain_stages, "Pipeline health stages currently green"],
@@ -193,6 +194,17 @@ async function loadData() {
       { label: "Event", value: row => row.eventid || "-", mono: true },
       { label: "Command", value: row => row.command || "-" },
       { label: "Session", value: row => row.session || "-", mono: true },
+    ],
+  );
+  document.getElementById("opencanary-panel").innerHTML = renderObservationTable(
+    data.recent_opencanary_observations || [],
+    [
+      { label: "Time", value: row => row.ts || row.utc_time || "-", mono: true },
+      { label: "Attacker", value: row => row.attacker_key || row.src_host || "-", mono: true },
+      { label: "Service", value: row => row.service || "-", mono: true },
+      { label: "Port", value: row => row.dst_port ?? "-" },
+      { label: "User", value: row => row.username || "-" },
+      { label: "Password", value: row => row.password_seen ? "seen" : "-" },
     ],
   );
   document.getElementById("refresh-label").textContent = `Updated ${new Date(data.generated_at).toLocaleTimeString()} | every ${refreshSeconds}s`;

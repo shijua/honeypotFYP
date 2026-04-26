@@ -12,6 +12,7 @@ from libs.contracts.models import (
     EntrypointObservation,
     GatewayBindingState,
     AssetRuntimeRecord,
+    OpenCanaryObservation,
     ProfileSnapshot,
     TechniqueEvidence,
 )
@@ -21,6 +22,7 @@ from services.cowrie.repository import FileCowrieObservationRepository
 from services.entrypoint.repository import FileEntrypointObservationRepository
 from services.gateway.repository import FileGatewayRouteRepository
 from services.orchestrator.template_runtime import FileTemplateRuntimeRepository
+from services.opencanary.repository import FileOpenCanaryObservationRepository
 from services.profiler.repository import FileEvidenceRepository, FileProfileRepository
 
 
@@ -190,19 +192,44 @@ def test_file_cowrie_repository_persists_observations(tmp_path) -> None:
     assert tuple(reloaded.list_recent())[0].observation_id == "obs-2"
 
 
+def test_file_opencanary_repository_persists_observations(tmp_path) -> None:
+    repository = FileOpenCanaryObservationRepository(tmp_path / "opencanary.json")
+    observation = OpenCanaryObservation(
+        observation_id="obs-3",
+        ts=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        attacker_key="198.51.100.95",
+        binding_id="binding-6",
+        service="redis",
+        src_host="198.51.100.95",
+        dst_port=6380,
+        tags=["mitre_discovery", "T1046"],
+        profiler_evidence_ids=["e-3"],
+    )
+
+    repository.add(observation)
+
+    reloaded = FileOpenCanaryObservationRepository(tmp_path / "opencanary.json")
+    assert tuple(reloaded.list_recent())[0].observation_id == "obs-3"
+
+
 def test_file_repositories_create_default_json_files(tmp_path) -> None:
     binding_path = tmp_path / "runtime" / "bindings.json"
     cowrie_path = tmp_path / "runtime" / "cowrie_observations.json"
+    opencanary_path = tmp_path / "runtime" / "opencanary_observations.json"
     evidence_path = tmp_path / "runtime" / "evidence.json"
     profile_path = tmp_path / "runtime" / "profiles.json"
 
     FileBindingRepository(binding_path)
     FileCowrieObservationRepository(cowrie_path)
+    FileOpenCanaryObservationRepository(opencanary_path)
     FileEvidenceRepository(evidence_path)
     FileProfileRepository(profile_path)
 
     assert json.loads(binding_path.read_text(encoding="utf-8")) == {"records": []}
     assert json.loads(cowrie_path.read_text(encoding="utf-8")) == {
+        "observations": []
+    }
+    assert json.loads(opencanary_path.read_text(encoding="utf-8")) == {
         "observations": []
     }
     assert json.loads(evidence_path.read_text(encoding="utf-8")) == {"records": {}}

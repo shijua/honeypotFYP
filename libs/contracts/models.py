@@ -575,6 +575,64 @@ class CowrieIngestResponse(VersionedModel):
     profile: ProfileSnapshot
 
 
+# ---- OpenCanary multi-protocol entrypoint telemetry contracts ----
+class OpenCanaryLogEvent(VersionedModel):
+    """Raw-ish OpenCanary JSON event accepted by the OpenCanary adapter.
+
+    OpenCanary log schemas vary by emulated service, so this model keeps common
+    fields named while allowing service-specific extras.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    src_host: str = Field(min_length=1)
+    src_port: Optional[int] = None
+    dst_host: Optional[str] = None
+    dst_port: Optional[int] = None
+    local_time: Optional[str] = None
+    local_time_adjusted: Optional[str] = None
+    utc_time: Optional[datetime] = None
+    logtype: Optional[int] = None
+    node_id: Optional[str] = None
+    logdata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class OpenCanaryObservation(VersionedModel):
+    """Persisted sanitized observation from one OpenCanary log event."""
+
+    observation_id: str
+    ts: datetime
+    attacker_key: str
+    binding_id: str
+    service: str
+    src_host: str
+    src_port: Optional[int] = None
+    dst_host: Optional[str] = None
+    dst_port: Optional[int] = None
+    logtype: Optional[int] = None
+    node_id: Optional[str] = None
+    username: Optional[str] = None
+    password_seen: bool = False
+    logdata: Dict[str, Any] = Field(default_factory=dict)
+    tags: List[str] = Field(default_factory=list)
+    profiler_evidence_ids: List[str] = Field(default_factory=list)
+
+
+class OpenCanaryIngestRequest(VersionedModel):
+    """Request to ingest one OpenCanary JSON event."""
+
+    event: OpenCanaryLogEvent
+    protocol: str = Field(default="tcp", min_length=1)
+
+
+class OpenCanaryIngestResponse(VersionedModel):
+    """Result after OpenCanary telemetry has updated binding/profile state."""
+
+    observation: OpenCanaryObservation
+    binding: BindingRecord
+    profile: ProfileSnapshot
+
+
 # TODO edge with from and to
 # ---- Attack-graph probability contracts ----
 class EdgeStats(VersionedModel):

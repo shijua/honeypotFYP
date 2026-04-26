@@ -11,6 +11,7 @@ from libs.contracts.models import (
     EntrypointCaptureRequest,
     EvidenceIngestRequest,
     GatewaySyncRequest,
+    OpenCanaryIngestRequest,
     OrchestratorApplyRequest,
     OrchestratorApplyResponse,
 )
@@ -19,6 +20,7 @@ from services.cowrie.app import app as cowrie_app
 from services.entrypoint.app import app as entrypoint_app
 from services.gateway.app import app as gateway_app
 from services.orchestrator.app import app as orchestrator_app
+from services.opencanary.app import app as opencanary_app
 from services.profiler.app import app as profiler_app
 
 
@@ -132,6 +134,11 @@ def test_cowrie_ingest_request_requires_event_payload() -> None:
         CowrieIngestRequest(event={})
 
 
+def test_opencanary_ingest_request_requires_event_payload() -> None:
+    with pytest.raises(ValidationError):
+        OpenCanaryIngestRequest(event={})
+
+
 def test_openapi_contains_new_mvp_paths() -> None:
     assert "/v1/evidence/ingest" in profiler_app.openapi()["paths"]
     assert "/v1/controller/tick" in controller_app.openapi()["paths"]
@@ -139,3 +146,4 @@ def test_openapi_contains_new_mvp_paths() -> None:
     assert "/v1/gateway/sync" in gateway_app.openapi()["paths"]
     assert "/healthz" in entrypoint_app.openapi()["paths"]
     assert "/v1/cowrie/events" in cowrie_app.openapi()["paths"]
+    assert "/v1/opencanary/events" in opencanary_app.openapi()["paths"]

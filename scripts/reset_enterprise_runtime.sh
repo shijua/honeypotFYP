@@ -84,6 +84,7 @@ log "Resetting runtime state under $STATE_DIR..."
 write_state "$STATE_DIR/bindings.json" '{"records": []}'
 write_state "$STATE_DIR/cowrie_observations.json" '{"observations": []}'
 write_state "$STATE_DIR/entrypoint_observations.json" '{"observations": []}'
+write_state "$STATE_DIR/opencanary_observations.json" '{"observations": []}'
 write_state "$STATE_DIR/evidence.json" '{"records": {}}'
 write_state "$STATE_DIR/profiles.json" '{"profiles": {}}'
 write_state "$STATE_DIR/gateway_routes.json" '{"routes": []}'

@@ -28,7 +28,15 @@ def read_json(path: Path, default: dict[str, Any]) -> dict[str, Any]:
 
 def summarize_demo(state_dir: Path) -> dict[str, Any]:
     """Build a deterministic report from adaptive demo runtime files."""
-    observations = _list_from_file(state_dir / "cowrie_observations.json", "observations")
+    cowrie_observations = _list_from_file(
+        state_dir / "cowrie_observations.json",
+        "observations",
+    )
+    opencanary_observations = _list_from_file(
+        state_dir / "opencanary_observations.json",
+        "observations",
+    )
+    observations = [*cowrie_observations, *opencanary_observations]
     bindings = _list_from_file(state_dir / "bindings.json", "records")
     runtime_records = _list_from_file(state_dir / "asset_runtime.json", "records")
     decision_trace = _list_from_file(state_dir / "decision_trace.json", "records")
@@ -174,11 +182,14 @@ def _latest_binding(
 
 
 def _eventids(observations: list[dict[str, Any]]) -> list[str]:
-    return [
-        str(item["eventid"])
-        for item in observations
-        if isinstance(item.get("eventid"), str)
-    ]
+    eventids: list[str] = []
+    for item in observations:
+        if isinstance(item.get("eventid"), str):
+            eventids.append(str(item["eventid"]))
+            continue
+        if isinstance(item.get("service"), str):
+            eventids.append(f"opencanary.{item['service']}")
+    return eventids
 
 
 def _commands(observations: list[dict[str, Any]]) -> list[str]:

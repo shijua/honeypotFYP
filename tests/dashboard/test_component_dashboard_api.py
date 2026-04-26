@@ -137,6 +137,23 @@ def test_dashboard_summary_endpoint_returns_live_snapshot(
             ]
         },
     )
+    _write_json(
+        state_dir / "opencanary_observations.json",
+        {
+            "observations": [
+                {
+                    "observation_id": "opencanary-1",
+                    "attacker_key": "198.51.100.10",
+                    "binding_id": "binding-1",
+                    "ts": "2026-01-01T00:00:02Z",
+                    "service": "redis",
+                    "src_host": "198.51.100.10",
+                    "dst_port": 6380,
+                    "password_seen": False,
+                }
+            ]
+        },
+    )
     cowrie_log = state_dir / "cowrie.json"
     cowrie_log.write_text(
         json.dumps(
@@ -152,10 +169,24 @@ def test_dashboard_summary_endpoint_returns_live_snapshot(
         + "\n",
         encoding="utf-8",
     )
+    opencanary_log = state_dir / "opencanary.log"
+    opencanary_log.write_text(
+        json.dumps(
+            {
+                "utc_time": "2026-01-01T00:00:02Z",
+                "src_host": "198.51.100.10",
+                "dst_port": 6380,
+                "logdata": {"SERVICE": "redis", "PASSWORD": "do-not-render"},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
     monkeypatch.setenv("HONEYPOT_STATE_DIR", str(state_dir))
     monkeypatch.setenv("HONEYPOT_PROJECT_NAME", "honeynet")
     monkeypatch.setenv("HONEYPOT_COWRIE_LOG_PATH", str(cowrie_log))
+    monkeypatch.setenv("HONEYPOT_OPENCANARY_LOG_PATH", str(opencanary_log))
     monkeypatch.setattr(
         dashboard_summary,
         "current_docker_status",
@@ -187,6 +218,27 @@ def test_dashboard_summary_endpoint_returns_live_snapshot(
                 "image": "python:3.10-slim",
                 "status": "Up 12 seconds",
                 "ports": "",
+                "kind": "compose",
+            },
+            {
+                "name": "honeynet_opencanary-entrypoint_1",
+                "image": "thinkst/opencanary",
+                "status": "Up 12 seconds",
+                "ports": "",
+                "kind": "compose",
+            },
+            {
+                "name": "honeynet_opencanary-forwarder_1",
+                "image": "python:3.10-slim",
+                "status": "Up 12 seconds",
+                "ports": "",
+                "kind": "compose",
+            },
+            {
+                "name": "honeynet_opencanary-adapter_1",
+                "image": "python:3.10-slim",
+                "status": "Up 12 seconds",
+                "ports": "8012/tcp",
                 "kind": "compose",
             },
             {
@@ -223,7 +275,8 @@ def test_dashboard_summary_endpoint_returns_live_snapshot(
     assert payload["metrics"]["attacker_count"] == 1
     assert payload["metrics"]["active_bindings"] == 1
     assert payload["metrics"]["running_assets"] == 1
-    assert payload["metrics"]["containers_up"] == 6
+    assert payload["metrics"]["containers_up"] == 9
+    assert payload["metrics"]["opencanary_event_count"] == 1
     assert payload["bindings"][0]["binding_id"] == "binding-1"
     assert payload["gateway_routes"][0]["exposed_assets"] == ["internal-portal"]
     assert payload["attackers"][0]["current_running_assets"][0]["asset_id"] == "internal-portal"
@@ -232,9 +285,14 @@ def test_dashboard_summary_endpoint_returns_live_snapshot(
         stage["stage"]: stage["status"]
         for stage in payload["chain_health"]
     }["Cowrie forwarder"] == "ok"
+    assert {
+        stage["stage"]: stage["status"]
+        for stage in payload["chain_health"]
+    }["OpenCanary forwarder"] == "ok"
     assert "do-not-render" not in json.dumps(payload["chain_health"])
     assert payload["recent_entrypoint_observations"][0]["path"] == "/.env"
     assert payload["recent_cowrie_observations"][0]["command"] == "cat /etc/passwd"
+    assert payload["recent_opencanary_observations"][0]["service"] == "redis"
 
 
 def test_dashboard_index_serves_html() -> None:
@@ -293,6 +351,7 @@ def test_dashboard_summary_marks_compose_assets_as_running(
     )
     _write_json(state_dir / "profiles.json", {"profiles": {}})
     _write_json(state_dir / "cowrie_observations.json", {"observations": []})
+    _write_json(state_dir / "opencanary_observations.json", {"observations": []})
     _write_json(state_dir / "decision_trace.json", {"records": []})
 
     monkeypatch.setattr(

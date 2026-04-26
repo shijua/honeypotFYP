@@ -62,6 +62,10 @@ def api_summary() -> dict[str, Any]:
         state_dir / "cowrie_observations.json",
         "observations",
     )
+    opencanary_observations = _read_items(
+        state_dir / "opencanary_observations.json",
+        "observations",
+    )
     decision_trace = _read_items(state_dir / "decision_trace.json", "records")
     containers = _probe_project_containers(project_name)
     attackers = [
@@ -78,6 +82,7 @@ def api_summary() -> dict[str, Any]:
         attackers=attackers,
         entrypoint_observations=entrypoint_observations,
         cowrie_observations=cowrie_observations,
+        opencanary_observations=opencanary_observations,
         decision_trace=decision_trace,
     )
 
@@ -91,6 +96,7 @@ def api_summary() -> dict[str, Any]:
             bindings=bindings,
             entrypoint_observations=entrypoint_observations,
             cowrie_observations=cowrie_observations,
+            opencanary_observations=opencanary_observations,
             containers=containers,
             chain_health=chain_health,
         ),
@@ -101,6 +107,7 @@ def api_summary() -> dict[str, Any]:
         "attackers": attackers,
         "recent_entrypoint_observations": _recent_items(entrypoint_observations),
         "recent_cowrie_observations": _recent_items(cowrie_observations),
+        "recent_opencanary_observations": _recent_items(opencanary_observations),
     }
 
 
@@ -118,6 +125,7 @@ def _build_metrics(
     bindings: list[dict[str, Any]],
     entrypoint_observations: list[dict[str, Any]],
     cowrie_observations: list[dict[str, Any]],
+    opencanary_observations: list[dict[str, Any]],
     containers: list[dict[str, str]],
     chain_health: list[dict[str, str]],
 ) -> dict[str, int]:
@@ -139,6 +147,7 @@ def _build_metrics(
         ),
         "entrypoint_event_count": len(entrypoint_observations),
         "cowrie_event_count": len(cowrie_observations),
+        "opencanary_event_count": len(opencanary_observations),
         "containers_up": sum(
             1
             for container in containers
