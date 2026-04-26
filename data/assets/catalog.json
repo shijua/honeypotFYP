@@ -223,16 +223,27 @@
     "asset_id": "log4shell-app",
     "asset_name": "Legacy Java App",
     "exposure_type": "internal",
-    "interaction_level": "medium",
-    "description": "A Log4Pot-style legacy Java lure for Log4Shell probe collection.",
+    "interaction_level": "high",
+    "description": "A Vulhub-backed legacy Java service used as the first real vulnerable internal asset after web or credential-oriented profiling.",
     "template_family": "vulnerable-webapp-honeypot",
     "protocols": ["http"],
     "ports": [8080],
-    "source_refs": ["tpotce:log4pot", "tpotce:beelzebub"],
+    "source_refs": ["vulhub:log4j/CVE-2021-44228", "proposalv2:adaptive-vulnerable-asset"],
     "default_settings": {
-      "detect_jndi_strings": true,
-      "emulate_vulnerability": false,
-      "image_references": ["ghcr.io/telekom-security/log4pot:24.04.1"]
+      "runtime": {
+        "backend": "compose",
+        "compose_file": "vendor/vulhub/log4j/CVE-2021-44228/docker-compose.yml",
+        "project_name": "{project_name}-{binding_id_short}-{asset_id}",
+        "runner": "docker_image",
+        "compose_image": "docker/compose:1.29.2",
+        "internal_network": "{project_name}_net_internal",
+        "source": "vulhub/log4j/CVE-2021-44228"
+      },
+      "vulnerability_family": "log4shell",
+      "real_vulnerability": true,
+      "isolation_required": true,
+      "telemetry_expectations": ["asset_runtime", "gateway_route", "dashboard_health"],
+      "image_references": ["vulhub/log4j/CVE-2021-44228"]
     },
     "covers_tactics": ["Initial Access", "Execution", "Discovery"],
     "dependencies": ["internal-portal"]

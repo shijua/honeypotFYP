@@ -1,0 +1,5 @@
+-- Decoy backup for attacker-behaviour testing only.
+CREATE TABLE customers (id integer, email varchar(255), account_tier varchar(32));
+CREATE TABLE invoices (id integer, customer_id integer, amount_cents integer, status varchar(32));
+CREATE TABLE api_tokens (id integer, owner varchar(64), token_hint varchar(128));
+INSERT INTO api_tokens VALUES (1, 'platform-support', 'DECOY_INTERNAL_API_KEY_PUBLIC_SURFACE');

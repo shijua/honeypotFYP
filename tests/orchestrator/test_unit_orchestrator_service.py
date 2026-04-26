@@ -17,6 +17,7 @@ from services.gateway.domain import GatewayService
 from services.gateway.repository import InMemoryGatewayRouteRepository
 from services.orchestrator.domain import OrchestratorService
 from services.orchestrator.template_runtime import (
+    ComposeTemplateRuntime,
     DockerTemplateRuntime,
     _resolve_host_port,
     InMemoryTemplateRuntimeRepository,
@@ -360,6 +361,80 @@ def test_docker_template_runtime_uses_stable_internal_portal_runtime(
     assert "127.0.0.1:18080:80" in captured_args
     assert record.settings["runtime_backend"] == "docker"
     assert record.settings["image"] == "nginx:alpine"
+
+
+def test_compose_template_runtime_starts_catalog_driven_vulhub_asset(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    commands: list[list[str]] = []
+    compose_file = tmp_path / "vendor" / "vulhub" / "log4j" / "CVE-2021-44228" / "docker-compose.yml"
+    compose_file.parent.mkdir(parents=True)
+    compose_file.write_text("version: '2'\nservices:\n  app:\n    image: vulhub/log4j\n", encoding="utf-8")
+
+    def fake_run(args, **kwargs):
+        command = list(args)
+        commands.append(command)
+
+        class Result:
+            def __init__(self, stdout: str = "", returncode: int = 0) -> None:
+                self.returncode = returncode
+                self.stdout = stdout
+                self.stderr = ""
+
+        if command[:2] == ["docker", "run"] and "up" in command:
+            return Result(stdout="started")
+        if command[:2] == ["docker", "run"] and "ps" in command:
+            return Result(stdout="container-1\n")
+        if command[:3] == ["docker", "network", "inspect"]:
+            return Result(stdout="{}")
+        if command[:2] == ["docker", "inspect"]:
+            return Result(stdout="{}")
+        if command[:3] == ["docker", "network", "connect"]:
+            return Result(stdout="")
+        if command[:3] == ["docker", "ps", "-a"]:
+            return Result(stdout="honeynet-binding-log4shell-app-1\tUp 3 seconds\n")
+        raise AssertionError(f"unexpected subprocess call: {command}")
+
+    monkeypatch.setattr(template_runtime_module.shutil, "which", lambda name: "/usr/bin/docker")
+    monkeypatch.setattr(template_runtime_module.subprocess, "run", fake_run)
+    monkeypatch.setenv("HONEYPOT_PROJECT_NAME", "honeynet")
+    monkeypatch.setenv("HONEYPOT_PROJECT_ROOT_IN_CONTAINER", str(tmp_path))
+    monkeypatch.setenv("HONEYPOT_HOST_PROJECT_ROOT", str(tmp_path))
+
+    runtime = ComposeTemplateRuntime(InMemoryTemplateRuntimeRepository())
+    asset = AssetDefinition(
+        asset_id="log4shell-app",
+        asset_name="Legacy Java App",
+        exposure_type="internal",
+        interaction_level="high",
+        template_family="vulnerable-webapp-honeypot",
+        protocols=["http"],
+        ports=[8080],
+        source_refs=["vulhub:log4j/CVE-2021-44228"],
+        default_settings={
+            "runtime": {
+                "backend": "compose",
+                "compose_file": "vendor/vulhub/log4j/CVE-2021-44228/docker-compose.yml",
+                "project_name": "{project_name}-{binding_id_short}-{asset_id}",
+                "runner": "docker_image",
+                "compose_image": "docker/compose:1.29.2",
+                "internal_network": "{project_name}_net_internal",
+                "source": "vulhub/log4j/CVE-2021-44228",
+            }
+        },
+        covers_tactics=["Initial Access", "Execution", "Discovery"],
+        dependencies=["internal-portal"],
+    )
+
+    record = runtime.start_asset("binding-compose", asset)
+
+    assert record.settings["runtime_backend"] == "compose"
+    assert record.settings["compose_project"] == "honeynet-binding--log4shell-app"
+    assert record.settings["internal_network"] == "honeynet_net_internal"
+    assert record.settings["container_ids"] == ["container-1"]
+    assert any("docker/compose:1.29.2" in command for command in commands)
+    assert any(command[:3] == ["docker", "network", "connect"] for command in commands)
 
 
 def test_docker_template_runtime_raises_when_container_exits_immediately(

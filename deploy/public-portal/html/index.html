@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Northbridge Customer Portal</title>
+  <link rel="stylesheet" href="/assets/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Northbridge</div>
+    <nav>
+      <a href="/login">Login</a>
+      <a href="/support">Support</a>
+      <a href="/status">Status</a>
+      <a href="/docs">API Docs</a>
+    </nav>
+  </header>
+  <main class="shell">
+    <section class="hero">
+      <div>
+        <p class="eyebrow">Customer operations platform</p>
+        <h1>Billing, support, and deployment records in one portal.</h1>
+        <p>Use this workspace to review account history, open support tickets, and track API integration status.</p>
+      </div>
+      <div class="status-card">
+        <span class="status-dot"></span>
+        <strong>Production API</strong>
+        <span>Operational</span>
+      </div>
+    </section>
+    <section class="grid">
+      <article>
+        <h2>Customer records</h2>
+        <p>Invoices, subscriptions, support contacts, and entitlement changes.</p>
+      </article>
+      <article>
+        <h2>Deployment dashboard</h2>
+        <p>Release windows, mail relay status, Git integration, and internal job queues.</p>
+      </article>
+      <article>
+        <h2>Support escalation</h2>
+        <p>Case notes, account history, and priority routing for managed customers.</p>
+      </article>
+    </section>
+  </main>
+  <!-- legacy routes: /api/v1/login /api/v1/invoices /admin/status git.internal.local db01.internal.local -->
+  <script src="/assets/app.js"></script>
+</body>
+</html>

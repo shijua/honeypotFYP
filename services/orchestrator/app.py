@@ -15,6 +15,7 @@ from services.controller.repository import FileAssetRepository
 from services.gateway.runtime import get_runtime_service as get_runtime_gateway_service
 from services.orchestrator.domain import OrchestratorService
 from services.orchestrator.template_runtime import (
+    ComposeTemplateRuntime,
     DockerTemplateRuntime,
     FileTemplateRuntimeRepository,
     HybridTemplateRuntime,
@@ -30,10 +31,12 @@ _template_runtime_repository = FileTemplateRuntimeRepository(
     f"{_config.state_dir}/asset_runtime.json"
 )
 _docker_template_runtime = DockerTemplateRuntime(_template_runtime_repository)
+_compose_template_runtime = ComposeTemplateRuntime(_template_runtime_repository)
 _mock_template_runtime = MockTemplateRuntime(_template_runtime_repository)
 _template_runtime = HybridTemplateRuntime(
     _docker_template_runtime,
     _mock_template_runtime,
+    _compose_template_runtime,
 )
 _service = OrchestratorService(
     get_runtime_service(),

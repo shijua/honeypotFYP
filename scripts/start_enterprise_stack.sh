@@ -11,6 +11,8 @@ if [[ -f .env ]]; then
 fi
 
 PROJECT_NAME="${PROJECT_NAME:-honeynet}"
+HOST_PROJECT_ROOT="${HOST_PROJECT_ROOT:-$PWD}"
+export PROJECT_NAME HOST_PROJECT_ROOT
 RESET_BEFORE_START="${RESET_BEFORE_START:-1}"
 KEEP_STATE=0
 WAIT_FOR_SERVICES=1
@@ -118,6 +120,7 @@ echo "Chameleon HTTP:  http://${CLIENT_TARGET_HOST:-127.0.0.1}:${CHAMELEON_HTTP_
 echo "Chameleon SSH:   ssh -p ${CHAMELEON_SSH_PORT:-2224} root@${CLIENT_TARGET_HOST:-127.0.0.1}"
 echo "Chameleon Redis: ${CLIENT_TARGET_HOST:-127.0.0.1}:${CHAMELEON_REDIS_PORT:-6380}"
 echo "Chameleon MySQL: ${CLIENT_TARGET_HOST:-127.0.0.1}:${CHAMELEON_MYSQL_PORT:-3307}"
+echo "Vulhub asset:    log4shell-app requires vendor/vulhub/log4j/CVE-2021-44228/docker-compose.yml"
 echo
 echo "For local browser access over SSH tunnel:"
 echo "  ssh -N -L 18090:127.0.0.1:${DASHBOARD_PORT:-8090} vm"

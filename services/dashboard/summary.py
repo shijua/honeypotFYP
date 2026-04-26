@@ -138,8 +138,9 @@ def _attacker_report(
     current_assets = [
         asset
         for asset in historical_assets
-        if asset.get("runtime_backend") == "docker"
+        if asset.get("runtime_backend") in {"docker", "compose"}
         and str(asset.get("current_container_status", "")).startswith("Up")
+        and not _asset_summary_is_failed(asset)
     ]
     failed_assets = [asset for asset in historical_assets if _asset_summary_is_failed(asset)]
 
@@ -197,13 +198,32 @@ def _runtime_summary(
 ) -> dict[str, Any]:
     settings = record.get("settings", {})
     settings = settings if isinstance(settings, dict) else {}
+    runtime_backend = settings.get("runtime_backend", "mock")
     container_name = settings.get("container_name")
+    compose_project = settings.get("compose_project")
     current_status = "not_applicable"
-    if settings.get("runtime_backend") == "docker":
+    live_container_statuses: dict[str, str] = {}
+    container_names: list[str] = []
+    if isinstance(settings.get("container_names"), list):
+        container_names = [str(name) for name in settings.get("container_names", []) if name]
+    if runtime_backend == "docker":
         if docker_probe.error:
             current_status = "unavailable"
         else:
             current_status = docker_probe.statuses.get(str(container_name), "not_found")
+    elif runtime_backend == "compose":
+        if docker_probe.error:
+            current_status = "unavailable"
+        elif isinstance(compose_project, str) and compose_project:
+            compose_statuses = _current_compose_statuses(compose_project)
+            if compose_statuses:
+                live_container_statuses = compose_statuses
+                container_names = list(compose_statuses.keys())
+                current_status = "; ".join(compose_statuses.values())
+            else:
+                current_status = "not_found"
+        else:
+            current_status = "unknown"
     failure_detail = ""
     if isinstance(settings.get("runtime_failure"), str) and settings.get("runtime_failure"):
         failure_detail = str(settings.get("runtime_failure"))
@@ -214,8 +234,11 @@ def _runtime_summary(
         "asset_name": record.get("asset_name"),
         "status": record.get("status"),
         "template_family": record.get("template_family"),
-        "runtime_backend": settings.get("runtime_backend", "mock"),
+        "runtime_backend": runtime_backend,
         "container_name": container_name,
+        "container_names": container_names,
+        "container_statuses": live_container_statuses,
+        "compose_project": compose_project,
         "current_container_status": current_status,
         "failure_detail": failure_detail,
         "image": settings.get("image"),
@@ -226,9 +249,13 @@ def _runtime_summary(
 def _asset_summary_is_failed(asset: dict[str, Any]) -> bool:
     if asset.get("status") == "failed":
         return True
-    if asset.get("runtime_backend") != "docker":
+    if asset.get("runtime_backend") not in {"docker", "compose"}:
         return False
     current_status = str(asset.get("current_container_status", ""))
+    container_statuses = asset.get("container_statuses", {})
+    if asset.get("runtime_backend") == "compose" and isinstance(container_statuses, dict):
+        statuses = [str(status) for status in container_statuses.values()]
+        return not statuses or any(not status.startswith("Up") for status in statuses)
     return bool(current_status) and current_status not in {"unknown", "unavailable"} and not current_status.startswith("Up")
 
 
@@ -263,6 +290,32 @@ def _decision_summary(record: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _current_compose_statuses(compose_project: str) -> dict[str, str]:
+    """Return live container statuses for one Compose-backed asset project."""
+    result = subprocess.run(
+        [
+            "docker",
+            "ps",
+            "-a",
+            "--filter",
+            f"label=com.docker.compose.project={compose_project}",
+            "--format",
+            "{{.Names}}\t{{.Status}}",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return {}
+    statuses: dict[str, str] = {}
+    for line in result.stdout.splitlines():
+        name, separator, status = line.partition("\t")
+        if separator and name:
+            statuses[name] = status
+    return statuses
+
+
 def _port_mappings(settings: dict[str, Any]) -> list[dict[str, Any]]:
     mappings = settings.get("port_mappings", [])
     if not isinstance(mappings, list):
@@ -275,4 +328,3 @@ def _format_port_mapping(mapping: dict[str, Any]) -> str:
     host_port = mapping.get("host_port", "?")
     container_port = mapping.get("container_port", "?")
     return f"{host}:{host_port}->{container_port}"
-

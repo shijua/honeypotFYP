@@ -105,6 +105,7 @@ Useful helper scripts are kept in `scripts/` and covered by tests:
 ```bash
 ./scripts/test_enterprise_compose.sh
 ./scripts/run_enterprise_actor_simulation.sh
+python scripts/validate_asset_telemetry.py --asset-id internal-portal
 .venv/bin/python scripts/summarize_adaptive_demo.py --write-report data/runtime/adaptive_demo_report.json
 ```
 
@@ -131,15 +132,28 @@ Start the runnable stack without generating attacker traffic:
 ./scripts/start_enterprise_stack.sh
 ```
 
-The enterprise slice includes `public-portal`, Cowrie, the HTTP observer, `SNARE + TANNER`, `Chameleon`, `mail-relay`, and the first internal portal. Chameleon publishes a deliberately small protocol subset: HTTP, SSH, Redis, and MySQL.
+The enterprise slice includes `public-portal`, Cowrie, the HTTP observer, `SNARE + TANNER`, `Chameleon`, `mail-relay`, and the first internal portal. The public portal now implements the proposalv2 benign-surface breadcrumbs: login/support/status/API pages, `/robots.txt`, fake backup files, fake `.env.old`, `phpinfo.php`, and frontend source-map honeytokens. Chameleon publishes a deliberately small protocol subset: HTTP, SSH, Redis, and MySQL.
 
-To attach one locally cloned Vulhub scenario to the honeynet internal network:
+Vulnerable internal assets are now represented in the normal asset catalog. Clone Vulhub under the ignored `vendor/vulhub/` path before triggering `log4shell-app`:
+
+```bash
+git clone --depth 1 https://github.com/vulhub/vulhub.git vendor/vulhub
+```
+
+`log4shell-app` points at `vendor/vulhub/log4j/CVE-2021-44228/docker-compose.yml` and is started by the orchestrator through the compose-backed internal asset runtime after its dependency chain is satisfied. Only run Vulhub scenarios in an isolated lab.
+
+The manual Vulhub helper remains available for isolated experiments that should not go through the adaptive path:
 
 ```bash
 ./scripts/start_vulhub_asset.sh --root vendor/vulhub --scenario spring/CVE-2022-22947
 ```
 
-Clone Vulhub outside the normal committed source tree or under `vendor/vulhub/`, which is ignored by git. The helper script is a temporary bridge for local testing; the correct long-term integration is a compose-backed internal asset runtime in the orchestrator. Only run Vulhub scenarios in an isolated lab.
+Validate runtime/gateway/dashboard data after opening assets:
+
+```bash
+python scripts/validate_asset_telemetry.py --require-observed
+python scripts/validate_asset_telemetry.py --asset-id log4shell-app
+```
 
 Live monitoring dashboard:
 

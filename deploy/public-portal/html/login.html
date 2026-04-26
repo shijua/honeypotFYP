@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Northbridge Login</title>
+  <link rel="stylesheet" href="/assets/app.css">
+</head>
+<body>
+  <main class="auth-shell">
+    <form class="login-card" method="post" action="/api/v1/login">
+      <h1>Employee and customer login</h1>
+      <label>Email <input name="email" type="email" autocomplete="username"></label>
+      <label>Password <input name="password" type="password" autocomplete="current-password"></label>
+      <button type="submit">Sign in</button>
+      <p class="muted">SSO maintenance window: Sunday 01:00-02:00 UTC.</p>
+    </form>
+  </main>
+</body>
+</html>

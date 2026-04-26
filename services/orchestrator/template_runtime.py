@@ -5,6 +5,7 @@ started for that asset". The current MVP supports:
 
 - a mock runtime that only records the start plan
 - a Docker-backed runtime for a small safe subset of templates
+- a Compose-backed runtime for high-interaction vulnerable asset scenarios
 
 Both runtimes emit Falco-style lifecycle events so the rest of the prototype
 can observe template starts/stops before real Falco container telemetry is
@@ -449,6 +450,121 @@ class DockerTemplateRuntime:
         )
 
 
+class ComposeTemplateRuntime:
+    """Start a compose-backed internal asset such as one Vulhub scenario."""
+
+    def __init__(
+        self,
+        repository: TemplateRuntimeRepository,
+    ) -> None:
+        self._repository = repository
+
+    def supports(self, asset: AssetDefinition) -> bool:
+        runtime = asset.default_settings.get("runtime", {})
+        return isinstance(runtime, dict) and runtime.get("backend") == "compose"
+
+    def start_asset(
+        self,
+        binding_id: str,
+        asset: AssetDefinition,
+    ) -> AssetRuntimeRecord:
+        """Start one supported asset through Docker Compose."""
+        existing = self._existing_record(binding_id, asset.asset_id)
+        if existing is not None:
+            return existing
+
+        if shutil.which("docker") is None:
+            raise RuntimeError("docker CLI is not available on this host")
+        if not self.supports(asset):
+            raise RuntimeError(f"asset {asset.asset_id} is not supported by ComposeTemplateRuntime")
+
+        runtime = dict(asset.default_settings.get("runtime", {}))
+        compose_file = _resolve_compose_file(runtime)
+        compose_project = _compose_project_name(binding_id, asset.asset_id, runtime)
+
+        subprocess.run(
+            _compose_command(runtime, compose_file, compose_project, ["up", "-d"]),
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        container_ids = _compose_container_ids(runtime, compose_file, compose_project)
+        internal_network = _compose_internal_network(runtime)
+        if internal_network:
+            _connect_containers_to_network(container_ids, internal_network)
+
+        statuses = _compose_project_statuses(compose_project)
+        if not statuses or not all(status.startswith("Up") for status in statuses.values()):
+            _compose_down(runtime, compose_file, compose_project)
+            raise RuntimeError(
+                f"compose project {compose_project} failed startup verification"
+            )
+
+        runtime_settings = {
+            "runtime_backend": "compose",
+            "compose_file": str(compose_file),
+            "compose_project": compose_project,
+            "container_ids": container_ids,
+            "container_names": list(statuses.keys()),
+            "container_statuses": statuses,
+            "internal_network": internal_network,
+            "source": runtime.get("source", ""),
+        }
+        settings = dict(asset.default_settings)
+        settings.update(runtime_settings)
+        record = _runtime_record_from_asset(binding_id, asset, settings=settings)
+        return self._repository.upsert(record)
+
+    def monitoring_event_for(self, record: AssetRuntimeRecord) -> FalcoEvent:
+        """Convert a Compose runtime record into a Falco-style lifecycle event."""
+        return _monitoring_event_for_record(record, lifecycle="started")
+
+    def stop_binding_assets(self, binding_id: str) -> list[AssetRuntimeRecord]:
+        """Stop all running Compose-backed assets for one binding."""
+        stopped: list[AssetRuntimeRecord] = []
+        for record in self._repository.list_by_binding(binding_id):
+            if record.status != "running":
+                continue
+            if str(record.settings.get("runtime_backend", "mock")) != "compose":
+                continue
+            runtime = _runtime_from_record(record)
+            raw_compose_file = str(record.settings.get("compose_file", "")).strip()
+            compose_project = str(record.settings.get("compose_project", ""))
+            if raw_compose_file and compose_project:
+                _compose_down(runtime, Path(raw_compose_file), compose_project)
+            updated = record.model_copy(update={"status": "stopped"})
+            self._repository.upsert(updated)
+            stopped.append(updated)
+        return stopped
+
+    def list_accessible_asset_ids(self, binding_id: str) -> list[str]:
+        """Return Compose assets whose project containers are still Up."""
+        asset_ids: list[str] = []
+        for record in self._repository.list_by_binding(binding_id):
+            if _compose_record_is_accessible(record):
+                asset_ids.append(record.asset_id)
+        return asset_ids
+
+    def list_failed_asset_ids(self, binding_id: str) -> list[str]:
+        """Return Compose assets whose project failed or exited."""
+        asset_ids: list[str] = []
+        for record in self._repository.list_by_binding(binding_id):
+            if _compose_record_is_failed(record):
+                asset_ids.append(record.asset_id)
+        return asset_ids
+
+    def _existing_record(
+        self,
+        binding_id: str,
+        asset_id: str,
+    ) -> AssetRuntimeRecord | None:
+        for record in self._repository.list_by_binding(binding_id):
+            if record.asset_id == asset_id and record.status == "running":
+                return record
+        return None
+
+
 class HybridTemplateRuntime:
     """Prefer Docker when possible, otherwise fall back to the mock runtime."""
 
@@ -456,9 +572,11 @@ class HybridTemplateRuntime:
         self,
         docker_runtime: DockerTemplateRuntime,
         mock_runtime: MockTemplateRuntime,
+        compose_runtime: ComposeTemplateRuntime | None = None,
     ) -> None:
         self._docker_runtime = docker_runtime
         self._mock_runtime = mock_runtime
+        self._compose_runtime = compose_runtime
 
     def start_asset(
         self,
@@ -466,6 +584,20 @@ class HybridTemplateRuntime:
         asset: AssetDefinition,
     ) -> AssetRuntimeRecord:
         """Start with Docker when supported, otherwise return a mock record."""
+        if self._compose_runtime is not None and self._compose_runtime.supports(asset):
+            try:
+                return self._compose_runtime.start_asset(binding_id, asset)
+            except Exception as exc:
+                failed = _runtime_record_from_asset(
+                    binding_id,
+                    asset,
+                    settings={
+                        **dict(asset.default_settings),
+                        "runtime_backend": "compose",
+                        "runtime_failure": str(exc),
+                    },
+                ).model_copy(update={"status": "failed"})
+                return self._mock_runtime.upsert_record(failed)
         if self._docker_runtime.supports(asset):
             try:
                 return self._docker_runtime.start_asset(binding_id, asset)
@@ -488,20 +620,29 @@ class HybridTemplateRuntime:
 
     def stop_binding_assets(self, binding_id: str) -> list[AssetRuntimeRecord]:
         """Stop Docker-backed records and then stop any remaining mock records."""
-        stopped = self._docker_runtime.stop_binding_assets(binding_id)
+        stopped: list[AssetRuntimeRecord] = []
+        if self._compose_runtime is not None:
+            stopped.extend(self._compose_runtime.stop_binding_assets(binding_id))
+        stopped.extend(self._docker_runtime.stop_binding_assets(binding_id))
         stopped.extend(self._mock_runtime.stop_binding_assets(binding_id))
         deduped: dict[str, AssetRuntimeRecord] = {record.runtime_id: record for record in stopped}
         return list(deduped.values())
 
     def list_accessible_asset_ids(self, binding_id: str) -> list[str]:
         """Return the union of currently reachable Docker and mock assets."""
-        asset_ids = self._docker_runtime.list_accessible_asset_ids(binding_id)
+        asset_ids: list[str] = []
+        if self._compose_runtime is not None:
+            asset_ids.extend(self._compose_runtime.list_accessible_asset_ids(binding_id))
+        asset_ids.extend(self._docker_runtime.list_accessible_asset_ids(binding_id))
         asset_ids.extend(self._mock_runtime.list_accessible_asset_ids(binding_id))
         return list(dict.fromkeys(asset_ids))
 
     def list_failed_asset_ids(self, binding_id: str) -> list[str]:
         """Return the union of failed Docker and mock assets."""
-        asset_ids = self._docker_runtime.list_failed_asset_ids(binding_id)
+        asset_ids: list[str] = []
+        if self._compose_runtime is not None:
+            asset_ids.extend(self._compose_runtime.list_failed_asset_ids(binding_id))
+        asset_ids.extend(self._docker_runtime.list_failed_asset_ids(binding_id))
         asset_ids.extend(self._mock_runtime.list_failed_asset_ids(binding_id))
         return list(dict.fromkeys(asset_ids))
 
@@ -633,6 +774,296 @@ def _asset_port_override(asset_id: str | None) -> int | None:
     if 1 <= port <= 65535:
         return port
     return None
+
+
+def _resolve_compose_file(runtime: dict[str, object]) -> Path:
+    """Resolve and verify a compose file declared by an asset runtime."""
+    raw_compose_file = runtime.get("compose_file")
+    if not isinstance(raw_compose_file, str) or not raw_compose_file.strip():
+        raise RuntimeError("compose runtime is missing compose_file")
+    compose_file = Path(raw_compose_file)
+    if not compose_file.is_absolute():
+        compose_file = _container_project_root() / compose_file
+    if not compose_file.exists():
+        raise RuntimeError(f"compose file does not exist: {compose_file}")
+    return compose_file
+
+
+def _compose_project_name(
+    binding_id: str,
+    asset_id: str,
+    runtime: dict[str, object],
+) -> str:
+    """Return a deterministic Compose project name for one binding+asset."""
+    context = {
+        "binding_id": binding_id,
+        "binding_id_short": binding_id[:8],
+        "asset_id": asset_id,
+        "project_name": _honeynet_project_name(),
+    }
+    template = runtime.get("project_name")
+    if not isinstance(template, str) or not template.strip():
+        template = "honeynet-{binding_id_short}-{asset_id}"
+    return _compose_safe_name(template.format(**context))
+
+
+def _compose_safe_name(value: str) -> str:
+    """Normalize a string so Docker Compose accepts it as a project name."""
+    normalized = []
+    for char in value.lower():
+        if char.isalnum():
+            normalized.append(char)
+        elif char in {"-", "_"}:
+            normalized.append(char)
+        else:
+            normalized.append("-")
+    safe = "".join(normalized).strip("-_")
+    return safe or "honeynet-asset"
+
+
+def _compose_command(
+    runtime: dict[str, object],
+    compose_file: Path,
+    compose_project: str,
+    compose_args: list[str],
+) -> list[str]:
+    """Build a Compose command using either local compose or docker/compose."""
+    runner = str(
+        runtime.get("runner")
+        or os.environ.get("HONEYPOT_COMPOSE_RUNNER", "docker_image")
+    ).strip()
+    if runner == "local":
+        return _local_compose_command(compose_file, compose_project, compose_args)
+    return _docker_image_compose_command(runtime, compose_file, compose_project, compose_args)
+
+
+def _local_compose_command(
+    compose_file: Path,
+    compose_project: str,
+    compose_args: list[str],
+) -> list[str]:
+    """Build a host-local Docker Compose command."""
+    if shutil.which("docker-compose"):
+        base = ["docker-compose"]
+    else:
+        base = ["docker", "compose"]
+    return [
+        *base,
+        "-p",
+        compose_project,
+        "-f",
+        str(compose_file),
+        *compose_args,
+    ]
+
+
+def _docker_image_compose_command(
+    runtime: dict[str, object],
+    compose_file: Path,
+    compose_project: str,
+    compose_args: list[str],
+) -> list[str]:
+    """Run Compose through a Docker image so the orchestrator container can use it."""
+    container_root = _container_project_root()
+    host_root = _host_project_root()
+    try:
+        relative_compose_file = compose_file.resolve().relative_to(container_root)
+    except ValueError as exc:
+        raise RuntimeError(
+            f"compose file {compose_file} is not under HONEYPOT_PROJECT_ROOT_IN_CONTAINER={container_root}"
+        ) from exc
+
+    compose_image = str(runtime.get("compose_image", "docker/compose:1.29.2"))
+    compose_workdir = Path("/workspace") / relative_compose_file.parent
+    return [
+        "docker",
+        "run",
+        "--rm",
+        "-v",
+        "/var/run/docker.sock:/var/run/docker.sock",
+        "-v",
+        f"{host_root}:/workspace",
+        "-w",
+        str(compose_workdir),
+        compose_image,
+        "-p",
+        compose_project,
+        "-f",
+        relative_compose_file.name,
+        *compose_args,
+    ]
+
+
+def _compose_container_ids(
+    runtime: dict[str, object],
+    compose_file: Path,
+    compose_project: str,
+) -> list[str]:
+    """Return container ids created for a Compose project."""
+    result = subprocess.run(
+        _compose_command(runtime, compose_file, compose_project, ["ps", "-q"]),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
+def _compose_down(
+    runtime: dict[str, object],
+    compose_file: Path,
+    compose_project: str,
+) -> None:
+    """Best-effort Compose project cleanup."""
+    subprocess.run(
+        _compose_command(runtime, compose_file, compose_project, ["down", "--remove-orphans"]),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+
+def _compose_internal_network(runtime: dict[str, object]) -> str:
+    """Resolve the Docker network used to attach internal compose assets."""
+    raw_network = runtime.get("internal_network", "{project_name}_net_internal")
+    if raw_network is False:
+        return ""
+    if not isinstance(raw_network, str) or not raw_network.strip():
+        return ""
+    return raw_network.format(project_name=_honeynet_project_name())
+
+
+def _connect_containers_to_network(
+    container_ids: list[str],
+    network_name: str,
+) -> None:
+    """Attach compose containers to the honeynet internal network when possible."""
+    if not container_ids or not network_name:
+        return
+    if not _docker_network_exists(network_name):
+        raise RuntimeError(f"internal network does not exist: {network_name}")
+    for container_id in container_ids:
+        if _container_attached_to_network(container_id, network_name):
+            continue
+        subprocess.run(
+            ["docker", "network", "connect", network_name, container_id],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+
+def _docker_network_exists(network_name: str) -> bool:
+    """Return True when Docker knows about a network."""
+    result = subprocess.run(
+        ["docker", "network", "inspect", network_name],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0
+
+
+def _container_attached_to_network(container_id: str, network_name: str) -> bool:
+    """Return True when a container is already attached to a network."""
+    result = subprocess.run(
+        [
+            "docker",
+            "inspect",
+            container_id,
+            "--format",
+            "{{json .NetworkSettings.Networks}}",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0 and f'"{network_name}"' in result.stdout
+
+
+def _compose_project_statuses(compose_project: str) -> dict[str, str]:
+    """Return current Docker statuses for all containers in a Compose project."""
+    result = subprocess.run(
+        [
+            "docker",
+            "ps",
+            "-a",
+            "--filter",
+            f"label=com.docker.compose.project={compose_project}",
+            "--format",
+            "{{.Names}}\t{{.Status}}",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return {}
+    statuses: dict[str, str] = {}
+    for line in result.stdout.splitlines():
+        name, separator, status = line.partition("\t")
+        if separator and name:
+            statuses[name] = status
+    return statuses
+
+
+def _runtime_from_record(record: AssetRuntimeRecord) -> dict[str, object]:
+    """Rebuild a minimal runtime dict from a persisted compose runtime record."""
+    runtime = record.settings.get("runtime", {})
+    if isinstance(runtime, dict):
+        return dict(runtime)
+    return {
+        "backend": "compose",
+        "compose_file": record.settings.get("compose_file", ""),
+    }
+
+
+def _compose_record_is_accessible(record: AssetRuntimeRecord) -> bool:
+    """Return True when a compose-backed runtime should count as reachable."""
+    if record.status != "running":
+        return False
+    if str(record.settings.get("runtime_backend", "mock")) != "compose":
+        return False
+    compose_project = record.settings.get("compose_project")
+    if not isinstance(compose_project, str) or not compose_project:
+        return False
+    statuses = _compose_project_statuses(compose_project)
+    return bool(statuses) and all(status.startswith("Up") for status in statuses.values())
+
+
+def _compose_record_is_failed(record: AssetRuntimeRecord) -> bool:
+    """Return True when a compose-backed runtime has failed or disappeared."""
+    if record.status == "failed":
+        return str(record.settings.get("runtime_backend", "mock")) == "compose"
+    if record.status != "running":
+        return False
+    if str(record.settings.get("runtime_backend", "mock")) != "compose":
+        return False
+    compose_project = record.settings.get("compose_project")
+    if not isinstance(compose_project, str) or not compose_project:
+        return True
+    statuses = _compose_project_statuses(compose_project)
+    return not statuses or any(not status.startswith("Up") for status in statuses.values())
+
+
+def _honeynet_project_name() -> str:
+    """Return the compose project name used by the surrounding honeynet."""
+    return os.environ.get("HONEYPOT_PROJECT_NAME", "honeynet")
+
+
+def _container_project_root() -> Path:
+    """Return the repository path visible inside the orchestrator process."""
+    return Path(
+        os.environ.get("HONEYPOT_PROJECT_ROOT_IN_CONTAINER", str(Path.cwd()))
+    ).resolve()
+
+
+def _host_project_root() -> Path:
+    """Return the repository path visible to the host Docker daemon."""
+    raw_path = os.environ.get("HONEYPOT_HOST_PROJECT_ROOT", "").strip()
+    if raw_path:
+        return Path(raw_path).resolve()
+    return _container_project_root()
 
 
 def _port_is_free(port: int) -> bool:

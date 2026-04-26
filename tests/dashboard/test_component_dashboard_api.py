@@ -250,3 +250,65 @@ def test_dashboard_index_serves_html() -> None:
     assert ".status-badge" in css
     assert "async function loadData()" in js
     assert "function renderHealth" in js
+
+
+def test_dashboard_summary_marks_compose_assets_as_running(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state_dir = tmp_path / "runtime"
+    state_dir.mkdir()
+    _write_json(
+        state_dir / "bindings.json",
+        {
+            "records": [
+                {
+                    "binding_id": "binding-1",
+                    "attacker_key": "198.51.100.10",
+                    "status": "active",
+                    "last_seen_ts": "2026-01-01T00:00:02Z",
+                    "unlocked_assets": ["log4shell-app"],
+                }
+            ]
+        },
+    )
+    _write_json(
+        state_dir / "asset_runtime.json",
+        {
+            "records": [
+                {
+                    "binding_id": "binding-1",
+                    "asset_id": "log4shell-app",
+                    "asset_name": "Legacy Java App",
+                    "status": "running",
+                    "template_family": "vulnerable-webapp-honeypot",
+                    "settings": {
+                        "runtime_backend": "compose",
+                        "compose_project": "honeynet-binding-log4shell-app",
+                        "container_names": ["honeynet-binding-log4shell-app-1"],
+                    },
+                }
+            ]
+        },
+    )
+    _write_json(state_dir / "profiles.json", {"profiles": {}})
+    _write_json(state_dir / "cowrie_observations.json", {"observations": []})
+    _write_json(state_dir / "decision_trace.json", {"records": []})
+
+    monkeypatch.setattr(
+        dashboard_summary,
+        "current_docker_status",
+        lambda: dashboard_summary.DockerStatusProbe(statuses={}, error=None),
+    )
+    monkeypatch.setattr(
+        dashboard_summary,
+        "_current_compose_statuses",
+        lambda _project_name: {"honeynet-binding-log4shell-app-1": "Up 8 seconds"},
+    )
+
+    payload = dashboard_summary.summarize_demo(state_dir)
+
+    running_assets = payload["attackers"][0]["current_running_assets"]
+    assert running_assets[0]["asset_id"] == "log4shell-app"
+    assert running_assets[0]["runtime_backend"] == "compose"
+    assert running_assets[0]["compose_project"] == "honeynet-binding-log4shell-app"
