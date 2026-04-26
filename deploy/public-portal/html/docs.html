@@ -4,16 +4,51 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Northbridge API Docs</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@latest/dist/css/tabler.min.css">
   <link rel="stylesheet" href="/assets/app.css">
 </head>
 <body>
-  <header class="topbar"><div class="brand">Northbridge API</div><a href="/">Home</a></header>
-  <main class="shell docs">
-    <h1>Public API</h1>
-    <p>Token-based integrations use the customer API gateway. Internal services use separate SSO tokens.</p>
-    <pre><code>GET /api/v1/invoices
+  <div class="page">
+    <header class="navbar navbar-expand-md d-print-none">
+      <div class="container-xl">
+        <a class="navbar-brand" href="/"><span class="brand-mark">N</span>Northbridge API</a>
+        <div class="navbar-nav"><a class="nav-link" href="/">Home</a><a class="nav-link" href="/support">Support</a><a class="nav-link" href="/status">Status</a></div>
+      </div>
+    </header>
+    <div class="page-wrapper">
+      <div class="page-header d-print-none">
+        <div class="container-xl">
+          <h1 class="page-title">Public API</h1>
+          <div class="text-secondary">Token-based integrations use the customer API gateway. Internal services use separate SSO tokens.</div>
+        </div>
+      </div>
+      <div class="page-body">
+        <div class="container-xl">
+          <div class="row row-cards">
+            <div class="col-lg-7">
+              <div class="card">
+                <div class="card-header"><h3 class="card-title">Endpoints</h3></div>
+                <div class="card-body">
+                  <pre class="decoy-code"><code>GET /api/v1/invoices
 POST /api/v1/login
 GET /internal-api/status</code></pre>
-  </main>
+                </div>
+              </div>
+            </div>
+            <div class="col-lg-5">
+              <div class="card">
+                <div class="card-header"><h3 class="card-title">Integration hosts</h3></div>
+                <div class="list-group list-group-flush">
+                  <div class="list-group-item">git.internal.local</div>
+                  <div class="list-group-item">db01.internal.local</div>
+                  <div class="list-group-item">redis-cache.internal.local</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 </body>
 </html>

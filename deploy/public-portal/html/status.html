@@ -4,18 +4,35 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Northbridge Status</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@latest/dist/css/tabler.min.css">
   <link rel="stylesheet" href="/assets/app.css">
 </head>
 <body>
-  <header class="topbar"><div class="brand">Northbridge Status</div><a href="/">Home</a></header>
-  <main class="shell">
-    <h1>Service status</h1>
-    <div class="grid">
-      <article><h2>Public API</h2><p>Operational</p></article>
-      <article><h2>Mail relay</h2><p>Degraded performance</p></article>
-      <article><h2>Internal Git</h2><p>Maintenance scheduled</p></article>
-      <article><h2>Database</h2><p>Operational on db01.internal.local</p></article>
+  <div class="page">
+    <header class="navbar navbar-expand-md d-print-none">
+      <div class="container-xl">
+        <a class="navbar-brand" href="/"><span class="brand-mark">N</span>Northbridge Status</a>
+        <div class="navbar-nav"><a class="nav-link" href="/">Home</a><a class="nav-link" href="/support">Support</a><a class="nav-link" href="/docs">API Docs</a></div>
+      </div>
+    </header>
+    <div class="page-wrapper">
+      <div class="page-body">
+        <div class="container-xl">
+          <div class="row row-cards">
+            <div class="col-sm-6 col-lg-3"><div class="card"><div class="card-body"><div class="subheader">Public API</div><div class="h2 mb-0">Operational</div><span class="status status-green mt-3">Healthy</span></div></div></div>
+            <div class="col-sm-6 col-lg-3"><div class="card"><div class="card-body"><div class="subheader">Mail relay</div><div class="h2 mb-0">Degraded</div><span class="status status-yellow mt-3">Monitoring</span></div></div></div>
+            <div class="col-sm-6 col-lg-3"><div class="card"><div class="card-body"><div class="subheader">Internal Git</div><div class="h2 mb-0">Scheduled</div><span class="status status-blue mt-3">Maintenance</span></div></div></div>
+            <div class="col-sm-6 col-lg-3"><div class="card"><div class="card-body"><div class="subheader">Database</div><div class="h2 mb-0">Online</div><span class="status status-green mt-3">db01.internal.local</span></div></div></div>
+          </div>
+          <div class="card mt-3">
+            <div class="card-body">
+              <h3 class="card-title">Maintenance notice</h3>
+              <p class="text-secondary mb-0">API token rotation and Git integration maintenance are scheduled for the next deployment window.</p>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
-  </main>
+  </div>
 </body>
 </html>

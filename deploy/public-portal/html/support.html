@@ -4,20 +4,41 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Northbridge Support</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@latest/dist/css/tabler.min.css">
   <link rel="stylesheet" href="/assets/app.css">
 </head>
 <body>
-  <header class="topbar"><div class="brand">Northbridge Support</div><a href="/">Home</a></header>
-  <main class="shell">
-    <h1>Support queue</h1>
-    <table>
-      <thead><tr><th>Queue</th><th>Owner</th><th>Status</th></tr></thead>
-      <tbody>
-        <tr><td>Billing records</td><td>finance-ops</td><td>Open</td></tr>
-        <tr><td>Customer API keys</td><td>platform-support</td><td>Escalating</td></tr>
-        <tr><td>Mail relay failures</td><td>infra-oncall</td><td>Monitoring</td></tr>
-      </tbody>
-    </table>
-  </main>
+  <div class="page">
+    <header class="navbar navbar-expand-md d-print-none">
+      <div class="container-xl">
+        <a class="navbar-brand" href="/"><span class="brand-mark">N</span>Northbridge Support</a>
+        <div class="navbar-nav"><a class="nav-link" href="/">Home</a><a class="nav-link" href="/status">Status</a><a class="nav-link" href="/docs">API Docs</a></div>
+      </div>
+    </header>
+    <div class="page-wrapper">
+      <div class="page-header d-print-none">
+        <div class="container-xl">
+          <h1 class="page-title">Support queue</h1>
+          <div class="text-secondary">Customer tickets, integration escalations, and account-history workflows.</div>
+        </div>
+      </div>
+      <div class="page-body">
+        <div class="container-xl">
+          <div class="card">
+            <div class="table-responsive">
+              <table class="table table-vcenter card-table">
+                <thead><tr><th>Queue</th><th>Owner</th><th>Status</th><th>Priority</th></tr></thead>
+                <tbody>
+                  <tr><td>Billing records</td><td>finance-ops</td><td><span class="badge bg-blue-lt">Open</span></td><td>Normal</td></tr>
+                  <tr><td>Customer API keys</td><td>platform-support</td><td><span class="badge bg-yellow-lt">Escalating</span></td><td>High</td></tr>
+                  <tr><td>Mail relay failures</td><td>infra-oncall</td><td><span class="badge bg-green-lt">Monitoring</span></td><td>Normal</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 </body>
 </html>

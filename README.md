@@ -132,7 +132,7 @@ Start the runnable stack without generating attacker traffic:
 ./scripts/start_enterprise_stack.sh
 ```
 
-The enterprise slice includes `public-portal`, Cowrie, the HTTP observer, `SNARE + TANNER`, `Chameleon`, `mail-relay`, and the first internal portal. The public portal now implements the proposalv2 benign-surface breadcrumbs: login/support/status/API pages, `/robots.txt`, fake backup files, fake `.env.old`, `phpinfo.php`, and frontend source-map honeytokens. Chameleon publishes a deliberately small protocol subset: HTTP, SSH, Redis, and MySQL.
+The enterprise slice includes `public-portal`, Cowrie, the HTTP observer, `SNARE + TANNER`, an OpenCanary multi-protocol entrypoint, `mail-relay`, and the first internal portal. The public portal now implements the proposalv2 benign-surface breadcrumbs: login/support/status/API pages, `/robots.txt`, fake backup files, fake `.env.old`, `phpinfo.php`, and frontend source-map honeytokens. OpenCanary publishes a deliberately small protocol subset: HTTP on `8082`, SSH on `2224`, Redis on `6380`, MySQL on `3307`, and Git on `9418`.
 
 Vulnerable internal assets are now represented in the normal asset catalog. Clone Vulhub under the ignored `vendor/vulhub/` path before triggering `log4shell-app`:
 

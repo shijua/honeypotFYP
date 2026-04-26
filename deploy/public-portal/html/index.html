@@ -4,46 +4,97 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Northbridge Customer Portal</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@latest/dist/css/tabler.min.css">
   <link rel="stylesheet" href="/assets/app.css">
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand">Northbridge</div>
-    <nav>
-      <a href="/login">Login</a>
-      <a href="/support">Support</a>
-      <a href="/status">Status</a>
-      <a href="/docs">API Docs</a>
-    </nav>
-  </header>
-  <main class="shell">
-    <section class="hero">
-      <div>
-        <p class="eyebrow">Customer operations platform</p>
-        <h1>Billing, support, and deployment records in one portal.</h1>
-        <p>Use this workspace to review account history, open support tickets, and track API integration status.</p>
+  <div class="page">
+    <header class="navbar navbar-expand-md d-print-none">
+      <div class="container-xl">
+        <a class="navbar-brand" href="/">
+          <span class="brand-mark">N</span>
+          Northbridge
+        </a>
+        <div class="navbar-nav flex-row order-md-last">
+          <a class="btn btn-primary" href="/login">Portal Login</a>
+        </div>
+        <div class="collapse navbar-collapse show">
+          <div class="navbar-nav">
+            <a class="nav-link active" href="/">Overview</a>
+            <a class="nav-link" href="/support">Support</a>
+            <a class="nav-link" href="/status">Status</a>
+            <a class="nav-link" href="/docs">API Docs</a>
+          </div>
+        </div>
       </div>
-      <div class="status-card">
-        <span class="status-dot"></span>
-        <strong>Production API</strong>
-        <span>Operational</span>
+    </header>
+    <div class="page-wrapper">
+      <div class="page-body">
+        <div class="container-xl">
+          <div class="row row-cards align-items-center">
+            <div class="col-lg-8">
+              <div class="card hero-card">
+                <div class="card-body">
+                  <div class="subheader">Customer operations platform</div>
+                  <h1 class="display-5 mt-2 mb-3">Billing, support, and deployment records in one portal.</h1>
+                  <p class="text-secondary fs-3 mb-4">Use this workspace to review account history, open support tickets, and track API integration status.</p>
+                  <div class="d-flex flex-wrap gap-2">
+                    <a class="btn btn-primary" href="/login">Open portal</a>
+                    <a class="btn" href="/docs">View API docs</a>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="col-lg-4">
+              <div class="card">
+                <div class="card-body">
+                  <div class="d-flex align-items-center gap-3">
+                    <span class="status status-green"></span>
+                    <div>
+                      <div class="font-weight-medium">Production API</div>
+                      <div class="text-secondary">Operational</div>
+                    </div>
+                  </div>
+                  <div class="hr-text">Internal dependencies</div>
+                  <div class="list-group list-group-flush">
+                    <div class="list-group-item px-0 d-flex justify-content-between"><span>Mail relay</span><span class="badge bg-yellow-lt">Degraded</span></div>
+                    <div class="list-group-item px-0 d-flex justify-content-between"><span>Git integration</span><span class="badge bg-blue-lt">Maintenance</span></div>
+                    <div class="list-group-item px-0 d-flex justify-content-between"><span>Database</span><span class="badge bg-green-lt">Online</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="row row-cards mt-3">
+            <div class="col-md-4">
+              <div class="card">
+                <div class="card-body">
+                  <h3 class="card-title">Customer records</h3>
+                  <p class="text-secondary">Invoices, subscriptions, support contacts, and entitlement changes.</p>
+                </div>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="card">
+                <div class="card-body">
+                  <h3 class="card-title">Deployment dashboard</h3>
+                  <p class="text-secondary">Release windows, mail relay status, Git integration, and internal job queues.</p>
+                </div>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="card">
+                <div class="card-body">
+                  <h3 class="card-title">Support escalation</h3>
+                  <p class="text-secondary">Case notes, account history, and priority routing for managed customers.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
-    </section>
-    <section class="grid">
-      <article>
-        <h2>Customer records</h2>
-        <p>Invoices, subscriptions, support contacts, and entitlement changes.</p>
-      </article>
-      <article>
-        <h2>Deployment dashboard</h2>
-        <p>Release windows, mail relay status, Git integration, and internal job queues.</p>
-      </article>
-      <article>
-        <h2>Support escalation</h2>
-        <p>Case notes, account history, and priority routing for managed customers.</p>
-      </article>
-    </section>
-  </main>
+    </div>
+  </div>
   <!-- legacy routes: /api/v1/login /api/v1/invoices /admin/status git.internal.local db01.internal.local -->
   <script src="/assets/app.js"></script>
 </body>
