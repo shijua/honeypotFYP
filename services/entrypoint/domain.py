@@ -35,6 +35,64 @@ _SECRET_HEADER_NAMES = {
 _SECRET_BODY_FIELD_RE = re.compile(
     r"(?i)\b(password|passwd|pwd|token|secret|api_key|apikey|access_key)=([^&\s]+)"
 )
+_SCANNER_USER_AGENT_MARKERS = (
+    "dirbuster",
+    "feroxbuster",
+    "ffuf",
+    "gobuster",
+    "masscan",
+    "nikto",
+    "nmap",
+    "sqlmap",
+    "wpscan",
+)
+_CREDENTIAL_PATH_MARKERS = (
+    ".env",
+    "backup",
+    "password",
+    "passwd",
+    "secret",
+    "token",
+)
+_CREDENTIAL_PATH_SUFFIXES = (
+    ".bak",
+    ".old",
+    ".sql",
+    ".zip",
+    ".tar",
+    ".tgz",
+    ".gz",
+    ".7z",
+    ".rar",
+)
+_LOGIN_PATH_MARKERS = (
+    "login",
+    "signin",
+    "wp-login.php",
+)
+_DISCOVERY_PATH_MARKERS = (
+    ".git",
+    ".svn",
+    ".hg",
+    ".ds_store",
+    "/admin",
+    "/api",
+    "/phpmyadmin",
+    "/status",
+)
+_DISCOVERY_PATH_SUFFIXES = (
+    ".map",
+)
+_EXPLOIT_MARKERS = (
+    "${jndi:",
+    "jndi:ldap",
+    "log4j",
+    "struts",
+    "spring.cloud.function.routing-expression",
+    "../",
+    "..%2f",
+    "%2e%2e",
+)
 
 
 class EntrypointService:
@@ -88,7 +146,7 @@ class EntrypointService:
                     falco_rule="HTTP honeypot request",
                     priority="INFO",
                     output=output,
-                    tags=[],
+                    tags=_http_profile_tags(request, safe_headers),
                     output_fields={
                         "http_method": request.method.upper(),
                         "http_path": request.path,
@@ -134,6 +192,52 @@ def _format_http_output(request: EntrypointCaptureRequest) -> str:
     if request.query_string:
         target = f"{target}?{request.query_string}"
     return f"{request.method.upper()} {target} from {request.attacker_key}"
+
+
+def _http_profile_tags(
+    request: EntrypointCaptureRequest,
+    safe_headers: dict[str, str],
+) -> list[str]:
+    """Map obvious public HTTP probes into coarse ATT&CK evidence tags."""
+    path = request.path.lower()
+    query_string = request.query_string.lower()
+    body_preview = (request.body_preview or "").lower()
+    user_agent = safe_headers.get("user-agent", "").lower()
+    searchable = " ".join([path, query_string, body_preview, user_agent])
+
+    if any(marker in searchable for marker in _EXPLOIT_MARKERS):
+        return ["mitre_initial_access", "T1190"]
+    if _looks_like_login_attempt(path, request.method, body_preview):
+        return ["mitre_credential_access", "T1110"]
+    if _looks_like_credential_discovery(path, query_string):
+        return ["mitre_credential_access", "T1552.001"]
+    if _looks_like_web_discovery(path, user_agent):
+        return ["mitre_discovery", "T1046"]
+    return []
+
+
+def _looks_like_login_attempt(path: str, method: str, body_preview: str) -> bool:
+    if any(marker in path for marker in _LOGIN_PATH_MARKERS):
+        return True
+    return method.upper() == "POST" and any(
+        marker in body_preview
+        for marker in ("password", "passwd", "pwd=", "username", "login")
+    )
+
+
+def _looks_like_credential_discovery(path: str, query_string: str) -> bool:
+    target = f"{path}?{query_string}" if query_string else path
+    if any(marker in target for marker in _CREDENTIAL_PATH_MARKERS):
+        return True
+    return target.endswith(_CREDENTIAL_PATH_SUFFIXES)
+
+
+def _looks_like_web_discovery(path: str, user_agent: str) -> bool:
+    if any(marker in user_agent for marker in _SCANNER_USER_AGENT_MARKERS):
+        return True
+    if any(marker in path for marker in _DISCOVERY_PATH_MARKERS):
+        return True
+    return path.endswith(_DISCOVERY_PATH_SUFFIXES)
 
 
 def _redact_headers(headers: dict[str, str]) -> dict[str, str]:

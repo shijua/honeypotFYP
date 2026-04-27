@@ -47,4 +47,55 @@ def test_capture_http_request_creates_binding_observation_and_profile_evidence()
     assert observations[0].headers["authorization"] == "[redacted]"
     assert observations[0].body_preview == "log=admin&pwd=[redacted]"
     assert observations[0].profiler_evidence_ids == response.profile.recent_evidence_ids
-    assert response.profile.conf_by_tactic == {}
+    assert response.profile.recent_tactics == ["Credential Access"]
+    assert response.profile.recent_techniques == ["T1110"]
+
+
+def test_capture_http_request_maps_public_secret_probe_to_credential_access() -> None:
+    observation_repository = InMemoryEntrypointObservationRepository()
+    service = EntrypointService(
+        BindingService(InMemoryBindingRepository()),
+        ProfilerService(
+            InMemoryEvidenceRepository(),
+            InMemoryProfileRepository(),
+            build_test_attack_catalog(),
+        ),
+        observation_repository,
+    )
+
+    response = service.capture_http_request(
+        EntrypointCaptureRequest(
+            attacker_key="198.51.100.201",
+            method="GET",
+            path="/.env.old",
+            headers={"user-agent": "curl/8.0"},
+        )
+    )
+
+    assert response.profile.recent_tactics == ["Credential Access"]
+    assert response.profile.recent_techniques == ["T1552.001"]
+
+
+def test_capture_http_request_maps_source_map_probe_to_discovery() -> None:
+    observation_repository = InMemoryEntrypointObservationRepository()
+    service = EntrypointService(
+        BindingService(InMemoryBindingRepository()),
+        ProfilerService(
+            InMemoryEvidenceRepository(),
+            InMemoryProfileRepository(),
+            build_test_attack_catalog(),
+        ),
+        observation_repository,
+    )
+
+    response = service.capture_http_request(
+        EntrypointCaptureRequest(
+            attacker_key="198.51.100.202",
+            method="GET",
+            path="/assets/app.js.map",
+            headers={"user-agent": "gobuster/3.6"},
+        )
+    )
+
+    assert response.profile.recent_tactics == ["Discovery"]
+    assert response.profile.recent_techniques == ["T1046"]
