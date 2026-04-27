@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import services.orchestrator.template_runtime as template_runtime_module
 import pytest
 
@@ -296,15 +298,17 @@ def test_docker_template_runtime_starts_catalog_driven_cowrie_asset(
     assert captured_args[:4] == ["docker", "run", "-d", "--name"]
     assert "honeynet.mvp=true" in captured_args
     assert "honeynet.asset_id=admin-jumpbox" in captured_args
-    assert "-p" in captured_args
-    assert "127.0.0.1:2222:22" in captured_args
+    assert "-p" not in captured_args
+    assert "--network" in captured_args
     assert "--entrypoint" in captured_args
     assert "/bin/sh" in captured_args
     assert "ghcr.io/telekom-security/cowrie:24.04.1" in captured_args
     assert "mkdir -p /tmp/cowrie /tmp/cowrie/data etc && exec cowrie" in captured_args
     assert record.settings["runtime_backend"] == "docker"
+    assert record.settings["asset_gateway_managed"] is True
     assert record.settings["host_port"] == 2222
     assert record.settings["container_port"] == 22
+    assert record.settings["backend_port"] == 22
 
 
 def test_docker_template_runtime_uses_stable_internal_portal_runtime(
@@ -358,9 +362,149 @@ def test_docker_template_runtime_uses_stable_internal_portal_runtime(
     assert "nginx:alpine" in captured_args
     assert "--read-only" not in captured_args
     assert "-v" not in captured_args
-    assert "127.0.0.1:18080:80" in captured_args
+    assert "-p" not in captured_args
+    assert "--network" in captured_args
     assert record.settings["runtime_backend"] == "docker"
     assert record.settings["image"] == "nginx:alpine"
+    assert record.settings["asset_gateway_managed"] is True
+    assert record.settings["public_port"] == 18080
+
+
+def test_docker_template_runtime_writes_asset_gateway_route(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    captured_args: list[str] = []
+
+    def fake_run(args, **kwargs):
+        captured_args.extend(args)
+
+        class Result:
+            returncode = 0
+            stdout = (
+                json.dumps(
+                    [
+                        {
+                            "NetworkSettings": {
+                                "Networks": {
+                                    "honeynet_net_internal": {
+                                        "IPAddress": "172.25.0.5",
+                                    }
+                                }
+                            }
+                        }
+                    ]
+                )
+                if args[:2] == ["docker", "inspect"]
+                else "container-id"
+            )
+            stderr = ""
+
+        return Result()
+
+    monkeypatch.setattr(template_runtime_module.shutil, "which", lambda name: "/usr/bin/docker")
+    monkeypatch.setattr(template_runtime_module, "_port_is_free", lambda port: True)
+    monkeypatch.setattr(template_runtime_module.subprocess, "run", fake_run)
+    monkeypatch.setattr(template_runtime_module, "_container_status", lambda name: "Up 3 seconds")
+    monkeypatch.setattr(template_runtime_module, "_healthcheck_ready", lambda runtime, settings: True)
+    monkeypatch.setenv(
+        "HONEYPOT_ASSET_GATEWAY_ROUTES_PATH",
+        str(tmp_path / "asset_gateway_routes.json"),
+    )
+
+    runtime = DockerTemplateRuntime(InMemoryTemplateRuntimeRepository())
+    asset = AssetDefinition(
+        asset_id="internal-portal",
+        asset_name="Internal Portal",
+        exposure_type="internal",
+        interaction_level="medium",
+        template_family="web-honeypot",
+        protocols=["http"],
+        ports=[80],
+        default_settings={
+            "runtime": {
+                "backend": "docker",
+                "image": "nginx:alpine",
+                "port_mappings": [
+                    {
+                        "host": "127.0.0.1",
+                        "requested_host_port": 18080,
+                        "container_port": 80,
+                    }
+                ],
+            }
+        },
+        covers_tactics=["Discovery"],
+    )
+
+    record = runtime.start_asset(
+        "binding-route",
+        asset,
+        attacker_key="198.51.100.77",
+    )
+    routes = json.loads((tmp_path / "asset_gateway_routes.json").read_text())
+
+    assert "-p" not in captured_args
+    assert routes["routes"][0]["attacker_key"] == "198.51.100.77"
+    assert routes["routes"][0]["binding_id"] == "binding-route"
+    assert routes["routes"][0]["asset_id"] == "internal-portal"
+    assert routes["routes"][0]["public_port"] == 18080
+    assert routes["routes"][0]["backend_host"] == record.settings["backend_host"]
+    assert routes["routes"][0]["backend_port"] == 80
+    assert routes["routes"][0]["backend_ip"] == "172.25.0.5"
+
+
+def test_docker_template_runtime_does_not_gateway_manage_external_entrypoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_args: list[str] = []
+
+    def fake_run(args, **kwargs):
+        captured_args.extend(args)
+
+        class Result:
+            returncode = 0
+            stdout = "container-id"
+            stderr = ""
+
+        return Result()
+
+    monkeypatch.setattr(template_runtime_module.shutil, "which", lambda name: "/usr/bin/docker")
+    monkeypatch.setattr(template_runtime_module, "_port_is_free", lambda port: True)
+    monkeypatch.setattr(template_runtime_module.subprocess, "run", fake_run)
+    monkeypatch.setattr(template_runtime_module, "_container_status", lambda name: "Up 3 seconds")
+    monkeypatch.setattr(template_runtime_module, "_healthcheck_ready", lambda runtime, settings: True)
+
+    runtime = DockerTemplateRuntime(InMemoryTemplateRuntimeRepository())
+    asset = AssetDefinition(
+        asset_id="web-entrypoint",
+        asset_name="Web Entrypoint",
+        exposure_type="public",
+        interaction_level="low",
+        template_family="web-honeypot",
+        protocols=["http"],
+        ports=[80],
+        default_settings={
+            "runtime": {
+                "backend": "docker",
+                "image": "nginx:alpine",
+                "port_mappings": [
+                    {
+                        "host": "127.0.0.1",
+                        "requested_host_port": 8083,
+                        "container_port": 80,
+                    }
+                ],
+            }
+        },
+        covers_tactics=["Discovery"],
+    )
+
+    record = runtime.start_asset("binding-entrypoint", asset)
+
+    assert "-p" in captured_args
+    assert "127.0.0.1:8083:80" in captured_args
+    assert "asset_gateway_managed" not in record.settings
 
 
 def test_docker_template_runtime_starts_internal_opencanary_asset(
@@ -427,11 +571,13 @@ def test_docker_template_runtime_starts_internal_opencanary_asset(
     assert "256m" in captured_args
     assert "/srv/honeypot/deploy/opencanary/internal/git.conf:/root/.opencanary.conf:ro" in captured_args
     assert "/srv/honeypot/deploy/opencanary/var:/var/tmp" in captured_args
-    assert "127.0.0.1:19418:9418" in captured_args
+    assert "-p" not in captured_args
     assert "thinkst/opencanary" in captured_args
     assert record.settings["runtime_backend"] == "docker"
     assert record.settings["network"] == "honeynet_net_internal"
     assert record.settings["memory_limit"] == "256m"
+    assert record.settings["public_port"] == 19418
+    assert record.settings["backend_port"] == 9418
 
 
 def test_compose_template_runtime_starts_catalog_driven_vulhub_asset(

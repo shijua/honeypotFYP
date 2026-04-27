@@ -85,6 +85,46 @@ def test_profile_recent_sequence_respects_time_window() -> None:
     assert "Discovery" not in latest.profile.recent_tactics
 
 
+def test_profile_rebuild_accepts_mixed_naive_and_aware_datetimes() -> None:
+    service = ProfilerService(
+        InMemoryEvidenceRepository(),
+        InMemoryProfileRepository(),
+        build_test_attack_catalog(),
+    )
+
+    service.ingest(
+        EvidenceIngestRequest(
+            attacker_key="198.51.100.21",
+            binding_id="binding-2",
+            event=FalcoEvent(
+                ts=datetime(2026, 1, 1, 12, 0, 0),
+                falco_rule="OpenCanary redis event",
+                priority="INFO",
+                output="redis probe",
+                tags=["mitre_discovery", "T1046"],
+                output_fields={},
+            ),
+        )
+    )
+    latest = service.ingest(
+        EvidenceIngestRequest(
+            attacker_key="198.51.100.21",
+            binding_id="binding-2",
+            event=FalcoEvent(
+                ts=datetime(2026, 1, 1, 12, 1, 0, tzinfo=timezone.utc),
+                falco_rule="HTTP honeypot request",
+                priority="INFO",
+                output="GET /.env",
+                tags=[],
+                output_fields={},
+            ),
+        )
+    )
+
+    assert latest.profile.updated_at.tzinfo is not None
+    assert latest.profile.recent_techniques == ["T1046"]
+
+
 def test_ingest_extracts_subtechnique_ids_from_realistic_falco_tags() -> None:
     service = ProfilerService(
         InMemoryEvidenceRepository(),

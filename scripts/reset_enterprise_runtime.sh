@@ -50,6 +50,20 @@ log() {
   fi
 }
 
+compose_down() {
+  local compose_file="$1"
+  local label="$2"
+  if [[ "$QUIET" == "1" ]]; then
+    if ! "${COMPOSE[@]}" -p "$PROJECT_NAME" -f "$compose_file" down --remove-orphans >/dev/null 2>&1; then
+      echo "Warning: failed to stop $label compose slice" >&2
+    fi
+    return
+  fi
+  if ! "${COMPOSE[@]}" -p "$PROJECT_NAME" -f "$compose_file" down --remove-orphans; then
+    echo "Warning: failed to stop $label compose slice" >&2
+  fi
+}
+
 write_state() {
   local path="$1"
   local payload="$2"
@@ -74,17 +88,41 @@ truncate_log() {
   mv -f "$tmp" "$path"
 }
 
-log "Stopping enterprise containers for project $PROJECT_NAME..."
-COMPOSE_IGNORE_ORPHANS=True "${COMPOSE[@]}" -p "$PROJECT_NAME" -f "$ENTERPRISE_FILE" down --remove-orphans >/dev/null 2>&1 || true
-COMPOSE_IGNORE_ORPHANS=True "${COMPOSE[@]}" -p "$PROJECT_NAME" -f "$CONTROL_FILE" down --remove-orphans >/dev/null 2>&1 || true
+remove_runtime_containers() {
+  if ! command -v docker >/dev/null 2>&1; then
+    return
+  fi
+  legacy_containers=(
+    "${PROJECT_NAME}_opencanary-entrypoint_1"
+    "${PROJECT_NAME}_mail-relay_1"
+  )
+  legacy_to_remove=()
+  for container_name in "${legacy_containers[@]}"; do
+    if docker ps -aq --filter "name=^/${container_name}$" >/tmp/honeynet-reset-legacy-container 2>/dev/null; then
+      if [[ -s /tmp/honeynet-reset-legacy-container ]]; then
+        legacy_to_remove+=("$container_name")
+      fi
+    fi
+  done
+  rm -f /tmp/honeynet-reset-legacy-container
+  if [[ "${#legacy_to_remove[@]}" -gt 0 ]]; then
+    log "Removing legacy compose containers..."
+    docker rm -f "${legacy_to_remove[@]}" >/dev/null
+  fi
 
-if command -v docker >/dev/null 2>&1; then
   mapfile -t runtime_containers < <(docker ps -aq --filter label=honeynet.mvp=true)
   if [[ "${#runtime_containers[@]}" -gt 0 ]]; then
     log "Removing dynamic runtime containers..."
     docker rm -f "${runtime_containers[@]}" >/dev/null
   fi
-fi
+}
+
+remove_runtime_containers
+
+log "Stopping enterprise containers for project $PROJECT_NAME..."
+compose_down "$ENTERPRISE_FILE" "enterprise"
+compose_down "$CONTROL_FILE" "control"
+remove_runtime_containers
 
 if [[ "$KEEP_STATE" == "1" ]]; then
   log "Keeping runtime state under $STATE_DIR"
@@ -99,11 +137,13 @@ write_state "$STATE_DIR/opencanary_observations.json" '{"observations": []}'
 write_state "$STATE_DIR/evidence.json" '{"records": {}}'
 write_state "$STATE_DIR/profiles.json" '{"profiles": {}}'
 write_state "$STATE_DIR/gateway_routes.json" '{"routes": []}'
+write_state "$STATE_DIR/asset_gateway_routes.json" '{"routes": []}'
 write_state "$STATE_DIR/asset_runtime.json" '{"records": []}'
 write_state "$STATE_DIR/decision_trace.json" '{"records": []}'
 write_state "$STATE_DIR/adaptive_loop_state.json" '{"processed_evidence_ids_by_attacker": {}}'
 write_state "$STATE_DIR/adaptive_demo_report.json" '{"schema_version": "v1", "attackers": []}'
 truncate_log "deploy/public-portal/logs/access.log"
 truncate_log "deploy/opencanary/var/opencanary.log"
+truncate_log "deploy/cowrie/var/log/cowrie/cowrie.json"
 
 log "Enterprise runtime reset complete."

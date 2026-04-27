@@ -11,6 +11,12 @@ if [[ -f .env ]]; then
 fi
 
 PROJECT_NAME="${PROJECT_NAME:-honeynet}"
+if [[ -z "${HOST_PROJECT_ROOT:-}" || "${HOST_PROJECT_ROOT:-}" == "." ]]; then
+  HOST_PROJECT_ROOT="$PWD"
+elif [[ "$HOST_PROJECT_ROOT" != /* ]]; then
+  HOST_PROJECT_ROOT="$(cd "$HOST_PROJECT_ROOT" && pwd)"
+fi
+export PROJECT_NAME HOST_PROJECT_ROOT
 CLIENT_TARGET_HOST="${CLIENT_TARGET_HOST:-127.0.0.1}"
 PUBLIC_PORTAL_PORT="${PUBLIC_PORTAL_PORT:-8080}"
 ENTRYPOINT_OBSERVER_PORT="${ENTRYPOINT_OBSERVER_PORT:-8083}"
@@ -41,16 +47,26 @@ wait_for_docker_http() {
   docker run --rm --network "$network" curlimages/curl:latest -fs --retry "$WAIT_RETRIES" --retry-connrefused --retry-delay "$WAIT_DELAY_SECONDS" --max-time 5 "$url" >/dev/null
 }
 
+wait_for_tcp() {
+  local host="$1"
+  local port="$2"
+  local attempt
+  for ((attempt = 1; attempt <= WAIT_RETRIES; attempt += 1)); do
+    if command -v nc >/dev/null 2>&1; then
+      nc -z "$host" "$port" && return 0
+    else
+      timeout 3 bash -c "cat < /dev/null > /dev/tcp/$host/$port" && return 0
+    fi
+    sleep "$WAIT_DELAY_SECONDS"
+  done
+  echo "Timed out waiting for $host:$port" >&2
+  return 1
+}
+
 docker_get() {
   local network="$1"
   local url="$2"
   docker run --rm --network "$network" curlimages/curl:latest -fsS "$url"
-}
-
-docker_http_status() {
-  local network="$1"
-  local url="$2"
-  docker run --rm --network "$network" curlimages/curl:latest -s -o /dev/null -w "%{http_code}" "$url"
 }
 
 docker_post_json() {
@@ -101,7 +117,7 @@ COMPOSE_IGNORE_ORPHANS=True "${COMPOSE[@]}" -p "$PROJECT_NAME" -f "$CONTROL_FILE
 COMPOSE_IGNORE_ORPHANS=True "${COMPOSE[@]}" -p "$PROJECT_NAME" -f "$ENTERPRISE_FILE" up -d
 
 echo "Waiting for services..."
-wait_for_docker_http "${PROJECT_NAME}_net_public" "http://public-portal/"
+wait_for_tcp "$CLIENT_TARGET_HOST" "$PUBLIC_PORTAL_PORT"
 wait_for_docker_http "${PROJECT_NAME}_net_control" "http://profiler:8002/docs"
 wait_for_docker_http "${PROJECT_NAME}_net_control" "http://cowrie-adapter:8011/healthz"
 wait_for_docker_http "${PROJECT_NAME}_net_control" "http://opencanary-adapter:8012/healthz"
@@ -112,13 +128,12 @@ wait_for_docker_http "${PROJECT_NAME}_net_control" "http://gateway:8004/docs"
 
 echo
 echo "Normal user surface:"
-normal_status="$(docker_http_status "${PROJECT_NAME}_net_public" "http://public-portal/")"
-suspicious_status="$(docker_http_status "${PROJECT_NAME}_net_public" "http://public-portal/.env.old")"
-host_status="$(curl -s -o /dev/null -w "%{http_code}" --max-time 2 "http://$CLIENT_TARGET_HOST:$PUBLIC_PORTAL_PORT/" || true)"
-echo "  synthetic normal client -> public-portal / -> HTTP $normal_status"
-echo "  synthetic suspicious client -> public-portal /.env.old -> HTTP $suspicious_status"
-if [[ "$host_status" != "000" && -n "$host_status" ]]; then
-  echo "  host port $CLIENT_TARGET_HOST:$PUBLIC_PORTAL_PORT -> HTTP $host_status"
+normal_status="$(curl -s -o /dev/null -w "%{http_code}" --max-time 2 "http://$CLIENT_TARGET_HOST:$PUBLIC_PORTAL_PORT/" || true)"
+suspicious_status="$(curl -s -o /dev/null -w "%{http_code}" --max-time 2 "http://$CLIENT_TARGET_HOST:$PUBLIC_PORTAL_PORT/.env.old" || true)"
+echo "  host client -> public-portal / -> HTTP $normal_status"
+echo "  host client -> public-portal /.env.old -> HTTP $suspicious_status"
+if [[ "$normal_status" != "000" && -n "$normal_status" ]]; then
+  echo "  public portal was reached through $CLIENT_TARGET_HOST:$PUBLIC_PORTAL_PORT"
 else
   echo "  host port $CLIENT_TARGET_HOST:$PUBLIC_PORTAL_PORT was not reachable from this shell"
 fi

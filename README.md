@@ -98,6 +98,7 @@ The default local runtime now persists state under `data/runtime/`:
 - `evidence.json`
 - `profiles.json`
 - `gateway_routes.json`
+- `asset_gateway_routes.json`
 
 The controller asset catalog is now externalized at `data/assets/catalog.json`. Cowrie event mappings are externalized at `data/cowrie/event_mappings.json`. The profiler resolves tactic/technique relationships from the official MITRE ATT&CK `attack-stix-data` bundle at `data/mitre/enterprise-attack.json`.
 
@@ -146,9 +147,12 @@ Current service roles:
 | `entrypoint-observer` | public website backend + direct HTTP test entrypoint | `8083` | Receives public portal breadcrumbs and handles explicit low-interaction HTTP probes |
 | `cowrie` | attacker-facing entrypoint | `2222` | SSH interaction and command telemetry |
 | `snare` + `tanner` | optional attacker-facing web clone | `8081` | Realistic cloned-web entrypoint when the images start cleanly |
+| `asset-gateway` | adaptive asset data plane | `18080`, `19418`, `13306`, `16379`, `18081`, `12121`, `12222`, `12323`, `2525` | Owns fixed external ports and forwards each attacker to the backend container selected by source IP |
 | `opencanary-adapter` + `opencanary-forwarder` | adaptive asset telemetry | none | Collect logs from OpenCanary-backed internal assets after they are unlocked |
-| `internal-portal` | internal baseline service | internal only in compose, `18080` when dynamically unlocked | First internal asset in the adaptive path |
+| `internal-portal` | internal baseline service | internal only; reached through `asset-gateway` on `18080` when dynamically unlocked | First internal asset in the adaptive path |
 | `binding-service`, `profiler`, `controller`, `orchestrator`, `gateway`, `adaptive-loop`, `dashboard` | control plane | dashboard on `8090`; APIs internal | Profiling, asset selection, runtime start, route state, and live monitoring |
+
+Adaptive internal Docker assets no longer publish host ports themselves. The orchestrator starts one backend container per binding on `net_internal`, writes `data/runtime/asset_gateway_routes.json`, and the `asset-gateway` container owns the fixed external ports. For the MVP, the data-plane gateway treats the same source IP as the same attacker and routes by `attacker_key + public_port`; if only one route exists for a port it falls back to that route for easier local testing.
 
 OpenCanary is no longer an always-on attacker-facing entrypoint. OpenCanary telemetry is collected through `scripts/forward_opencanary_json.py`, which tails `deploy/opencanary/var/opencanary.log` and posts events into `services/opencanary`. Adaptive internal OpenCanary assets mount that shared log directory, so their Git/MySQL/Redis/HTTP/FTP/SSH/Telnet events flow into the dashboard after the controller unlocks them.
 
@@ -162,6 +166,7 @@ WEB_ADMIN_CONSOLE_PORT=18081
 FTP_ARCHIVE_PORT=12121
 SSH_CANARY_PORT=12222
 LEGACY_TELNET_PORT=12323
+ASSET_GATEWAY_PORTS=18080,19418,13306,16379,18081,12121,12222,12323,2525
 ```
 
 Vulnerable internal assets are now represented in the normal asset catalog. Clone Vulhub under the ignored `vendor/vulhub/` path before triggering `log4shell-app`:

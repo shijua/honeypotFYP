@@ -39,6 +39,7 @@ function renderMetrics(data) {
     ["OpenCanary Events", data.metrics.opencanary_event_count, "Sanitized multi-protocol telemetry events"],
     ["Containers Up", data.metrics.containers_up, "Compose services or runtime assets currently up"],
     ["Published Ports", data.metrics.published_port_count, "Host-reachable ports in current container view"],
+    ["Asset Routes", data.metrics.asset_gateway_route_count, "Data-plane routes served by the unified asset gateway"],
     ["Healthy Stages", data.metrics.healthy_chain_stages, "Pipeline health stages currently green"],
     ["Warnings", data.metrics.warning_chain_stages, "Pipeline stages waiting for data or reporting failure"],
   ];
@@ -100,20 +101,37 @@ function renderContainerTable(containers) {
   </table>`;
 }
 
-function renderBindings(bindings, routes) {
+function renderAssetGatewayRoutes(routes) {
+  if (!routes || routes.length === 0) {
+    return '<span class="subtle">none</span>';
+  }
+  return routes.map(route => {
+    const publicPort = route.public_port || "?";
+    const backend = `${route.backend_host || "?"}:${route.backend_port || "?"}`;
+    return `<span class="badge">${escapeHtml(route.asset_id)} ${escapeHtml(publicPort)} -> ${escapeHtml(backend)}</span>`;
+  }).join("");
+}
+
+function renderBindings(bindings, routes, assetGatewayRoutes) {
   if (!bindings.length) {
     return '<div class="empty">No bindings yet.</div>';
   }
   const routesByBinding = Object.fromEntries(routes.map(route => [route.binding_id, route]));
+  const assetRoutesByBinding = {};
+  (assetGatewayRoutes || []).forEach(route => {
+    assetRoutesByBinding[route.binding_id] = assetRoutesByBinding[route.binding_id] || [];
+    assetRoutesByBinding[route.binding_id].push(route);
+  });
   return `<table>
     <thead>
-      <tr><th>Binding</th><th>Attacker</th><th>Status</th><th>Unlocked</th><th>Gateway</th></tr>
+      <tr><th>Binding</th><th>Attacker</th><th>Status</th><th>Unlocked</th><th>Gateway</th><th>Data Plane</th></tr>
     </thead>
     <tbody>
       ${bindings.map(binding => {
         const route = routesByBinding[binding.binding_id] || {};
         const exposed = route.exposed_assets || [];
         const failed = route.failed_assets || [];
+        const assetRoutes = assetRoutesByBinding[binding.binding_id] || [];
         return `
           <tr>
             <td class="mono">${escapeHtml(binding.binding_id)}</td>
@@ -121,6 +139,7 @@ function renderBindings(bindings, routes) {
             <td>${escapeHtml(binding.status || "unknown")}</td>
             <td>${badgeList(binding.unlocked_assets || [])}</td>
             <td>${renderGatewayAssets(exposed, failed)}</td>
+            <td>${renderAssetGatewayRoutes(assetRoutes)}</td>
           </tr>
         `;
       }).join("")}
@@ -183,7 +202,11 @@ async function loadData() {
     healthPanel.innerHTML = renderHealth(data.chain_health || []);
   }
   document.getElementById("containers-panel").innerHTML = renderContainerTable(data.containers || []);
-  document.getElementById("bindings-panel").innerHTML = renderBindings(data.bindings || [], data.gateway_routes || []);
+  document.getElementById("bindings-panel").innerHTML = renderBindings(
+    data.bindings || [],
+    data.gateway_routes || [],
+    data.asset_gateway_routes || [],
+  );
   document.getElementById("attackers-panel").innerHTML = renderAttackers(data.attackers || []);
   document.getElementById("entrypoint-panel").innerHTML = renderObservationTable(
     data.recent_entrypoint_observations || [],

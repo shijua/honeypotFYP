@@ -4,9 +4,11 @@ import pytest
 
 from scripts import forward_opencanary_json as forwarder
 from scripts.forward_opencanary_json import (
+    attribute_asset_gateway_source,
     build_adapter_payload,
     follow_log_file,
     iter_json_events,
+    load_asset_gateway_routes,
     normalize_event,
     _refresh_log_handle,
 )
@@ -82,6 +84,42 @@ def test_forward_lines_posts_normalized_events(monkeypatch: pytest.MonkeyPatch) 
     ]
 
 
+def test_asset_gateway_routes_restore_original_attacker_ip(tmp_path) -> None:
+    route_file = tmp_path / "asset_gateway_routes.json"
+    route_file.write_text(
+        """
+        {
+          "routes": [
+            {
+              "attacker_key": "198.51.100.77",
+              "asset_id": "redis-cache",
+              "public_port": 16379,
+              "backend_host": "honeynet-abcd-redis-cache",
+              "backend_ip": "172.25.0.5",
+              "backend_port": 6379
+            }
+          ]
+        }
+        """,
+        encoding="utf-8",
+    )
+    event = {
+        "src_host": "172.25.0.3",
+        "dst_host": "172.25.0.5",
+        "dst_port": 6379,
+        "logdata": {"CMD": "INFO"},
+    }
+
+    attributed = attribute_asset_gateway_source(
+        event,
+        load_asset_gateway_routes(route_file),
+    )
+
+    assert attributed["src_host"] == "198.51.100.77"
+    assert attributed["logdata"]["ASSET_GATEWAY_PROXY_SRC_HOST"] == "172.25.0.3"
+    assert attributed["logdata"]["ASSET_GATEWAY_PUBLIC_PORT"] == 16379
+
+
 def test_follow_log_file_creates_missing_file_in_tail_mode(tmp_path) -> None:
     log_file = tmp_path / "opencanary" / "opencanary.log"
 
@@ -93,6 +131,7 @@ def test_follow_log_file_creates_missing_file_in_tail_mode(tmp_path) -> None:
         once=True,
         poll_seconds=0.0,
         timeout_seconds=0.01,
+        asset_routes_file=None,
     )
 
     assert forwarded == 0

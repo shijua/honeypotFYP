@@ -108,6 +108,7 @@ reset_runtime_state() {
     "$RUNTIME_DIR/evidence.json" \
     "$RUNTIME_DIR/profiles.json" \
     "$RUNTIME_DIR/gateway_routes.json" \
+    "$RUNTIME_DIR/asset_gateway_routes.json" \
     "$RUNTIME_DIR/asset_runtime.json" \
     "$RUNTIME_DIR/decision_trace.json" \
     "$RUNTIME_DIR/adaptive_loop_state.json" \

@@ -73,6 +73,13 @@ def build_chain_health(
         _service_stage(
             project_name,
             containers,
+            service_name="asset-gateway",
+            stage="Asset data-plane gateway",
+            detail="fixed public ports route to per-attacker backend containers",
+        ),
+        _service_stage(
+            project_name,
+            containers,
             service_name="entrypoint-observer",
             stage="Public HTTP backend",
             detail=_record_detail(latest_entrypoint, ["method", "path", "attacker_key"]),
@@ -213,12 +220,13 @@ def _forwarder_stage(
             detail="running, no forwarded event logged yet",
         )
     if (
-        "Could not reach" in log_line
-        or "Adapter rejected" in log_line
+        "Adapter rejected" in log_line
         or "Observer rejected" in log_line
         or "Observer returned" in log_line
     ):
         status = "bad"
+    elif "Could not reach" in log_line:
+        status = "warn"
     elif log_line.startswith("Forwarded "):
         status = "ok"
     else:
@@ -452,7 +460,7 @@ def _last_forwarder_log_line(container_name: str) -> str:
 def _probe_container_logs(container_name: str) -> list[str]:
     try:
         result = subprocess.run(
-            ["docker", "logs", "--tail", "80", container_name],
+            ["docker", "logs", "--timestamps", "--tail", "80", container_name],
             check=False,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -462,8 +470,17 @@ def _probe_container_logs(container_name: str) -> list[str]:
         return []
     if result.returncode != 0:
         return []
-    return [
-        line.strip()
-        for line in result.stdout.splitlines()
-        if line.strip()
-    ]
+    timestamped_lines = [_split_docker_timestamp(line) for line in result.stdout.splitlines()]
+    timestamped_lines = [item for item in timestamped_lines if item[1]]
+    timestamped_lines.sort(key=lambda item: item[0])
+    return [message for _, message in timestamped_lines]
+
+
+def _split_docker_timestamp(line: str) -> tuple[str, str]:
+    stripped = line.strip()
+    if not stripped:
+        return "", ""
+    timestamp, separator, message = stripped.partition(" ")
+    if separator and "T" in timestamp and timestamp.endswith("Z"):
+        return timestamp, message.strip()
+    return "", stripped

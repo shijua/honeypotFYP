@@ -60,7 +60,7 @@ class OrchestratorService:
                 )
                 route_updates.extend(unlock_route_updates)
                 for asset_id in _new_asset_ids_from_route_updates(unlock_route_updates):
-                    runtime_record = self._start_asset_runtime(binding.binding_id, asset_id)
+                    runtime_record = self._start_asset_runtime(binding, asset_id)
                     if runtime_record is not None:
                         runtime_events.append(runtime_record)
                         monitoring_events.append(
@@ -123,7 +123,7 @@ class OrchestratorService:
 
     def _start_asset_runtime(
         self,
-        binding_id: str,
+        binding: BindingRecord,
         asset_id: str,
     ) -> AssetRuntimeRecord | None:
         """Start runtime state for one unlocked asset when runtime support exists."""
@@ -133,7 +133,11 @@ class OrchestratorService:
         asset = self._asset_by_id(asset_id)
         if asset is None:
             return None
-        return self._template_runtime.start_asset(binding_id, asset)
+        return self._template_runtime.start_asset(
+            binding.binding_id,
+            asset,
+            attacker_key=binding.attacker_key,
+        )
 
     def _asset_by_id(self, asset_id: str) -> AssetDefinition | None:
         """Resolve one asset definition from the controller asset catalog."""

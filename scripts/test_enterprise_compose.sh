@@ -11,7 +11,11 @@ if [[ -f .env ]]; then
 fi
 
 PROJECT_NAME="honeynet"
-HOST_PROJECT_ROOT="${HOST_PROJECT_ROOT:-$PWD}"
+if [[ -z "${HOST_PROJECT_ROOT:-}" || "${HOST_PROJECT_ROOT:-}" == "." ]]; then
+  HOST_PROJECT_ROOT="$PWD"
+elif [[ "$HOST_PROJECT_ROOT" != /* ]]; then
+  HOST_PROJECT_ROOT="$(cd "$HOST_PROJECT_ROOT" && pwd)"
+fi
 export PROJECT_NAME HOST_PROJECT_ROOT
 WAIT_RETRIES="${WAIT_RETRIES:-60}"
 WAIT_DELAY_SECONDS="${WAIT_DELAY_SECONDS:-2}"

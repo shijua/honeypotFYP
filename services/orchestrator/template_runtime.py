@@ -15,6 +15,7 @@ wired in.
 from __future__ import annotations
 
 from collections.abc import Iterable
+import json
 import os
 from pathlib import Path
 import shutil
@@ -103,6 +104,7 @@ class MockTemplateRuntime:
         self,
         binding_id: str,
         asset: AssetDefinition,
+        attacker_key: str | None = None,
     ) -> AssetRuntimeRecord:
         """Record that an asset is running with its catalog default settings."""
         existing = self._existing_record(binding_id, asset.asset_id)
@@ -186,6 +188,7 @@ class DockerTemplateRuntime:
         self,
         binding_id: str,
         asset: AssetDefinition,
+        attacker_key: str | None = None,
     ) -> AssetRuntimeRecord:
         """Start one supported asset as a real Docker container."""
         existing = self._existing_record(binding_id, asset.asset_id)
@@ -202,29 +205,52 @@ class DockerTemplateRuntime:
         if not isinstance(image, str) or not image:
             raise RuntimeError(f"asset {asset.asset_id} runtime is missing a Docker image")
         container_name = _container_name(binding_id, asset.asset_id)
+        asset_gateway_managed = _asset_gateway_managed(asset, runtime)
+
+        self._cleanup_stale_container(container_name)
         docker_args, runtime_settings = self._docker_args_for_runtime(
             binding_id,
             asset,
             runtime,
             container_name,
             image,
+            asset_gateway_managed=asset_gateway_managed,
         )
 
-        subprocess.run(
-            docker_args,
-            check=True,
-            capture_output=True,
-            text=True,
-        )
+        try:
+            subprocess.run(
+                docker_args,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except subprocess.CalledProcessError as exc:
+            self._cleanup_failed_container(container_name)
+            raise RuntimeError(_docker_run_error_message(exc)) from exc
+
         self._verify_started_container(
             container_name=container_name,
             runtime=runtime,
             runtime_settings=runtime_settings,
         )
+        if asset_gateway_managed:
+            backend_ip = _container_network_ip(
+                container_name,
+                str(runtime_settings.get("network", "")),
+            )
+            if backend_ip:
+                runtime_settings["backend_ip"] = backend_ip
 
         settings = dict(asset.default_settings)
         settings.update(runtime_settings)
         record = _runtime_record_from_asset(binding_id, asset, settings=settings)
+        if asset_gateway_managed and attacker_key:
+            _upsert_asset_gateway_routes(
+                binding_id=binding_id,
+                attacker_key=attacker_key,
+                asset=asset,
+                runtime_settings=runtime_settings,
+            )
         return self._repository.upsert(record)
 
     def monitoring_event_for(self, record: AssetRuntimeRecord) -> FalcoEvent:
@@ -273,6 +299,8 @@ class DockerTemplateRuntime:
         runtime: dict[str, object],
         container_name: str,
         image: str,
+        *,
+        asset_gateway_managed: bool = False,
     ) -> tuple[list[str], dict[str, object]]:
         """Build a `docker run` command from the catalog runtime spec.
 
@@ -301,6 +329,8 @@ class DockerTemplateRuntime:
         format_context = _runtime_format_context(binding_id, asset.asset_id)
 
         network = runtime.get("network")
+        if asset_gateway_managed and not isinstance(network, str):
+            network = "{project_name}_net_internal"
         if isinstance(network, str) and network.strip():
             network_name = _format_runtime_string(network, format_context)
             docker_args.extend(["--network", network_name])
@@ -370,17 +400,23 @@ class DockerTemplateRuntime:
             if normalized_volumes:
                 runtime_settings["volumes"] = normalized_volumes
 
-        port_records = _resolve_port_mappings(runtime, asset.asset_id)
+        port_records = _resolve_port_mappings(
+            runtime,
+            asset.asset_id,
+            asset_gateway_managed=asset_gateway_managed,
+            backend_host=container_name,
+        )
         for port_record in port_records:
-            docker_args.extend(
-                [
-                    "-p",
-                    (
-                        f"{port_record['host']}:{port_record['host_port']}:"
-                        f"{port_record['container_port']}"
-                    ),
-                ]
-            )
+            if not asset_gateway_managed:
+                docker_args.extend(
+                    [
+                        "-p",
+                        (
+                            f"{port_record['host']}:{port_record['host_port']}:"
+                            f"{port_record['container_port']}"
+                        ),
+                    ]
+                )
         if port_records:
             first_port = port_records[0]
             runtime_settings.update(
@@ -391,6 +427,15 @@ class DockerTemplateRuntime:
                     "port_mappings": port_records,
                 }
             )
+            if asset_gateway_managed:
+                runtime_settings.update(
+                    {
+                        "asset_gateway_managed": True,
+                        "backend_host": container_name,
+                        "backend_port": first_port["container_port"],
+                        "public_port": first_port["host_port"],
+                    }
+                )
 
         env = runtime.get("env", {})
         if isinstance(env, dict):
@@ -467,6 +512,13 @@ class DockerTemplateRuntime:
             text=True,
         )
 
+    def _cleanup_stale_container(self, container_name: str) -> None:
+        """Remove a stopped container with the same deterministic runtime name."""
+        status = _container_status(container_name)
+        if status == "missing" or status.startswith("Up"):
+            return
+        self._cleanup_failed_container(container_name)
+
 
 class ComposeTemplateRuntime:
     """Start a compose-backed internal asset such as one Vulhub scenario."""
@@ -485,6 +537,7 @@ class ComposeTemplateRuntime:
         self,
         binding_id: str,
         asset: AssetDefinition,
+        attacker_key: str | None = None,
     ) -> AssetRuntimeRecord:
         """Start one supported asset through Docker Compose."""
         existing = self._existing_record(binding_id, asset.asset_id)
@@ -600,11 +653,12 @@ class HybridTemplateRuntime:
         self,
         binding_id: str,
         asset: AssetDefinition,
+        attacker_key: str | None = None,
     ) -> AssetRuntimeRecord:
         """Start with Docker when supported, otherwise return a mock record."""
         if self._compose_runtime is not None and self._compose_runtime.supports(asset):
             try:
-                return self._compose_runtime.start_asset(binding_id, asset)
+                return self._compose_runtime.start_asset(binding_id, asset, attacker_key)
             except Exception as exc:
                 failed = _runtime_record_from_asset(
                     binding_id,
@@ -618,7 +672,7 @@ class HybridTemplateRuntime:
                 return self._mock_runtime.upsert_record(failed)
         if self._docker_runtime.supports(asset):
             try:
-                return self._docker_runtime.start_asset(binding_id, asset)
+                return self._docker_runtime.start_asset(binding_id, asset, attacker_key)
             except Exception as exc:
                 failed = _runtime_record_from_asset(
                     binding_id,
@@ -630,7 +684,7 @@ class HybridTemplateRuntime:
                     },
                 ).model_copy(update={"status": "failed"})
                 return self._mock_runtime.upsert_record(failed)
-        return self._mock_runtime.start_asset(binding_id, asset)
+        return self._mock_runtime.start_asset(binding_id, asset, attacker_key)
 
     def monitoring_event_for(self, record: AssetRuntimeRecord) -> FalcoEvent:
         """Return a lifecycle event for either Docker or mock records."""
@@ -746,12 +800,18 @@ def _find_free_port() -> int:
         return int(sock.getsockname()[1])
 
 
-def _resolve_host_port(requested_host_port: object, asset_id: str | None = None) -> int:
+def _resolve_host_port(
+    requested_host_port: object,
+    asset_id: str | None = None,
+) -> int:
     """Use the requested port when available, otherwise fall back to a free one."""
     env_port = _asset_port_override(asset_id)
     if env_port is not None and _port_is_free(env_port):
         return env_port
-    if isinstance(requested_host_port, int) and _port_is_free(requested_host_port):
+    if (
+        isinstance(requested_host_port, int)
+        and _port_is_free(requested_host_port)
+    ):
         return requested_host_port
     return _find_free_port()
 
@@ -759,6 +819,9 @@ def _resolve_host_port(requested_host_port: object, asset_id: str | None = None)
 def _resolve_port_mappings(
     runtime: dict[str, object],
     asset_id: str | None = None,
+    *,
+    asset_gateway_managed: bool = False,
+    backend_host: str = "",
 ) -> list[dict[str, int | str]]:
     """Normalize old and new catalog port formats into Docker `-p` records."""
     raw_mappings = runtime.get("port_mappings")
@@ -778,15 +841,173 @@ def _resolve_port_mappings(
         if not isinstance(item, dict):
             continue
         container_port = int(item.get("container_port", 80))
-        host_port = _resolve_host_port(item.get("requested_host_port"), asset_id)
-        resolved.append(
+        if asset_gateway_managed:
+            host_port = _resolve_public_port(
+                item.get("requested_host_port"),
+                container_port,
+                asset_id,
+            )
+        else:
+            host_port = _resolve_host_port(item.get("requested_host_port"), asset_id)
+        port_record: dict[str, int | str] = {
+            "host": _resolve_host_bind(item.get("host", "127.0.0.1")),
+            "host_port": host_port,
+            "container_port": container_port,
+        }
+        if asset_gateway_managed:
+            port_record["backend_host"] = backend_host
+            port_record["backend_port"] = container_port
+        resolved.append(port_record)
+    return resolved
+
+
+def _asset_gateway_managed(asset: AssetDefinition, runtime: dict[str, object]) -> bool:
+    """Return True when an internal asset should use the unified asset gateway."""
+    raw = os.environ.get("HONEYPOT_ASSET_GATEWAY_ENABLED", "1").strip().lower()
+    if raw in {"0", "false", "no", "off"}:
+        return False
+    if asset.exposure_type != "internal":
+        return False
+    raw_mappings = runtime.get("port_mappings")
+    if isinstance(raw_mappings, list):
+        return bool(raw_mappings)
+    return "requested_host_port" in runtime or "container_port" in runtime
+
+
+def _resolve_public_port(
+    requested_host_port: object,
+    container_port: int,
+    asset_id: str | None,
+) -> int:
+    """Resolve the fixed external port served by the unified asset gateway."""
+    env_port = _asset_port_override(asset_id)
+    if env_port is not None:
+        return env_port
+    if isinstance(requested_host_port, int):
+        return requested_host_port
+    return container_port
+
+
+def _docker_run_error_message(exc: subprocess.CalledProcessError) -> str:
+    """Return a useful Docker run error without losing stderr details."""
+    details = (exc.stderr or exc.stdout or str(exc)).strip()
+    return f"docker run failed with exit status {exc.returncode}: {details}"
+
+
+def _upsert_asset_gateway_routes(
+    *,
+    binding_id: str,
+    attacker_key: str,
+    asset: AssetDefinition,
+    runtime_settings: dict[str, object],
+) -> None:
+    """Persist routes consumed by the unified asset data-plane gateway."""
+    routes = runtime_settings.get("port_mappings", [])
+    if not isinstance(routes, list):
+        return
+
+    store = JsonFileStore(_asset_gateway_routes_path(), default_data={"routes": []})
+    payload = store.read()
+    existing_routes = payload.get("routes", [])
+    existing_routes = existing_routes if isinstance(existing_routes, list) else []
+
+    replacement_keys: set[tuple[str, str, int]] = set()
+    new_routes: list[dict[str, object]] = []
+    protocol = str(asset.protocols[0]) if asset.protocols else "tcp"
+    updated_at = utcnow().isoformat()
+    for route in routes:
+        if not isinstance(route, dict):
+            continue
+        public_port = route.get("host_port")
+        backend_port = route.get("backend_port", route.get("container_port"))
+        backend_host = route.get("backend_host")
+        backend_ip = runtime_settings.get("backend_ip")
+        if not isinstance(public_port, int):
+            continue
+        if not isinstance(backend_port, int):
+            continue
+        if not isinstance(backend_host, str) or not backend_host:
+            continue
+        replacement_keys.add((binding_id, asset.asset_id, public_port))
+        new_routes.append(
             {
-                "host": _resolve_host_bind(item.get("host", "127.0.0.1")),
-                "host_port": host_port,
-                "container_port": container_port,
+                "schema_version": "v1",
+                "attacker_key": attacker_key,
+                "binding_id": binding_id,
+                "asset_id": asset.asset_id,
+                "asset_name": asset.asset_name,
+                "protocol": protocol,
+                "public_port": public_port,
+                "backend_host": backend_host,
+                "backend_port": backend_port,
+                "backend_ip": backend_ip if isinstance(backend_ip, str) else "",
+                "updated_at": updated_at,
             }
         )
-    return resolved
+
+    if not new_routes:
+        return
+
+    preserved_routes = []
+    for route in existing_routes:
+        if not isinstance(route, dict):
+            continue
+        key = (
+            str(route.get("binding_id", "")),
+            str(route.get("asset_id", "")),
+            int(route.get("public_port", 0) or 0),
+        )
+        if key not in replacement_keys:
+            preserved_routes.append(route)
+    payload["routes"] = [*preserved_routes, *new_routes]
+    store.write(payload)
+
+
+def _asset_gateway_routes_path() -> Path:
+    """Return the JSON route table consumed by services.asset_gateway."""
+    raw_path = os.environ.get("HONEYPOT_ASSET_GATEWAY_ROUTES_PATH", "").strip()
+    if raw_path:
+        return Path(raw_path)
+    state_dir = Path(os.environ.get("HONEYPOT_STATE_DIR", "data/runtime"))
+    return state_dir / "asset_gateway_routes.json"
+
+
+def _container_network_ip(container_name: str, network_name: str) -> str | None:
+    """Return the container IP on the runtime network when Docker exposes it."""
+    result = subprocess.run(
+        ["docker", "inspect", container_name],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return None
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, list) or not payload:
+        return None
+    container = payload[0]
+    if not isinstance(container, dict):
+        return None
+    network_settings = container.get("NetworkSettings", {})
+    if not isinstance(network_settings, dict):
+        return None
+    networks = network_settings.get("Networks", {})
+    if not isinstance(networks, dict):
+        return None
+    if network_name and isinstance(networks.get(network_name), dict):
+        ip_address = networks[network_name].get("IPAddress")
+        if isinstance(ip_address, str) and ip_address:
+            return ip_address
+    for network in networks.values():
+        if not isinstance(network, dict):
+            continue
+        ip_address = network.get("IPAddress")
+        if isinstance(ip_address, str) and ip_address:
+            return ip_address
+    return None
 
 
 def _resolve_host_bind(default_host: object) -> str:
@@ -1152,6 +1373,8 @@ def _healthcheck_ready(
 
     healthcheck = runtime.get("healthcheck")
     if not isinstance(healthcheck, dict):
+        return True
+    if runtime_settings.get("asset_gateway_managed") is True:
         return True
 
     if healthcheck.get("type") != "tcp":

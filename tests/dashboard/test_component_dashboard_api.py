@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -312,6 +313,46 @@ def test_dashboard_index_serves_html() -> None:
     assert ".status-badge" in css
     assert "async function loadData()" in js
     assert "function renderHealth" in js
+
+
+def test_forwarder_startup_connection_refusal_is_warning() -> None:
+    stage = dashboard_health._forwarder_stage(
+        {
+            "name": "honeynet_public-portal-forwarder_1",
+            "status": "Up 2 seconds",
+        },
+        "Could not reach entrypoint observer: connection refused",
+        stage="Benign surface forwarder",
+        component="public-portal-forwarder",
+        target="public website HTTP backend",
+    )
+
+    assert stage["status"] == "warn"
+
+
+def test_probe_container_logs_sorts_docker_streams_by_timestamp(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_run(*args, **kwargs):
+        return SimpleNamespace(
+            returncode=0,
+            stdout=(
+                "2026-01-01T00:00:03.000000000Z Forwarded public-portal GET /ok\n"
+                "2026-01-01T00:00:02.000000000Z Observer rejected public portal event with HTTP 500\n"
+            ),
+        )
+
+    monkeypatch.setattr(dashboard_health.subprocess, "run", fake_run)
+
+    lines = dashboard_health._probe_container_logs("honeynet_public-portal-forwarder_1")
+
+    assert lines == [
+        "Observer rejected public portal event with HTTP 500",
+        "Forwarded public-portal GET /ok",
+    ]
+    assert dashboard_health._last_forwarder_log_line(
+        "honeynet_public-portal-forwarder_1"
+    ) == "Forwarded public-portal GET /ok"
 
 
 def test_dashboard_summary_marks_compose_assets_as_running(

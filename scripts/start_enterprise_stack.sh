@@ -11,7 +11,11 @@ if [[ -f .env ]]; then
 fi
 
 PROJECT_NAME="${PROJECT_NAME:-honeynet}"
-HOST_PROJECT_ROOT="${HOST_PROJECT_ROOT:-$PWD}"
+if [[ -z "${HOST_PROJECT_ROOT:-}" || "${HOST_PROJECT_ROOT:-}" == "." ]]; then
+  HOST_PROJECT_ROOT="$PWD"
+elif [[ "$HOST_PROJECT_ROOT" != /* ]]; then
+  HOST_PROJECT_ROOT="$(cd "$HOST_PROJECT_ROOT" && pwd)"
+fi
 export PROJECT_NAME HOST_PROJECT_ROOT
 RESET_BEFORE_START="${RESET_BEFORE_START:-1}"
 KEEP_STATE=0
@@ -78,6 +82,22 @@ wait_for_docker_http() {
     -fs --retry "$WAIT_RETRIES" --retry-connrefused --retry-delay "$WAIT_DELAY_SECONDS" --max-time 5 "$url" >/dev/null
 }
 
+wait_for_tcp() {
+  local host="$1"
+  local port="$2"
+  local attempt
+  for ((attempt = 1; attempt <= WAIT_RETRIES; attempt += 1)); do
+    if command -v nc >/dev/null 2>&1; then
+      nc -z "$host" "$port" && return 0
+    else
+      timeout 3 bash -c "cat < /dev/null > /dev/tcp/$host/$port" && return 0
+    fi
+    sleep "$WAIT_DELAY_SECONDS"
+  done
+  echo "Timed out waiting for $host:$port" >&2
+  return 1
+}
+
 echo "Checking compose syntax..."
 "${COMPOSE[@]}" -p "$PROJECT_NAME" -f "$CONTROL_FILE" config >/tmp/honeynet-control-compose-check.yaml
 "${COMPOSE[@]}" -p "$PROJECT_NAME" -f "$ENTERPRISE_FILE" config >/tmp/honeynet-enterprise-compose-check.yaml
@@ -99,7 +119,7 @@ COMPOSE_IGNORE_ORPHANS=True "${COMPOSE[@]}" -p "$PROJECT_NAME" -f "$ENTERPRISE_F
 
 if [[ "$WAIT_FOR_SERVICES" == "1" ]]; then
   echo "Waiting for services..."
-  wait_for_docker_http "${PROJECT_NAME}_net_public" "http://public-portal/"
+  wait_for_tcp "${CLIENT_TARGET_HOST:-127.0.0.1}" "${PUBLIC_PORTAL_PORT:-8080}"
   wait_for_docker_http "${PROJECT_NAME}_net_control" "http://dashboard:8090/healthz"
   wait_for_docker_http "${PROJECT_NAME}_net_control" "http://profiler:8002/docs"
   wait_for_docker_http "${PROJECT_NAME}_net_control" "http://controller:8003/docs"

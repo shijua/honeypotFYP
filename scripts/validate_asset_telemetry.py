@@ -46,6 +46,7 @@ def build_report(
     ]
     runtime_records = _records(state_dir / "asset_runtime.json", "records")
     gateway_routes = _records(state_dir / "gateway_routes.json", "routes")
+    asset_gateway_routes = _records(state_dir / "asset_gateway_routes.json", "routes")
     dashboard_summary = summarize_demo(state_dir)
 
     asset_reports = [
@@ -53,6 +54,7 @@ def build_report(
             asset=asset,
             runtime_records=runtime_records,
             gateway_routes=gateway_routes,
+            asset_gateway_routes=asset_gateway_routes,
             dashboard_summary=dashboard_summary,
         )
         for asset in assets
@@ -71,12 +73,14 @@ def _asset_report(
     asset: dict[str, Any],
     runtime_records: list[dict[str, Any]],
     gateway_routes: list[dict[str, Any]],
+    asset_gateway_routes: list[dict[str, Any]],
     dashboard_summary: dict[str, Any],
 ) -> dict[str, Any]:
     asset_id = str(asset.get("asset_id", ""))
     runtime_matches = [item for item in runtime_records if item.get("asset_id") == asset_id]
     gateway_exposed = any(asset_id in route.get("exposed_assets", []) for route in gateway_routes)
     gateway_failed = any(asset_id in route.get("failed_assets", []) for route in gateway_routes)
+    asset_gateway_routed = any(route.get("asset_id") == asset_id for route in asset_gateway_routes)
     dashboard_running = _dashboard_has_asset(dashboard_summary, asset_id, "current_running_assets")
     dashboard_failed = _dashboard_has_asset(dashboard_summary, asset_id, "failed_assets")
     observed = bool(runtime_matches) and (gateway_exposed or gateway_failed) and (dashboard_running or dashboard_failed)
@@ -86,6 +90,7 @@ def _asset_report(
         "runtime_record_count": len(runtime_matches),
         "gateway_exposed": gateway_exposed,
         "gateway_failed": gateway_failed,
+        "asset_gateway_routed": asset_gateway_routed,
         "dashboard_running": dashboard_running,
         "dashboard_failed": dashboard_failed,
         "telemetry_expectations": _telemetry_expectations(asset),

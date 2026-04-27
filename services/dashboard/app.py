@@ -54,6 +54,10 @@ def api_summary() -> dict[str, Any]:
         _read_items(state_dir / "gateway_routes.json", "routes"),
         "updated_at",
     )
+    asset_gateway_routes = _sorted_records(
+        _read_items(state_dir / "asset_gateway_routes.json", "routes"),
+        "updated_at",
+    )
     entrypoint_observations = _read_items(
         state_dir / "entrypoint_observations.json",
         "observations",
@@ -99,11 +103,13 @@ def api_summary() -> dict[str, Any]:
             opencanary_observations=opencanary_observations,
             containers=containers,
             chain_health=chain_health,
+            asset_gateway_routes=asset_gateway_routes,
         ),
         "containers": containers,
         "chain_health": chain_health,
         "bindings": bindings,
         "gateway_routes": gateway_routes,
+        "asset_gateway_routes": asset_gateway_routes,
         "attackers": attackers,
         "recent_entrypoint_observations": _recent_items(entrypoint_observations),
         "recent_cowrie_observations": _recent_items(cowrie_observations),
@@ -128,6 +134,7 @@ def _build_metrics(
     opencanary_observations: list[dict[str, Any]],
     containers: list[dict[str, str]],
     chain_health: list[dict[str, str]],
+    asset_gateway_routes: list[dict[str, Any]],
 ) -> dict[str, int]:
     """Compute dashboard counters from one snapshot."""
     return {
@@ -158,6 +165,7 @@ def _build_metrics(
             for container in containers
             if isinstance(container.get("ports"), str) and container.get("ports")
         ),
+        "asset_gateway_route_count": len(asset_gateway_routes),
         "healthy_chain_stages": sum(
             1
             for stage in chain_health

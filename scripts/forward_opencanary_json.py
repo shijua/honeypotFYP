@@ -60,6 +60,59 @@ def normalize_event(event: dict[str, object]) -> dict[str, object] | None:
     return normalized
 
 
+def load_asset_gateway_routes(route_file: Path | None) -> list[dict[str, object]]:
+    """Load routes used to attribute proxied OpenCanary events to attackers."""
+    if route_file is None:
+        return []
+    try:
+        payload = json.loads(route_file.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    routes = payload.get("routes", []) if isinstance(payload, dict) else []
+    if not isinstance(routes, list):
+        return []
+    return [route for route in routes if isinstance(route, dict)]
+
+
+def attribute_asset_gateway_source(
+    event: dict[str, object],
+    routes: list[dict[str, object]],
+) -> dict[str, object]:
+    """Replace the proxy source IP with the route's original attacker IP."""
+    dst_host = event.get("dst_host")
+    dst_port = event.get("dst_port")
+    if not isinstance(dst_host, str) or not isinstance(dst_port, int):
+        return event
+
+    matches = [
+        route
+        for route in routes
+        if route.get("backend_ip") == dst_host
+        and _safe_int(route.get("backend_port")) == dst_port
+    ]
+    if len(matches) != 1:
+        return event
+
+    attacker_key = str(matches[0].get("attacker_key", "")).strip()
+    if not attacker_key:
+        return event
+
+    attributed = dict(event)
+    original_src_host = str(attributed.get("src_host", ""))
+    attributed["src_host"] = attacker_key
+    logdata = attributed.get("logdata")
+    if not isinstance(logdata, dict):
+        logdata = {}
+    else:
+        logdata = dict(logdata)
+    if original_src_host:
+        logdata["ASSET_GATEWAY_PROXY_SRC_HOST"] = original_src_host
+    logdata["ASSET_GATEWAY_BACKEND_HOST"] = str(matches[0].get("backend_host", ""))
+    logdata["ASSET_GATEWAY_PUBLIC_PORT"] = matches[0].get("public_port", "")
+    attributed["logdata"] = logdata
+    return attributed
+
+
 def post_event(
     payload: dict[str, object],
     adapter_url: str,
@@ -82,15 +135,18 @@ def forward_lines(
     adapter_url: str,
     protocol: str,
     timeout_seconds: float,
+    asset_routes_file: Path | None = None,
 ) -> int:
     """Forward a finite batch of OpenCanary JSON lines and return success count."""
     forwarded = 0
+    asset_routes = load_asset_gateway_routes(asset_routes_file)
     for event in iter_json_events(lines):
         normalized = normalize_event(event)
         if normalized is None:
-            print("Skipped OpenCanary event without src_host", flush=True)
+            print("Ignored OpenCanary lifecycle event without src_host", flush=True)
             continue
 
+        normalized = attribute_asset_gateway_source(normalized, asset_routes)
         payload = build_adapter_payload(normalized, protocol=protocol)
         try:
             status_code, _ = post_event(payload, adapter_url, timeout_seconds)
@@ -123,6 +179,7 @@ def follow_log_file(
     once: bool,
     poll_seconds: float,
     timeout_seconds: float,
+    asset_routes_file: Path | None,
 ) -> int:
     """Tail an OpenCanary JSON log file and forward new events to the adapter."""
     forwarded = 0
@@ -145,6 +202,7 @@ def follow_log_file(
                     adapter_url=adapter_url,
                     protocol=protocol,
                     timeout_seconds=timeout_seconds,
+                    asset_routes_file=asset_routes_file,
                 )
                 current_log = current_log._replace(position=current_log.handle.tell())
                 continue
@@ -204,6 +262,13 @@ def _event_service(event: dict[str, object]) -> str:
     return str(port) if port is not None else "event"
 
 
+def _safe_int(value: object) -> int | None:
+    try:
+        return int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Forward OpenCanary JSON lines to the MVP OpenCanary adapter.",
@@ -246,6 +311,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=5.0,
         help="HTTP timeout when calling the adapter.",
     )
+    parser.add_argument(
+        "--asset-routes-file",
+        type=Path,
+        default=Path("data/runtime/asset_gateway_routes.json"),
+        help="Asset gateway route table used to restore original attacker IPs.",
+    )
     return parser.parse_args(argv)
 
 
@@ -259,6 +330,7 @@ def main(argv: list[str] | None = None) -> int:
         once=args.once,
         poll_seconds=args.poll_seconds,
         timeout_seconds=args.timeout_seconds,
+        asset_routes_file=args.asset_routes_file,
     )
     if args.once:
         print(f"Forwarded {forwarded} OpenCanary event(s)")
@@ -267,4 +339,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

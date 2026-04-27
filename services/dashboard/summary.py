@@ -338,4 +338,8 @@ def _format_port_mapping(mapping: dict[str, Any]) -> str:
     host = mapping.get("host", "127.0.0.1")
     host_port = mapping.get("host_port", "?")
     container_port = mapping.get("container_port", "?")
+    backend_host = mapping.get("backend_host")
+    backend_port = mapping.get("backend_port", container_port)
+    if backend_host:
+        return f"gateway {host}:{host_port}->{backend_host}:{backend_port}"
     return f"{host}:{host_port}->{container_port}"
