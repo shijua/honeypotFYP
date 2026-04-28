@@ -58,6 +58,7 @@ def test_asset_definition_accepts_template_metadata() -> None:
         protocols=["ssh"],
         ports=[22],
         source_refs=["tpotce:cowrie"],
+        telemetry_source="cowrie",
         default_settings={
             "hostname": "admin-jumpbox-01",
             "image_references": ["ghcr.io/telekom-security/cowrie:24.04.1"],
@@ -69,6 +70,7 @@ def test_asset_definition_accepts_template_metadata() -> None:
     assert asset.protocols == ["ssh"]
     assert asset.ports == [22]
     assert asset.source_refs == ["tpotce:cowrie"]
+    assert asset.telemetry_source == "cowrie"
     assert asset.default_settings["hostname"] == "admin-jumpbox-01"
     assert asset.default_settings["image_references"] == [
         "ghcr.io/telekom-security/cowrie:24.04.1"

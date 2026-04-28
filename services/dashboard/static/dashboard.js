@@ -164,6 +164,7 @@ function renderAttackers(attackers) {
         <div class="kv"><div class="key">Tactics</div><div>${badgeList(attacker.recent_tactics || [])}</div></div>
         <div class="kv"><div class="key">Techniques</div><div>${badgeList(attacker.recent_techniques || [], "warn")}</div></div>
         <div class="kv"><div class="key">Commands</div><div>${badgeList(attacker.commands || [])}</div></div>
+        <div class="kv"><div class="key">HTTP Evidence</div><div>${badgeList(attacker.public_http_evidence || [])}</div></div>
         <div class="kv"><div class="key">Unlocked</div><div>${badgeList(attacker.unlocked_assets || [])}</div></div>
         <div class="kv"><div class="key">Running</div><div>${badgeList((attacker.current_running_assets || []).map(asset => `${asset.asset_id} ${asset.ports.join(", ")}`))}</div></div>
         <div class="kv"><div class="key">Failed</div><div>${badgeList((attacker.failed_assets || []).map(asset => `${asset.asset_id} ${asset.failure_detail || asset.current_container_status || "failed"}`), "bad")}</div></div>
@@ -215,6 +216,8 @@ async function loadData() {
       { label: "Attacker", value: row => row.attacker_key || "-", mono: true },
       { label: "Method", value: row => row.method || "-" },
       { label: "Path", value: row => row.path || "-", mono: true },
+      { label: "Rules", value: row => (row.matched_rules || []).join(", ") || "-" },
+      { label: "Evidence", value: row => (row.indicators || []).join(", ") || "-" },
       { label: "Status", value: row => row.response_status ?? "-" },
     ],
   );

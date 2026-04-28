@@ -100,7 +100,7 @@ The default local runtime now persists state under `data/runtime/`:
 - `gateway_routes.json`
 - `asset_gateway_routes.json`
 
-The controller asset catalog is now externalized at `data/assets/catalog.json`. Cowrie event mappings are externalized at `data/cowrie/event_mappings.json`. The profiler resolves tactic/technique relationships from the official MITRE ATT&CK `attack-stix-data` bundle at `data/mitre/enterprise-attack.json`.
+The controller asset catalog is now externalized at `data/assets/catalog.json`. Public HTTP detection hints live in `data/detections/public_http_rules.json`. Cowrie event mappings are externalized at `data/cowrie/event_mappings.json`. The profiler resolves tactic/technique relationships from the official MITRE ATT&CK `attack-stix-data` bundle at `data/mitre/enterprise-attack.json`.
 
 ## Simulation Helpers
 

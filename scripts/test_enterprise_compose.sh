@@ -20,6 +20,18 @@ export PROJECT_NAME HOST_PROJECT_ROOT
 WAIT_RETRIES="${WAIT_RETRIES:-60}"
 WAIT_DELAY_SECONDS="${WAIT_DELAY_SECONDS:-2}"
 RESET_BEFORE_RUN="${RESET_BEFORE_RUN:-1}"
+ENTERPRISE_SERVICES=(
+  public-portal
+  public-portal-forwarder
+  asset-gateway
+  cowrie
+  opencanary-adapter
+  opencanary-forwarder
+  entrypoint-observer
+  cowrie-adapter
+  cowrie-forwarder
+  internal-portal
+)
 
 if docker compose version >/dev/null 2>&1; then
   COMPOSE=(docker compose)
@@ -109,7 +121,7 @@ echo "Starting control plane..."
 COMPOSE_IGNORE_ORPHANS=True "${COMPOSE[@]}" -p "$PROJECT_NAME" -f "$CONTROL_FILE" up -d
 
 echo "Starting enterprise default slice..."
-COMPOSE_IGNORE_ORPHANS=True "${COMPOSE[@]}" -p "$PROJECT_NAME" -f "$ENTERPRISE_FILE" up -d
+COMPOSE_IGNORE_ORPHANS=True "${COMPOSE[@]}" -p "$PROJECT_NAME" -f "$ENTERPRISE_FILE" up -d "${ENTERPRISE_SERVICES[@]}"
 
 echo "Checking public portal..."
 wait_for_host_http "http://127.0.0.1:${PUBLIC_PORTAL_PORT:-8080}"

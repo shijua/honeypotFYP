@@ -90,6 +90,7 @@ def test_file_asset_repository_reads_external_catalog(tmp_path) -> None:
                     "protocols": ["http"],
                     "ports": [80],
                     "source_refs": ["mvp:internal-portal-nginx"],
+                    "telemetry_source": "asset_runtime",
                     "default_settings": {
                         "image_references": [
                             "nginx:alpine",
@@ -111,6 +112,7 @@ def test_file_asset_repository_reads_external_catalog(tmp_path) -> None:
     assert asset.protocols == ["http"]
     assert asset.ports == [80]
     assert asset.source_refs == ["mvp:internal-portal-nginx"]
+    assert asset.telemetry_source == "asset_runtime"
     assert asset.default_settings["image_references"] == [
         "nginx:alpine",
     ]

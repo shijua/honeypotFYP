@@ -27,6 +27,11 @@ WAIT_DELAY_SECONDS="${WAIT_DELAY_SECONDS:-2}"
 RESET_BEFORE_RUN="${RESET_BEFORE_RUN:-1}"
 RESET_RUNTIME_STATE="${RESET_RUNTIME_STATE:-1}"
 
+# This script injects Cowrie/OpenCanary-style events through internal service
+# APIs, so ATTACKER_IP is a simulated source. It is useful for control-plane
+# checks, but it does not prove strict asset-gateway source-IP routing. Use the
+# live commands in ATTACK_TESTING_GUIDE.md when testing fixed asset ports.
+
 if docker compose version >/dev/null 2>&1; then
   COMPOSE=(docker compose)
 elif command -v docker-compose >/dev/null 2>&1; then
@@ -145,6 +150,7 @@ echo "  host attacker -> entrypoint-observer /.env -> HTTP $http_probe_status"
 
 echo
 echo "Attacker SSH telemetry:"
+echo "  note: ATTACKER_IP is simulated here; strict asset-gateway port tests must use a real source IP"
 cowrie_event_payload "cowrie.login.failed" | docker_post_json "${PROJECT_NAME}_net_control" "http://cowrie-adapter:8011/v1/cowrie/events" >/dev/null
 command_response="$(cowrie_event_payload "cowrie.command.input" "cat /etc/passwd" | docker_post_json "${PROJECT_NAME}_net_control" "http://cowrie-adapter:8011/v1/cowrie/events")"
 binding_id="$(echo "$command_response" | jq -r ".binding.binding_id")"

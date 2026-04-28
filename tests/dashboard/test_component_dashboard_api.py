@@ -119,6 +119,9 @@ def test_dashboard_summary_endpoint_returns_live_snapshot(
                     "method": "GET",
                     "path": "/.env",
                     "response_status": 404,
+                    "matched_rules": ["public_http_credential_discovery"],
+                    "tags": ["mitre_credential_access", "T1552.001"],
+                    "indicators": ["combined:.env"],
                 }
             ]
         },
@@ -281,6 +284,10 @@ def test_dashboard_summary_endpoint_returns_live_snapshot(
     assert payload["bindings"][0]["binding_id"] == "binding-1"
     assert payload["gateway_routes"][0]["exposed_assets"] == ["internal-portal"]
     assert payload["attackers"][0]["current_running_assets"][0]["asset_id"] == "internal-portal"
+    assert payload["attackers"][0]["public_http_evidence"] == [
+        "combined:.env",
+        "rule:public_http_credential_discovery",
+    ]
     assert payload["metrics"]["healthy_chain_stages"] >= 6
     assert {
         stage["stage"]: stage["status"]
@@ -296,6 +303,7 @@ def test_dashboard_summary_endpoint_returns_live_snapshot(
     }["OpenCanary forwarder"] == "ok"
     assert "do-not-render" not in json.dumps(payload["chain_health"])
     assert payload["recent_entrypoint_observations"][0]["path"] == "/.env"
+    assert payload["recent_entrypoint_observations"][0]["indicators"] == ["combined:.env"]
     assert payload["recent_cowrie_observations"][0]["command"] == "cat /etc/passwd"
     assert payload["recent_opencanary_observations"][0]["service"] == "redis"
 

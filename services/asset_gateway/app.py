@@ -67,19 +67,13 @@ def select_route(
     client_ip: str,
     public_port: int,
 ) -> AssetRoute | None:
-    """Pick the backend route for one client IP and fixed public port."""
+    """Pick the unlocked backend route for one client IP and fixed public port."""
     port_routes = [route for route in routes if route.public_port == public_port]
     exact_routes = [
         route for route in port_routes if route.attacker_key == client_ip
     ]
     if exact_routes:
         return sorted(exact_routes, key=lambda route: route.updated_at)[-1]
-    # Convenience for local/manual testing: if only one backend exists for this
-    # public port, route to it even when the observed source IP is a Docker
-    # bridge/tunnel address. Once there are multiple backends, source IP must
-    # match exactly so attackers do not bleed into each other's asset instance.
-    if len(port_routes) == 1:
-        return port_routes[0]
     return None
 
 

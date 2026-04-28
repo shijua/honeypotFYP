@@ -47,6 +47,8 @@ def test_capture_http_request_creates_binding_observation_and_profile_evidence()
     assert observations[0].headers["authorization"] == "[redacted]"
     assert observations[0].body_preview == "log=admin&pwd=[redacted]"
     assert observations[0].profiler_evidence_ids == response.profile.recent_evidence_ids
+    assert observations[0].matched_rules == ["public_http_login_attempt"]
+    assert "body_preview:pwd=" in observations[0].indicators
     assert response.profile.recent_tactics == ["Credential Access"]
     assert response.profile.recent_techniques == ["T1110"]
 
@@ -99,3 +101,7 @@ def test_capture_http_request_maps_source_map_probe_to_discovery() -> None:
 
     assert response.profile.recent_tactics == ["Discovery"]
     assert response.profile.recent_techniques == ["T1046"]
+    observations = tuple(observation_repository.list_recent())
+    assert observations[0].matched_rules == ["public_http_web_discovery"]
+    assert "user_agent:gobuster" in observations[0].indicators
+    assert "path:.map" in observations[0].indicators

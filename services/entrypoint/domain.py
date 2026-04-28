@@ -20,6 +20,11 @@ from libs.contracts.models import (
 )
 from services.binding_service.domain import BindingService
 from services.entrypoint.repository import EntrypointObservationRepository
+from services.entrypoint.rule_matcher import (
+    FilePublicHttpRuleMatcher,
+    PublicHttpRuleMatcher,
+    PublicHttpRuleMatch,
+)
 from services.profiler.domain import ProfilerService
 
 
@@ -35,64 +40,6 @@ _SECRET_HEADER_NAMES = {
 _SECRET_BODY_FIELD_RE = re.compile(
     r"(?i)\b(password|passwd|pwd|token|secret|api_key|apikey|access_key)=([^&\s]+)"
 )
-_SCANNER_USER_AGENT_MARKERS = (
-    "dirbuster",
-    "feroxbuster",
-    "ffuf",
-    "gobuster",
-    "masscan",
-    "nikto",
-    "nmap",
-    "sqlmap",
-    "wpscan",
-)
-_CREDENTIAL_PATH_MARKERS = (
-    ".env",
-    "backup",
-    "password",
-    "passwd",
-    "secret",
-    "token",
-)
-_CREDENTIAL_PATH_SUFFIXES = (
-    ".bak",
-    ".old",
-    ".sql",
-    ".zip",
-    ".tar",
-    ".tgz",
-    ".gz",
-    ".7z",
-    ".rar",
-)
-_LOGIN_PATH_MARKERS = (
-    "login",
-    "signin",
-    "wp-login.php",
-)
-_DISCOVERY_PATH_MARKERS = (
-    ".git",
-    ".svn",
-    ".hg",
-    ".ds_store",
-    "/admin",
-    "/api",
-    "/phpmyadmin",
-    "/status",
-)
-_DISCOVERY_PATH_SUFFIXES = (
-    ".map",
-)
-_EXPLOIT_MARKERS = (
-    "${jndi:",
-    "jndi:ldap",
-    "log4j",
-    "struts",
-    "spring.cloud.function.routing-expression",
-    "../",
-    "..%2f",
-    "%2e%2e",
-)
 
 
 class EntrypointService:
@@ -107,10 +54,14 @@ class EntrypointService:
         binding_service: BindingService,
         profiler_service: ProfilerService,
         observation_repository: EntrypointObservationRepository,
+        public_http_rule_matcher: PublicHttpRuleMatcher | None = None,
     ) -> None:
         self._binding_service = binding_service
         self._profiler_service = profiler_service
         self._observation_repository = observation_repository
+        self._public_http_rule_matcher = (
+            public_http_rule_matcher or FilePublicHttpRuleMatcher()
+        )
 
     def capture_http_request(
         self,
@@ -131,12 +82,25 @@ class EntrypointService:
         # useful for research, but raw credentials should never be persisted.
         safe_headers = _redact_headers(request.headers)
         safe_body_preview = _redact_body_preview(request.body_preview)
-        output = _format_http_output(request)
 
         # Feed the HTTP probe into the same profiler path as other telemetry.
-        # The entrypoint does not attach MITRE tags yet because a path probe such
-        # as "/admin" or "/.env" is useful signal but not enough to justify a
-        # specific ATT&CK technique on its own.
+        # Detection rules live in data/detections/public_http_rules.json so
+        # MITRE tags and visible indicators can evolve outside service logic.
+        rule_matches = self._public_http_rule_matcher.matches_for(
+            method=request.method,
+            path=request.path,
+            query_string=request.query_string,
+            body_preview=safe_body_preview,
+            user_agent=safe_headers.get("user-agent"),
+        )
+        tags = _tags_from_rule_matches(rule_matches)
+        indicators = _indicators_from_rule_matches(rule_matches)
+        matched_rules = [match.rule_name for match in rule_matches]
+        evidence_labels = [
+            match.evidence_label
+            for match in rule_matches
+            if match.evidence_label is not None
+        ]
         ingest_response = self._profiler_service.ingest(
             EvidenceIngestRequest(
                 attacker_key=request.attacker_key,
@@ -145,22 +109,25 @@ class EntrypointService:
                     ts=now,
                     falco_rule="HTTP honeypot request",
                     priority="INFO",
-                    output=output,
-                    tags=_http_profile_tags(request, safe_headers),
+                    output=_format_http_output(request, indicators),
+                    tags=tags,
                     output_fields={
                         "http_method": request.method.upper(),
                         "http_path": request.path,
                         "http_query_string": request.query_string,
                         "http_user_agent": safe_headers.get("user-agent"),
                         "http_body_preview": safe_body_preview,
+                        "http_rule_names": matched_rules,
+                        "http_indicators": indicators,
+                        "http_evidence_labels": evidence_labels,
                     },
                 ),
             )
         )
 
         # Observation is the research/debug record for this public-web probe.
-        # The profiler_evidence_ids link it back to the normalized evidence
-        # generated above.
+        # matched_rules/tags/indicators explain why it was profiled, while
+        # profiler_evidence_ids link it back to normalized ATT&CK evidence.
         observation = EntrypointObservation(
             observation_id=str(uuid4()),
             ts=now,
@@ -174,6 +141,9 @@ class EntrypointService:
             body_truncated=request.body_truncated,
             user_agent=safe_headers.get("user-agent"),
             status_code=404,
+            matched_rules=matched_rules,
+            tags=tags,
+            indicators=indicators,
             profiler_evidence_ids=[
                 evidence.evidence_id for evidence in ingest_response.evidences
             ],
@@ -186,58 +156,36 @@ class EntrypointService:
         )
 
 
-def _format_http_output(request: EntrypointCaptureRequest) -> str:
+def _format_http_output(
+    request: EntrypointCaptureRequest,
+    indicators: list[str] | None = None,
+) -> str:
     """Build the compact human-readable message stored in profiler evidence."""
     target = request.path
     if request.query_string:
         target = f"{target}?{request.query_string}"
-    return f"{request.method.upper()} {target} from {request.attacker_key}"
+    output = f"{request.method.upper()} {target} from {request.attacker_key}"
+    if indicators:
+        output = f"{output}; indicators={', '.join(indicators)}"
+    return output
 
 
-def _http_profile_tags(
-    request: EntrypointCaptureRequest,
-    safe_headers: dict[str, str],
-) -> list[str]:
-    """Map obvious public HTTP probes into coarse ATT&CK evidence tags."""
-    path = request.path.lower()
-    query_string = request.query_string.lower()
-    body_preview = (request.body_preview or "").lower()
-    user_agent = safe_headers.get("user-agent", "").lower()
-    searchable = " ".join([path, query_string, body_preview, user_agent])
-
-    if any(marker in searchable for marker in _EXPLOIT_MARKERS):
-        return ["mitre_initial_access", "T1190"]
-    if _looks_like_login_attempt(path, request.method, body_preview):
-        return ["mitre_credential_access", "T1110"]
-    if _looks_like_credential_discovery(path, query_string):
-        return ["mitre_credential_access", "T1552.001"]
-    if _looks_like_web_discovery(path, user_agent):
-        return ["mitre_discovery", "T1046"]
-    return []
+def _tags_from_rule_matches(rule_matches: list[PublicHttpRuleMatch]) -> list[str]:
+    tags: list[str] = []
+    for match in rule_matches:
+        for tag in match.tags:
+            if tag not in tags:
+                tags.append(tag)
+    return tags
 
 
-def _looks_like_login_attempt(path: str, method: str, body_preview: str) -> bool:
-    if any(marker in path for marker in _LOGIN_PATH_MARKERS):
-        return True
-    return method.upper() == "POST" and any(
-        marker in body_preview
-        for marker in ("password", "passwd", "pwd=", "username", "login")
-    )
-
-
-def _looks_like_credential_discovery(path: str, query_string: str) -> bool:
-    target = f"{path}?{query_string}" if query_string else path
-    if any(marker in target for marker in _CREDENTIAL_PATH_MARKERS):
-        return True
-    return target.endswith(_CREDENTIAL_PATH_SUFFIXES)
-
-
-def _looks_like_web_discovery(path: str, user_agent: str) -> bool:
-    if any(marker in user_agent for marker in _SCANNER_USER_AGENT_MARKERS):
-        return True
-    if any(marker in path for marker in _DISCOVERY_PATH_MARKERS):
-        return True
-    return path.endswith(_DISCOVERY_PATH_SUFFIXES)
+def _indicators_from_rule_matches(rule_matches: list[PublicHttpRuleMatch]) -> list[str]:
+    indicators: list[str] = []
+    for match in rule_matches:
+        for indicator in match.indicators:
+            if indicator not in indicators:
+                indicators.append(indicator)
+    return indicators
 
 
 def _redact_headers(headers: dict[str, str]) -> dict[str, str]:

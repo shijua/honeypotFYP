@@ -38,7 +38,7 @@ def test_select_route_prefers_source_ip_exact_match() -> None:
     assert route.backend_host == "honeynet-b-internal-portal"
 
 
-def test_select_route_falls_back_when_port_has_one_route() -> None:
+def test_select_route_rejects_unmatched_source_ip_even_when_port_has_one_route() -> None:
     routes = [
         AssetRoute(
             attacker_key="198.51.100.10",
@@ -52,8 +52,7 @@ def test_select_route_falls_back_when_port_has_one_route() -> None:
 
     route = select_route(routes, client_ip="172.18.0.1", public_port=16379)
 
-    assert route is not None
-    assert route.backend_host == "honeynet-a-redis-cache"
+    assert route is None
 
 
 def test_load_routes_skips_invalid_route_table_items(tmp_path: Path) -> None:

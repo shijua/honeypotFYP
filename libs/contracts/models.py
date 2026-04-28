@@ -269,6 +269,7 @@ class AssetDefinition(VersionedModel):
     protocols: List[str] = Field(default_factory=list)
     ports: List[int] = Field(default_factory=list)
     source_refs: List[str] = Field(default_factory=list)
+    telemetry_source: Optional[str] = None
     default_settings: Dict[str, Any] = Field(default_factory=dict)
     covers_tactics: List[str] = Field(default_factory=list)
     dependencies: List[str] = Field(default_factory=list)
@@ -455,6 +456,9 @@ class EntrypointCaptureRequest(VersionedModel):
 class EntrypointObservation(VersionedModel):
     """Persisted observation from one public honeypot request.
 
+    Rule metadata is stored with the observation so the dashboard can show the
+    concrete evidence, such as `user_agent:sqlmap`, behind a MITRE tag.
+
     Example:
         {
             "observation_id": "obs-1",
@@ -462,7 +466,10 @@ class EntrypointObservation(VersionedModel):
             "binding_id": "binding-1",
             "method": "GET",
             "path": "/.env",
-            "status_code": 404
+            "status_code": 404,
+            "matched_rules": ["public_http_credential_discovery"],
+            "tags": ["mitre_credential_access", "T1552.001"],
+            "indicators": ["combined:.env"]
         }
     """
 
@@ -478,6 +485,9 @@ class EntrypointObservation(VersionedModel):
     body_truncated: bool = False
     user_agent: Optional[str] = None
     status_code: int = 404
+    matched_rules: List[str] = Field(default_factory=list)
+    tags: List[str] = Field(default_factory=list)
+    indicators: List[str] = Field(default_factory=list)
     profiler_evidence_ids: List[str] = Field(default_factory=list)
 
 

@@ -15,48 +15,15 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
+from services.entrypoint.rule_matcher import FilePublicHttpRuleMatcher
+
 
 _COMBINED_LOG_RE = re.compile(
     r'^(?P<remote_addr>\S+) \S+ \S+ \[[^\]]+\] '
     r'"(?P<request>[^"]*)" (?P<status>\d{3}) \S+ '
     r'"(?P<referer>[^"]*)" "(?P<user_agent>[^"]*)"'
 )
-_SUSPICIOUS_PATH_MARKERS = (
-    "/.env",
-    "/.git",
-    "/.hg",
-    "/.svn",
-    "/.ds_store",
-    "/admin",
-    "/dashboard",
-    "/phpmyadmin",
-    "/wp-admin",
-    "/wp-login.php",
-    "phpinfo.php",
-)
-_SUSPICIOUS_PATH_SUFFIXES = (
-    ".7z",
-    ".bak",
-    ".gz",
-    ".map",
-    ".old",
-    ".rar",
-    ".sql",
-    ".tar",
-    ".tgz",
-    ".zip",
-)
-_SUSPICIOUS_USER_AGENT_MARKERS = (
-    "dirbuster",
-    "feroxbuster",
-    "ffuf",
-    "gobuster",
-    "masscan",
-    "nikto",
-    "nmap",
-    "sqlmap",
-    "wpscan",
-)
+_RULE_MATCHER = FilePublicHttpRuleMatcher()
 
 
 def iter_access_events(lines: Iterable[str]) -> Iterator[dict[str, object]]:
@@ -74,6 +41,8 @@ def iter_access_events(lines: Iterable[str]) -> Iterator[dict[str, object]]:
         if not should_profile_public_request(
             str(event["path"]),
             _event_user_agent(event),
+            method=str(event["method"]),
+            query_string=str(event["query_string"]),
         ):
             continue
         yield event
@@ -116,15 +85,22 @@ def parse_access_line(line: str) -> dict[str, object] | None:
     }
 
 
-def should_profile_public_request(path: str, user_agent: str | None = None) -> bool:
+def should_profile_public_request(
+    path: str,
+    user_agent: str | None = None,
+    *,
+    method: str = "GET",
+    query_string: str = "",
+) -> bool:
     """Return whether a public-portal request should be forwarded to profiling."""
-    normalized_path = path.lower()
-    normalized_user_agent = (user_agent or "").lower()
-    if any(marker in normalized_user_agent for marker in _SUSPICIOUS_USER_AGENT_MARKERS):
-        return True
-    if any(marker in normalized_path for marker in _SUSPICIOUS_PATH_MARKERS):
-        return True
-    return normalized_path.endswith(_SUSPICIOUS_PATH_SUFFIXES)
+    return bool(
+        _RULE_MATCHER.tags_for(
+            method=method,
+            path=path,
+            query_string=query_string,
+            user_agent=user_agent,
+        )
+    )
 
 
 def _event_user_agent(event: dict[str, object]) -> str | None:

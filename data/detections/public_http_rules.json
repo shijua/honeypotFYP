@@ -1,0 +1,215 @@
+{
+  "schema_version": "v1",
+  "rules": [
+    {
+      "name": "public_http_exploit_probe",
+      "evidence_label": "public-http exploit probe",
+      "tags": ["mitre_initial_access", "T1190"],
+      "match": {
+        "any": [
+          {
+            "field": "combined",
+            "contains_any": [
+              "${jndi:",
+              "ldap://",
+              "rmi://",
+              "jndi:ldap",
+              "log4j",
+              "struts",
+              "ognl",
+              "spring.cloud.function.routing-expression",
+              "spring.cloud.gateway.routes",
+              "php://filter",
+              "/cgi-bin/",
+              "/actuator/env",
+              "/actuator/heapdump",
+              "../",
+              "..%2f",
+              "%2e%2e"
+            ]
+          }
+        ]
+      },
+      "source_refs": [
+        {
+          "type": "mitre_attack_technique",
+          "name": "Exploit Public-Facing Application",
+          "url": "https://attack.mitre.org/techniques/T1190/"
+        }
+      ]
+    },
+    {
+      "name": "public_http_injection_probe",
+      "evidence_label": "public-http injection probe",
+      "tags": ["mitre_initial_access", "T1190"],
+      "match": {
+        "any": [
+          {
+            "field": "combined",
+            "contains_any": [
+              "union select",
+              "union%20select",
+              "union+select",
+              "information_schema",
+              "' or '1'='1",
+              "\" or \"1\"=\"1",
+              "sleep(",
+              "benchmark(",
+              "extractvalue(",
+              "updatexml(",
+              "select+"
+            ]
+          }
+        ]
+      },
+      "source_refs": [
+        {
+          "type": "mitre_attack_technique",
+          "name": "Exploit Public-Facing Application",
+          "url": "https://attack.mitre.org/techniques/T1190/"
+        }
+      ]
+    },
+    {
+      "name": "public_http_login_attempt",
+      "evidence_label": "public-http login or password attempt",
+      "tags": ["mitre_credential_access", "T1110"],
+      "match": {
+        "any": [
+          {
+            "field": "path",
+            "contains_any": ["login", "signin", "wp-login.php"]
+          },
+          {
+            "all": [
+              {
+                "field": "method",
+                "equals_any": ["POST"]
+              },
+              {
+                "field": "body_preview",
+                "contains_any": ["password", "passwd", "pwd=", "username", "login"]
+              }
+            ]
+          }
+        ]
+      },
+      "source_refs": [
+        {
+          "type": "mitre_attack_technique",
+          "name": "Brute Force",
+          "url": "https://attack.mitre.org/techniques/T1110/"
+        }
+      ]
+    },
+    {
+      "name": "public_http_credential_discovery",
+      "evidence_label": "public-http credential or backup discovery",
+      "tags": ["mitre_credential_access", "T1552.001"],
+      "match": {
+        "any": [
+          {
+            "field": "combined",
+            "contains_any": [
+              ".env",
+              ".aws/credentials",
+              ".dockercfg",
+              ".npmrc",
+              "backup",
+              "connectionstrings",
+              "credentials",
+              "database.yml",
+              "id_rsa",
+              "passwd",
+              "password",
+              "secret",
+              "settings.py",
+              "token",
+              "wp-config.php"
+            ]
+          },
+          {
+            "field": "path",
+            "endswith_any": [".bak", ".old", ".sql", ".zip", ".tar", ".tgz", ".gz", ".7z", ".rar", "~"]
+          }
+        ]
+      },
+      "source_refs": [
+        {
+          "type": "mitre_attack_technique",
+          "name": "Unsecured Credentials: Credentials In Files",
+          "url": "https://attack.mitre.org/techniques/T1552/001/"
+        }
+      ]
+    },
+    {
+      "name": "public_http_web_discovery",
+      "evidence_label": "public-http scanner or web discovery probe",
+      "tags": ["mitre_discovery", "T1046"],
+      "match": {
+        "any": [
+          {
+            "field": "user_agent",
+            "contains_any": [
+              "acunetix",
+              "arachni",
+              "burp",
+              "dirbuster",
+              "dirsearch",
+              "feroxbuster",
+              "ffuf",
+              "gobuster",
+              "httpx",
+              "masscan",
+              "nessus",
+              "nikto",
+              "nmap",
+              "nuclei",
+              "openvas",
+              "sqlmap",
+              "whatweb",
+              "wpscan",
+              "zgrab",
+              "zmap"
+            ]
+          },
+          {
+            "field": "path",
+            "contains_any": [
+              ".git",
+              ".svn",
+              ".hg",
+              ".ds_store",
+              "/actuator",
+              "/admin",
+              "/api",
+              "/dashboard",
+              "/graphql",
+              "/jenkins",
+              "/manager/html",
+              "/openapi.json",
+              "/phpmyadmin",
+              "/server-status",
+              "/swagger",
+              "/swagger-ui",
+              "/v2/api-docs",
+              "/wp-admin",
+              "phpinfo.php"
+            ]
+          },
+          {
+            "field": "path",
+            "endswith_any": [".map"]
+          }
+        ]
+      },
+      "source_refs": [
+        {
+          "type": "mitre_attack_technique",
+          "name": "Network Service Discovery",
+          "url": "https://attack.mitre.org/techniques/T1046/"
+        }
+      ]
+    }
+  ]
+}

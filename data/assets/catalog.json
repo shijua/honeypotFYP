@@ -9,6 +9,7 @@
     "protocols": ["http"],
     "ports": [80],
     "source_refs": ["mvp:internal-portal-nginx"],
+    "telemetry_source": "asset_runtime",
     "default_settings": {
       "runtime": {
         "backend": "docker",
@@ -44,6 +45,7 @@
     "protocols": ["smb"],
     "ports": [445],
     "source_refs": ["tpotce:dionaea", "tpotce:honeytrap"],
+    "telemetry_source": "future_honeypot_logs",
     "default_settings": {
       "share_name": "FINANCE",
       "seed_documents": ["budget.xlsx", "payroll-archive.zip"],
@@ -64,6 +66,7 @@
     "protocols": ["git"],
     "ports": [9418],
     "source_refs": ["opencanary:git"],
+    "telemetry_source": "opencanary",
     "default_settings": {
       "runtime": {
         "backend": "docker",
@@ -108,6 +111,7 @@
     "protocols": ["mysql"],
     "ports": [3306],
     "source_refs": ["opencanary:mysql"],
+    "telemetry_source": "opencanary",
     "default_settings": {
       "runtime": {
         "backend": "docker",
@@ -152,6 +156,7 @@
     "protocols": ["ssh"],
     "ports": [22],
     "source_refs": ["tpotce:cowrie"],
+    "telemetry_source": "cowrie",
     "default_settings": {
       "runtime": {
         "backend": "docker",
@@ -191,6 +196,7 @@
     "protocols": ["redis"],
     "ports": [6379],
     "source_refs": ["opencanary:redis"],
+    "telemetry_source": "opencanary",
     "default_settings": {
       "runtime": {
         "backend": "docker",
@@ -231,6 +237,7 @@
     "protocols": ["http"],
     "ports": [80],
     "source_refs": ["opencanary:http"],
+    "telemetry_source": "opencanary",
     "default_settings": {
       "runtime": {
         "backend": "docker",
@@ -272,6 +279,7 @@
     "protocols": ["ftp"],
     "ports": [21],
     "source_refs": ["opencanary:ftp"],
+    "telemetry_source": "opencanary",
     "default_settings": {
       "runtime": {
         "backend": "docker",
@@ -313,6 +321,7 @@
     "protocols": ["ssh"],
     "ports": [22],
     "source_refs": ["opencanary:ssh"],
+    "telemetry_source": "opencanary",
     "default_settings": {
       "runtime": {
         "backend": "docker",
@@ -354,6 +363,7 @@
     "protocols": ["telnet"],
     "ports": [23],
     "source_refs": ["opencanary:telnet"],
+    "telemetry_source": "opencanary",
     "default_settings": {
       "runtime": {
         "backend": "docker",
@@ -395,6 +405,7 @@
     "protocols": ["smtp"],
     "ports": [25],
     "source_refs": ["tpotce:mailoney"],
+    "telemetry_source": "mailoney",
     "default_settings": {
       "runtime": {
         "backend": "docker",
@@ -432,6 +443,7 @@
     "protocols": ["modbus", "http"],
     "ports": [502, 80],
     "source_refs": ["tpotce:conpot"],
+    "telemetry_source": "future_honeypot_logs",
     "default_settings": {
       "plant_profile": "water-treatment",
       "modbus_unit_ids": [1, 2],
@@ -450,6 +462,7 @@
     "protocols": ["http"],
     "ports": [8080],
     "source_refs": ["vulhub:log4j/CVE-2021-44228", "proposalv2:adaptive-vulnerable-asset"],
+    "telemetry_source": "falco",
     "default_settings": {
       "runtime": {
         "backend": "compose",
@@ -479,6 +492,7 @@
     "protocols": ["https", "ike"],
     "ports": [443, 500, 4500],
     "source_refs": ["tpotce:ciscoasa", "tpotce:citrixhoneypot"],
+    "telemetry_source": "future_honeypot_logs",
     "default_settings": {
       "vendor_skin": "generic-vpn",
       "login_realm": "Employees",
@@ -502,6 +516,7 @@
     "protocols": ["http", "ftp", "smb"],
     "ports": [80, 21, 445],
     "source_refs": ["tpotce:dionaea", "tpotce:honeytrap"],
+    "telemetry_source": "future_honeypot_logs",
     "default_settings": {
       "capture_binaries": false,
       "download_sink": "metadata-only",

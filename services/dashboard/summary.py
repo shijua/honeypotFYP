@@ -32,11 +32,19 @@ def summarize_demo(state_dir: Path) -> dict[str, Any]:
         state_dir / "cowrie_observations.json",
         "observations",
     )
+    entrypoint_observations = _list_from_file(
+        state_dir / "entrypoint_observations.json",
+        "observations",
+    )
     opencanary_observations = _list_from_file(
         state_dir / "opencanary_observations.json",
         "observations",
     )
-    observations = [*cowrie_observations, *opencanary_observations]
+    observations = [
+        *entrypoint_observations,
+        *cowrie_observations,
+        *opencanary_observations,
+    ]
     bindings = _list_from_file(state_dir / "bindings.json", "records")
     runtime_records = _list_from_file(state_dir / "asset_runtime.json", "records")
     decision_trace = _list_from_file(state_dir / "decision_trace.json", "records")
@@ -159,6 +167,7 @@ def _attacker_report(
             sorted(Counter(_eventids(attacker_observations)).items())
         ),
         "commands": _commands(attacker_observations),
+        "public_http_evidence": _public_http_evidence(attacker_observations),
         "recent_tactics": profile.get("recent_tactics", []),
         "recent_techniques": profile.get("recent_techniques", []),
         "confidence_by_tactic": profile.get("conf_by_tactic", {}),
@@ -189,6 +198,9 @@ def _eventids(observations: list[dict[str, Any]]) -> list[str]:
             continue
         if isinstance(item.get("service"), str):
             eventids.append(f"opencanary.{item['service']}")
+            continue
+        if isinstance(item.get("method"), str) and isinstance(item.get("path"), str):
+            eventids.append(f"public_http.{str(item['method']).upper()}")
     return eventids
 
 
@@ -201,6 +213,21 @@ def _commands(observations: list[dict[str, Any]]) -> list[str]:
         and str(item.get("command")).strip()
     ]
     return list(dict.fromkeys(commands))
+
+
+def _public_http_evidence(observations: list[dict[str, Any]]) -> list[str]:
+    """Return concise HTTP rule indicators for the attacker card."""
+    evidence: list[str] = []
+    for item in observations:
+        if not isinstance(item.get("method"), str) or not isinstance(item.get("path"), str):
+            continue
+        for indicator in item.get("indicators", []):
+            if isinstance(indicator, str) and indicator.strip():
+                evidence.append(indicator.strip())
+        for rule_name in item.get("matched_rules", []):
+            if isinstance(rule_name, str) and rule_name.strip():
+                evidence.append(f"rule:{rule_name.strip()}")
+    return list(dict.fromkeys(evidence))
 
 
 def _runtime_summary(
