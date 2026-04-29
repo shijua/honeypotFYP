@@ -14,9 +14,51 @@ PROJECT_NAME="honeynet"
 if [[ -z "${HOST_PROJECT_ROOT:-}" || "${HOST_PROJECT_ROOT:-}" == "." ]]; then
   HOST_PROJECT_ROOT="$PWD"
 elif [[ "$HOST_PROJECT_ROOT" != /* ]]; then
+  # Compose validation runs from the repo root, but runtime bind mounts still
+  # need an absolute path once Docker starts containers.
   HOST_PROJECT_ROOT="$(cd "$HOST_PROJECT_ROOT" && pwd)"
 fi
-export PROJECT_NAME HOST_PROJECT_ROOT
+
+merge_asset_gateway_ports() {
+  # Mirror the production start script so the smoke test exercises every
+  # gateway listener that adaptive assets may use.
+  local merged="$1"
+  shift
+  local port
+  for port in "$@"; do
+    [[ -z "$port" ]] && continue
+    case ",$merged," in
+      *",$port,"*) ;;
+      *)
+        if [[ -z "$merged" ]]; then
+          merged="$port"
+        else
+          merged="$merged,$port"
+        fi
+        ;;
+    esac
+  done
+  printf '%s' "$merged"
+}
+
+ASSET_GATEWAY_PORTS="$(
+  # Keep this list aligned with adaptive internal asset ports in the catalog.
+  merge_asset_gateway_ports "${ASSET_GATEWAY_PORTS:-}" \
+    "${INTERNAL_PORTAL_PORT:-18080}" \
+    "${GIT_INTERNAL_PORT:-19418}" \
+    "${OPS_DB_PORT:-13306}" \
+    "${REDIS_CACHE_PORT:-16379}" \
+    "${WEB_ADMIN_CONSOLE_PORT:-18081}" \
+    "${FTP_ARCHIVE_PORT:-12121}" \
+    "${SSH_CANARY_PORT:-12222}" \
+    "${LEGACY_TELNET_PORT:-12323}" \
+    "${MAIL_RELAY_PORT:-2525}" \
+    "${FINANCE_SHARE_PORT:-18082}" \
+    "${ICS_PLC_PORT:-18084}" \
+    "${VPN_APPLIANCE_PORT:-18443}" \
+    "${MALWARE_SINK_PORT:-18085}"
+)"
+export PROJECT_NAME HOST_PROJECT_ROOT ASSET_GATEWAY_PORTS
 WAIT_RETRIES="${WAIT_RETRIES:-60}"
 WAIT_DELAY_SECONDS="${WAIT_DELAY_SECONDS:-2}"
 RESET_BEFORE_RUN="${RESET_BEFORE_RUN:-1}"

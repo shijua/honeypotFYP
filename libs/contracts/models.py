@@ -162,8 +162,37 @@ class FalcoEvent(VersionedModel):
 class TechniqueEvidence(VersionedModel):
     """Profiler evidence derived from one event and optionally mapped to ATT&CK.
 
+    One incoming observation can produce one or more evidence records. For
+    example, a single public HTTP request may map to both Initial Access and
+    Discovery if it matches multiple rule tags. Evidence is the durable link
+    between raw adapter events, profile aggregation, and later controller
+    decisions.
+
+    Field meaning:
+    - evidence_id: unique id used by decision traces and adaptive-loop de-duping
+    - ts: event timestamp normalized by the producing adapter/profiler
+    - attacker_key: source identity used for binding and routing, usually source IP
+    - binding_id: active binding/session that this evidence belongs to
+    - tech_id: optional ATT&CK technique or sub-technique id, such as T1552.001
+    - group: optional ATT&CK tactic name, such as Credential Access
+    - weight: confidence contribution used when rebuilding ProfileSnapshot
+    - success: best-effort success flag; probes are usually true unless clearly failed
+    - reason: short human-readable explanation for dashboards and traces
+    - source_ref: compact original context, such as public HTTP path/rules,
+      Cowrie command fields, OpenCanary service fields, or Falco output fields
+
     Example:
-        {"tech_id": "T1003", "group": "Credential Access", "weight": 2.5}
+        {
+            "tech_id": "T1552.001",
+            "group": "Credential Access",
+            "weight": 2.5,
+            "source_ref": {
+                "source": "public_http",
+                "http_path": "/.env.old",
+                "http_rule_names": ["public_http_credential_discovery"],
+                "http_indicators": ["combined:.env", "path:.old"]
+            }
+        }
     """
 
     evidence_id: str
@@ -182,7 +211,10 @@ class ProfileSnapshot(VersionedModel):
     """Current aggregated attacker profile built by the profiler.
 
     This snapshot is the controller's main input for deciding which asset to
-    expose next.
+    expose next. It contains both ATT&CK-level behavioural confidence and the
+    concrete public-surface breadcrumbs that were recently touched. The latter
+    is what lets the controller enforce file-exploration dependencies such as
+    "only consider finance-share after a backup file was requested".
 
     Field meaning:
     - conf_by_tactic: confidence score per ATT&CK tactic in the range [0, 1]
@@ -192,6 +224,9 @@ class ProfileSnapshot(VersionedModel):
     - recent_tactics: de-duplicated recent tactic chain within the short time window
     - recent_techniques: de-duplicated recent technique chain within the short time window
     - recent_evidence_ids: the most recent evidence ids used to explain decisions
+    - recent_public_http_paths: suspicious public web paths observed in the short window
+    - recent_public_http_rules: local public HTTP rule names that matched those paths
+    - recent_public_http_indicators: concrete matched tokens such as path:.bak or combined:.env
     - updated_at: timestamp of the newest evidence included in this snapshot
 
     Example:
@@ -204,6 +239,9 @@ class ProfileSnapshot(VersionedModel):
             "recent_tactics": ["Discovery", "Credential Access"],
             "recent_techniques": ["T1003"],
             "recent_evidence_ids": ["e-1", "e-2"],
+            "recent_public_http_paths": ["/.env.old"],
+            "recent_public_http_rules": ["public_http_credential_discovery"],
+            "recent_public_http_indicators": ["combined:.env", "path:.old"],
             "updated_at": "2026-04-18T12:00:00Z"
         }
     """
@@ -217,6 +255,9 @@ class ProfileSnapshot(VersionedModel):
     recent_tactics: List[str] = Field(default_factory=list)
     recent_techniques: List[str] = Field(default_factory=list)
     recent_evidence_ids: List[str] = Field(default_factory=list)
+    recent_public_http_paths: List[str] = Field(default_factory=list)
+    recent_public_http_rules: List[str] = Field(default_factory=list)
+    recent_public_http_indicators: List[str] = Field(default_factory=list)
     updated_at: datetime = Field(default_factory=utcnow)
 
 
@@ -249,14 +290,26 @@ class EvidenceIngestResponse(VersionedModel):
 class AssetDefinition(VersionedModel):
     """One candidate honeypot asset that the controller may expose.
 
+    `dependencies` names assets that must already be unlocked. Assets may also
+    put `unlock_signals` inside `default_settings` to require recent profile
+    evidence before they become eligible. Supported signal keys are
+    `any_http_paths`, `any_http_rules`, and `any_http_indicators`; each matches
+    against the corresponding `ProfileSnapshot.recent_public_http_*` field.
+
     Example:
         {
-            "asset_id": "admin-jumpbox",
-            "template_family": "ssh-honeypot",
-            "protocols": ["ssh"],
-            "ports": [22],
-            "default_settings": {"banner": "OpenSSH_8.2"},
-            "covers_tactics": ["Lateral Movement", "Privilege Escalation"]
+            "asset_id": "finance-share",
+            "template_family": "file-share-honeypot",
+            "protocols": ["http"],
+            "ports": [80],
+            "dependencies": ["internal-portal"],
+            "default_settings": {
+                "unlock_signals": {
+                    "any_http_paths": ["/backup/db_backup_2024.sql.bak"],
+                    "any_http_indicators": ["path:.bak"]
+                }
+            },
+            "covers_tactics": ["Credential Access", "Collection"]
         }
     """
 
@@ -278,8 +331,18 @@ class AssetDefinition(VersionedModel):
 class ControllerTickRequest(VersionedModel):
     """Input sent to the controller for one decision tick.
 
+    The controller combines `unlocked_asset_ids` with the supplied profile. An
+    asset is eligible only when its asset dependencies are already unlocked and
+    its optional profile-level unlock signals are present.
+
     Example:
-        {"binding_id": "binding-1", "profile": {...}, "unlocked_asset_ids": ["internal-portal"]}
+        {
+            "binding_id": "binding-1",
+            "profile": {
+                "recent_public_http_paths": ["/backup/db_backup_2024.sql.bak"]
+            },
+            "unlocked_asset_ids": ["internal-portal"]
+        }
     """
 
     attacker_key: str

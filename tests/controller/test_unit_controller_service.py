@@ -105,3 +105,103 @@ def test_tick_can_switch_to_explore_strategy() -> None:
     )
 
     assert response.actions[0].asset_id == "asset-explore"
+
+
+def test_tick_can_chain_first_internal_unlock_into_file_gated_asset() -> None:
+    # This models the intended dependency chain: the controller first opens the
+    # generic internal portal, then immediately opens a more specific asset once
+    # the public-site breadcrumb evidence is present.
+    assets = [
+        AssetDefinition(
+            asset_id="internal-portal",
+            asset_name="Internal Portal",
+            exposure_type="internal",
+            interaction_level="medium",
+            covers_tactics=["Discovery"],
+            dependencies=[],
+        ),
+        AssetDefinition(
+            asset_id="finance-share",
+            asset_name="Finance Share",
+            exposure_type="internal",
+            interaction_level="medium",
+            covers_tactics=["Credential Access", "Collection"],
+            dependencies=["internal-portal"],
+            default_settings={
+                "unlock_signals": {
+                    "any_http_paths": ["/backup/db_backup_2024.sql.bak"],
+                    "any_http_indicators": ["path:.bak"],
+                }
+            },
+        ),
+    ]
+    service = ControllerService(
+        InMemoryAssetRepository(assets),
+        InMemoryTransitionRepository(),
+        config=RuntimeConfig(epsilon=0.0),
+        rng=random.Random(0),
+    )
+
+    response = service.tick(
+        ControllerTickRequest(
+            attacker_key="198.51.100.40",
+            binding_id="binding-4",
+            profile=ProfileSnapshot(
+                attacker_key="198.51.100.40",
+                conf_by_tactic={"Credential Access": 0.9, "Discovery": 0.8},
+                recent_tactics=["Credential Access", "Discovery"],
+                recent_public_http_paths=["/backup/db_backup_2024.sql.bak"],
+                recent_public_http_indicators=["path:.bak"],
+                recent_evidence_ids=["e-3"],
+            ),
+        )
+    )
+
+    assert [action.asset_id for action in response.actions] == [
+        "internal-portal",
+        "finance-share",
+    ]
+    assert response.candidate_asset_ids == ["internal-portal", "finance-share"]
+
+
+def test_tick_blocks_file_gated_asset_without_matching_public_http_signal() -> None:
+    # Dependencies alone are not enough for file-gated assets. The matching
+    # public HTTP path/rule/indicator must be present in the profile.
+    assets = [
+        AssetDefinition(
+            asset_id="finance-share",
+            asset_name="Finance Share",
+            exposure_type="internal",
+            interaction_level="medium",
+            covers_tactics=["Credential Access", "Collection"],
+            dependencies=["internal-portal"],
+            default_settings={
+                "unlock_signals": {
+                    "any_http_paths": ["/backup/db_backup_2024.sql.bak"],
+                    "any_http_indicators": ["path:.bak"],
+                }
+            },
+        )
+    ]
+    service = ControllerService(
+        InMemoryAssetRepository(assets),
+        InMemoryTransitionRepository(),
+        config=RuntimeConfig(epsilon=0.0),
+        rng=random.Random(0),
+    )
+
+    response = service.tick(
+        ControllerTickRequest(
+            attacker_key="198.51.100.41",
+            binding_id="binding-5",
+            profile=ProfileSnapshot(
+                attacker_key="198.51.100.41",
+                conf_by_tactic={"Credential Access": 0.9},
+                recent_tactics=["Credential Access"],
+            ),
+            unlocked_asset_ids=["internal-portal"],
+        )
+    )
+
+    assert response.actions[0].action_type == "noop"
+    assert response.candidate_asset_ids == []

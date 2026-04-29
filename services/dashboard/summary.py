@@ -194,6 +194,11 @@ def _attacker_report(
         "public_http_evidence": _public_http_evidence(attacker_evidence),
         "recent_tactics": profile.get("recent_tactics", []),
         "recent_techniques": profile.get("recent_techniques", []),
+        # These fields explain why catalog-gated internal assets became
+        # eligible, e.g. a .bak request on the public site unlocking finance.
+        "recent_public_http_paths": profile.get("recent_public_http_paths", []),
+        "recent_public_http_rules": profile.get("recent_public_http_rules", []),
+        "recent_public_http_indicators": profile.get("recent_public_http_indicators", []),
         "confidence_by_tactic": profile.get("conf_by_tactic", {}),
         "docker_probe_error": docker_probe.error,
         "unlocked_assets": binding.get("unlocked_assets", []) if binding else [],

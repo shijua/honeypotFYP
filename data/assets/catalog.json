@@ -40,18 +40,44 @@
     "asset_name": "Finance File Share",
     "exposure_type": "internal",
     "interaction_level": "medium",
-    "description": "A fake SMB-style finance share with believable documents and credential-looking breadcrumbs.",
+    "description": "A fake internal finance file-share portal with believable document names and credential-looking breadcrumbs.",
     "template_family": "file-share-honeypot",
-    "protocols": ["smb"],
-    "ports": [445],
-    "source_refs": ["tpotce:dionaea", "tpotce:honeytrap"],
-    "telemetry_source": "future_honeypot_logs",
+    "protocols": ["http"],
+    "ports": [80],
+    "source_refs": ["mvp:static-finance-share", "planned:tpotce/dionaea"],
+    "telemetry_source": "asset_runtime",
     "default_settings": {
+      "runtime": {
+        "backend": "docker",
+        "image": "nginx:alpine",
+        "network": "{project_name}_net_internal",
+        "memory_limit": "128m",
+        "volumes": [
+          "{host_project_root}/deploy/internal-assets/finance-share/html:/usr/share/nginx/html:ro"
+        ],
+        "port_mappings": [
+          {
+            "host": "127.0.0.1",
+            "requested_host_port": 18082,
+            "container_port": 80
+          }
+        ],
+        "healthcheck": {
+          "type": "tcp",
+          "host": "127.0.0.1",
+          "port_setting": "host_port"
+        },
+        "source": "mvp/static-finance-share-nginx"
+      },
       "share_name": "FINANCE",
       "seed_documents": ["budget.xlsx", "payroll-archive.zip"],
       "credential_hints": true,
       "read_only": true,
-      "image_references": ["ghcr.io/telekom-security/dionaea:24.04.1"]
+      "image_references": ["nginx:alpine"],
+      "unlock_signals": {
+        "any_http_paths": ["/backup/db_backup_2024.sql.bak", "/backup/passwords_internal.txt"],
+        "any_http_indicators": ["combined:backup", "combined:password", "path:.bak"]
+      }
     },
     "covers_tactics": ["Credential Access", "Collection"],
     "dependencies": ["internal-portal"]
@@ -96,7 +122,11 @@
       "expose_fake_secrets": true,
       "allow_clone": false,
       "route_path": "/git",
-      "image_references": ["thinkst/opencanary"]
+      "image_references": ["thinkst/opencanary"],
+      "unlock_signals": {
+        "any_http_paths": ["/.env.old", "/assets/app.js.map"],
+        "any_http_indicators": ["combined:.env", "path:.map"]
+      }
     },
     "covers_tactics": ["Credential Access", "Discovery"],
     "dependencies": ["internal-portal"]
@@ -141,7 +171,11 @@
       "auth_mode": "fake-login",
       "query_logging": true,
       "sample_rows": 25,
-      "image_references": ["thinkst/opencanary"]
+      "image_references": ["thinkst/opencanary"],
+      "unlock_signals": {
+        "any_http_paths": ["/.env.old", "/backup/db_backup_2024.sql.bak"],
+        "any_http_indicators": ["combined:.env", "combined:backup", "path:.bak"]
+      }
     },
     "covers_tactics": ["Credential Access", "Collection"],
     "dependencies": ["git-internal"]
@@ -222,7 +256,11 @@
         },
         "source": "opencanary/redis"
       },
-      "image_references": ["thinkst/opencanary"]
+      "image_references": ["thinkst/opencanary"],
+      "unlock_signals": {
+        "any_http_paths": ["/.env.old"],
+        "any_http_indicators": ["combined:.env"]
+      }
     },
     "covers_tactics": ["Credential Access", "Discovery", "Collection"],
     "dependencies": ["internal-portal"]
@@ -264,7 +302,11 @@
         "source": "opencanary/http"
       },
       "login_realm": "Admin",
-      "image_references": ["thinkst/opencanary"]
+      "image_references": ["thinkst/opencanary"],
+      "unlock_signals": {
+        "any_http_paths": ["/admin", "/api/search"],
+        "any_http_indicators": ["path:/admin", "path:/api", "user_agent:sqlmap"]
+      }
     },
     "covers_tactics": ["Credential Access", "Discovery"],
     "dependencies": ["internal-portal"]
@@ -306,7 +348,11 @@
         "source": "opencanary/ftp"
       },
       "archive_names": ["finance-drop", "backups"],
-      "image_references": ["thinkst/opencanary"]
+      "image_references": ["thinkst/opencanary"],
+      "unlock_signals": {
+        "any_http_paths": ["/backup/db_backup_2024.sql.bak", "/backup/passwords_internal.txt"],
+        "any_http_indicators": ["combined:backup", "combined:password", "path:.bak"]
+      }
     },
     "covers_tactics": ["Credential Access", "Collection", "Discovery"],
     "dependencies": ["internal-portal"]
@@ -348,7 +394,11 @@
         "source": "opencanary/ssh"
       },
       "hostname": "ssh-gw-02",
-      "image_references": ["thinkst/opencanary"]
+      "image_references": ["thinkst/opencanary"],
+      "unlock_signals": {
+        "any_http_paths": ["/backup/passwords_internal.txt"],
+        "any_http_indicators": ["combined:password"]
+      }
     },
     "covers_tactics": ["Credential Access", "Discovery"],
     "dependencies": ["internal-portal"]
@@ -390,7 +440,11 @@
         "source": "opencanary/telnet"
       },
       "hostname": "legacy-switch-01",
-      "image_references": ["thinkst/opencanary"]
+      "image_references": ["thinkst/opencanary"],
+      "unlock_signals": {
+        "any_http_paths": ["/backup/passwords_internal.txt"],
+        "any_http_indicators": ["combined:password"]
+      }
     },
     "covers_tactics": ["Credential Access", "Discovery", "Lateral Movement"],
     "dependencies": ["internal-portal"]
@@ -428,7 +482,11 @@
       },
       "domains": ["corp.example"],
       "mailboxes": ["admin", "finance", "it-support"],
-      "image_references": ["dtagdevsec/mailoney:24.04"]
+      "image_references": ["dtagdevsec/mailoney:24.04"],
+      "unlock_signals": {
+        "any_http_paths": ["/.env.old", "/backup/passwords_internal.txt"],
+        "any_http_indicators": ["combined:.env", "combined:password"]
+      }
     },
     "covers_tactics": ["Credential Access", "Discovery", "Collection"],
     "dependencies": ["internal-portal"]
@@ -438,16 +496,42 @@
     "asset_name": "Plant PLC",
     "exposure_type": "internal",
     "interaction_level": "high",
-    "description": "A Conpot-style industrial control endpoint for observing Modbus/ICS probing.",
+    "description": "A static plant-control panel that gives ICS-interested attackers a safe internal target before any real Conpot-style runtime exists.",
     "template_family": "ics-honeypot",
-    "protocols": ["modbus", "http"],
-    "ports": [502, 80],
-    "source_refs": ["tpotce:conpot"],
-    "telemetry_source": "future_honeypot_logs",
+    "protocols": ["http"],
+    "ports": [80],
+    "source_refs": ["mvp:static-ics-panel", "planned:tpotce/conpot"],
+    "telemetry_source": "asset_runtime",
     "default_settings": {
+      "runtime": {
+        "backend": "docker",
+        "image": "nginx:alpine",
+        "network": "{project_name}_net_internal",
+        "memory_limit": "128m",
+        "volumes": [
+          "{host_project_root}/deploy/internal-assets/ics-plc/html:/usr/share/nginx/html:ro"
+        ],
+        "port_mappings": [
+          {
+            "host": "127.0.0.1",
+            "requested_host_port": 18084,
+            "container_port": 80
+          }
+        ],
+        "healthcheck": {
+          "type": "tcp",
+          "host": "127.0.0.1",
+          "port_setting": "host_port"
+        },
+        "source": "mvp/static-ics-panel-nginx"
+      },
       "plant_profile": "water-treatment",
       "modbus_unit_ids": [1, 2],
-      "image_references": ["ghcr.io/telekom-security/conpot:24.04.1"]
+      "image_references": ["nginx:alpine"],
+      "unlock_signals": {
+        "any_http_paths": ["/internal-api/status"],
+        "any_http_indicators": ["path:/internal-api"]
+      }
     },
     "covers_tactics": ["Discovery", "Collection", "Lateral Movement"],
     "dependencies": ["internal-portal"]
@@ -477,7 +561,11 @@
       "real_vulnerability": true,
       "isolation_required": true,
       "telemetry_expectations": ["asset_runtime", "gateway_route", "dashboard_health"],
-      "image_references": ["vulhub/log4j/CVE-2021-44228"]
+      "image_references": ["vulhub/log4j/CVE-2021-44228"],
+      "unlock_signals": {
+        "any_http_rules": ["public_http_exploit_probe"],
+        "any_http_indicators": ["combined:${jndi:", "combined:ldap://", "combined:log4j"]
+      }
     },
     "covers_tactics": ["Initial Access", "Execution", "Discovery"],
     "dependencies": ["internal-portal"]
@@ -487,21 +575,44 @@
     "asset_name": "VPN Appliance",
     "exposure_type": "internal",
     "interaction_level": "medium",
-    "description": "A fake VPN/network appliance used to attract appliance fingerprinting and credential attacks.",
+    "description": "A VPN-looking internal appliance login portal used to attract appliance fingerprinting and credential attacks.",
     "template_family": "network-appliance-honeypot",
-    "protocols": ["https", "ike"],
-    "ports": [443, 500, 4500],
-    "source_refs": ["tpotce:ciscoasa", "tpotce:citrixhoneypot"],
-    "telemetry_source": "future_honeypot_logs",
+    "protocols": ["http"],
+    "ports": [80],
+    "source_refs": ["mvp:static-vpn-appliance", "planned:tpotce/ciscoasa", "planned:tpotce/citrixhoneypot"],
+    "telemetry_source": "asset_runtime",
     "default_settings": {
+      "runtime": {
+        "backend": "docker",
+        "image": "nginx:alpine",
+        "network": "{project_name}_net_internal",
+        "memory_limit": "128m",
+        "volumes": [
+          "{host_project_root}/deploy/internal-assets/vpn-appliance/html:/usr/share/nginx/html:ro"
+        ],
+        "port_mappings": [
+          {
+            "host": "127.0.0.1",
+            "requested_host_port": 18443,
+            "container_port": 80
+          }
+        ],
+        "healthcheck": {
+          "type": "tcp",
+          "host": "127.0.0.1",
+          "port_setting": "host_port"
+        },
+        "source": "mvp/static-vpn-appliance-nginx"
+      },
       "vendor_skin": "generic-vpn",
       "login_realm": "Employees",
       "mfa_prompt": true,
       "capture_usernames": true,
-      "image_references": [
-        "ghcr.io/telekom-security/ciscoasa:24.04.1",
-        "ghcr.io/telekom-security/citrixhoneypot:24.04.1"
-      ]
+      "image_references": ["nginx:alpine"],
+      "unlock_signals": {
+        "any_http_paths": ["/admin", "/.env.old", "/assets/app.js.map"],
+        "any_http_indicators": ["path:/admin", "combined:.env", "path:.map"]
+      }
     },
     "covers_tactics": ["Initial Access", "Credential Access", "Discovery"],
     "dependencies": ["internal-portal"]
@@ -511,20 +622,43 @@
     "asset_name": "Malware Drop Sink",
     "exposure_type": "internal",
     "interaction_level": "high",
-    "description": "A Dionaea/Honeytrap-style service sink for observing binary drops and downloader behavior.",
+    "description": "A safe HTTP drop-zone lure for downloader and collection behaviour. It advertises upload paths but does not persist payloads.",
     "template_family": "malware-capture-honeypot",
-    "protocols": ["http", "ftp", "smb"],
-    "ports": [80, 21, 445],
-    "source_refs": ["tpotce:dionaea", "tpotce:honeytrap"],
-    "telemetry_source": "future_honeypot_logs",
+    "protocols": ["http"],
+    "ports": [80],
+    "source_refs": ["mvp:static-malware-sink", "planned:tpotce/dionaea", "planned:tpotce/honeytrap"],
+    "telemetry_source": "asset_runtime",
     "default_settings": {
+      "runtime": {
+        "backend": "docker",
+        "image": "nginx:alpine",
+        "network": "{project_name}_net_internal",
+        "memory_limit": "128m",
+        "volumes": [
+          "{host_project_root}/deploy/internal-assets/malware-sink/html:/usr/share/nginx/html:ro"
+        ],
+        "port_mappings": [
+          {
+            "host": "127.0.0.1",
+            "requested_host_port": 18085,
+            "container_port": 80
+          }
+        ],
+        "healthcheck": {
+          "type": "tcp",
+          "host": "127.0.0.1",
+          "port_setting": "host_port"
+        },
+        "source": "mvp/static-malware-sink-nginx"
+      },
       "capture_binaries": false,
       "download_sink": "metadata-only",
       "max_payload_bytes": 0,
-      "image_references": [
-        "ghcr.io/telekom-security/dionaea:24.04.1",
-        "ghcr.io/telekom-security/honeytrap:24.04.1"
-      ]
+      "image_references": ["nginx:alpine"],
+      "unlock_signals": {
+        "any_http_rules": ["public_http_exploit_probe"],
+        "any_http_indicators": ["combined:php://filter", "combined:../", "combined:ldap://"]
+      }
     },
     "covers_tactics": ["Command and Control", "Execution", "Collection"],
     "dependencies": ["internal-portal"]

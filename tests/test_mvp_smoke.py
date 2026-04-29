@@ -65,12 +65,38 @@ def test_mvp_closes_the_loop_from_binding_to_unlock(mvp_clients) -> None:
     assert gateway_state.status_code == 200
     assert gateway_state.json()["exposed_assets"] == ["internal-portal"]
 
+    public_breadcrumb = profiler_client.post(
+        "/v1/evidence/ingest",
+        json={
+            "attacker_key": attacker_key,
+            "binding_id": binding["binding_id"],
+            "event": {
+                "ts": "2026-01-01T00:00:05Z",
+                "falco_rule": "HTTP honeypot request",
+                "priority": "WARNING",
+                "output": "HTTP GET /backup/db_backup_2024.sql.bak matched public_http_credential_discovery",
+                "tags": ["mitre_credential_access", "T1552.001"],
+                "output_fields": {
+                    "source": "public_http",
+                    "http_method": "GET",
+                    "http_path": "/backup/db_backup_2024.sql.bak",
+                    "http_rule_names": ["public_http_credential_discovery"],
+                    "http_indicators": ["path:.bak"],
+                },
+            },
+        },
+    )
+    assert public_breadcrumb.status_code == 200
+
+    updated_profile = profiler_client.get(f"/v1/profiles/{attacker_key}")
+    assert updated_profile.status_code == 200
+
     second_tick = controller_client.post(
         "/v1/controller/tick",
         json={
             "attacker_key": attacker_key,
             "binding_id": binding["binding_id"],
-            "profile": profile.json(),
+            "profile": updated_profile.json(),
             "unlocked_asset_ids": ["internal-portal"],
         },
     )

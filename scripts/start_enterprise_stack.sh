@@ -14,9 +14,51 @@ PROJECT_NAME="${PROJECT_NAME:-honeynet}"
 if [[ -z "${HOST_PROJECT_ROOT:-}" || "${HOST_PROJECT_ROOT:-}" == "." ]]; then
   HOST_PROJECT_ROOT="$PWD"
 elif [[ "$HOST_PROJECT_ROOT" != /* ]]; then
+  # Docker bind mounts need an absolute host path, not a path relative to the
+  # caller's current shell.
   HOST_PROJECT_ROOT="$(cd "$HOST_PROJECT_ROOT" && pwd)"
 fi
-export PROJECT_NAME HOST_PROJECT_ROOT
+
+merge_asset_gateway_ports() {
+  # The asset gateway exposes fixed public ports. Merge env overrides with the
+  # catalog defaults so each listener starts once even if a port appears twice.
+  local merged="$1"
+  shift
+  local port
+  for port in "$@"; do
+    [[ -z "$port" ]] && continue
+    case ",$merged," in
+      *",$port,"*) ;;
+      *)
+        if [[ -z "$merged" ]]; then
+          merged="$port"
+        else
+          merged="$merged,$port"
+        fi
+        ;;
+    esac
+  done
+  printf '%s' "$merged"
+}
+
+ASSET_GATEWAY_PORTS="$(
+  # Keep this list aligned with adaptive internal asset ports in the catalog.
+  merge_asset_gateway_ports "${ASSET_GATEWAY_PORTS:-}" \
+    "${INTERNAL_PORTAL_PORT:-18080}" \
+    "${GIT_INTERNAL_PORT:-19418}" \
+    "${OPS_DB_PORT:-13306}" \
+    "${REDIS_CACHE_PORT:-16379}" \
+    "${WEB_ADMIN_CONSOLE_PORT:-18081}" \
+    "${FTP_ARCHIVE_PORT:-12121}" \
+    "${SSH_CANARY_PORT:-12222}" \
+    "${LEGACY_TELNET_PORT:-12323}" \
+    "${MAIL_RELAY_PORT:-2525}" \
+    "${FINANCE_SHARE_PORT:-18082}" \
+    "${ICS_PLC_PORT:-18084}" \
+    "${VPN_APPLIANCE_PORT:-18443}" \
+    "${MALWARE_SINK_PORT:-18085}"
+)"
+export PROJECT_NAME HOST_PROJECT_ROOT ASSET_GATEWAY_PORTS
 RESET_BEFORE_START="${RESET_BEFORE_START:-1}"
 KEEP_STATE=0
 WAIT_FOR_SERVICES=1
@@ -165,6 +207,10 @@ echo "Adaptive FTP:    ${CLIENT_TARGET_HOST:-127.0.0.1}:${FTP_ARCHIVE_PORT:-1212
 echo "Adaptive SSH:    ssh -p ${SSH_CANARY_PORT:-12222} root@${CLIENT_TARGET_HOST:-127.0.0.1} after ssh-canary unlock"
 echo "Adaptive Telnet: telnet ${CLIENT_TARGET_HOST:-127.0.0.1} ${LEGACY_TELNET_PORT:-12323} after legacy-telnet unlock"
 echo "Adaptive SMTP:   ${CLIENT_TARGET_HOST:-127.0.0.1}:${MAIL_RELAY_PORT:-2525} after mail-relay unlock"
+echo "Finance Share:   http://${CLIENT_TARGET_HOST:-127.0.0.1}:${FINANCE_SHARE_PORT:-18082}/ after finance-share unlock"
+echo "ICS Panel:       http://${CLIENT_TARGET_HOST:-127.0.0.1}:${ICS_PLC_PORT:-18084}/ after ics-plc unlock"
+echo "VPN Appliance:   http://${CLIENT_TARGET_HOST:-127.0.0.1}:${VPN_APPLIANCE_PORT:-18443}/ after vpn-appliance unlock"
+echo "Malware Sink:    http://${CLIENT_TARGET_HOST:-127.0.0.1}:${MALWARE_SINK_PORT:-18085}/ after malware-sink unlock"
 echo "Vulhub asset:    log4shell-app requires vendor/vulhub/log4j/CVE-2021-44228/docker-compose.yml"
 echo
 echo "For local browser access over SSH tunnel:"

@@ -185,6 +185,7 @@
               "/api",
               "/dashboard",
               "/graphql",
+              "/internal-api",
               "/jenkins",
               "/manager/html",
               "/openapi.json",

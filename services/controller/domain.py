@@ -54,58 +54,76 @@ class ControllerService:
     def tick(self, request: ControllerTickRequest) -> ControllerTickResponse:
         # Tests may inject assets directly; otherwise use the catalog.
         assets = request.assets or list(self._asset_repository.list_all())
-        candidates = [
-            self._score_asset(asset, request)
-            for asset in assets
-            if self._is_eligible(asset, request.unlocked_asset_ids)
+        # This is intentionally mutable during one tick. If the first selected
+        # asset unlocks a dependency, the second pass can immediately consider
+        # assets that depend on it instead of waiting for the next loop tick.
+        planned_unlocked_asset_ids = list(request.unlocked_asset_ids)
+        actions: list[ControllerAction] = []
+        decisions: list[DecisionEvent] = []
+        # Keep every candidate set we considered so the dashboard can show why
+        # an asset was or was not available to the controller.
+        candidate_scores: list[CandidateScore] = []
+
+        # Run the preferred strategy first, then the opposite strategy. This
+        # keeps exploit/explore behavior simple while still allowing one tick
+        # to open a small chain such as internal-portal -> finance-share.
+        first_strategy = (
+            "exploit" if self._rng.random() >= self._config.epsilon else "explore"
+        )
+        strategies = [
+            first_strategy,
+            "explore" if first_strategy == "exploit" else "exploit",
         ]
-        if not candidates:
-            return self._noop_response(
-                request=request,
-                reason="no eligible assets remained after dependency and unlock filtering",
-            )
 
-        # Exploit deepens the current hypothesis; explore probes an alternative.
-        strategy = "exploit" if self._rng.random() >= self._config.epsilon else "explore"
-        primary = self._pick_best(candidates, strategy)
-        if primary is None:
-            # Fall back to the other strategy before returning noop.
-            fallback_strategy = "explore" if strategy == "exploit" else "exploit"
-            primary = self._pick_best(candidates, fallback_strategy)
-            if primary is None:
-                return self._noop_response(
-                    request=request,
-                    reason=f"no candidate crossed the {strategy} or {fallback_strategy} threshold",
-                    candidate_asset_ids=[
-                        candidate.asset.asset_id for candidate in candidates
-                    ],
-                )
-            strategy = fallback_strategy
+        for index, strategy in enumerate(strategies):
+            # Eligibility is recomputed on each pass because dependencies may
+            # have changed after an earlier action in the same controller tick.
+            candidates = [
+                self._score_asset(asset, request)
+                for asset in assets
+                if self._is_eligible(asset, request, planned_unlocked_asset_ids)
+            ]
+            candidate_scores.extend(candidates)
+            if not candidates:
+                if not actions:
+                    return self._noop_response(
+                        request=request,
+                        reason="no eligible assets remained after dependency and unlock filtering",
+                    )
+                break
 
-        actions = [self._build_unlock_action(request.binding_id, primary, strategy)]
-        decisions = [self._build_decision_event(request, primary, strategy)]
+            selected = self._pick_best(candidates, strategy)
+            # Only the first pass is allowed to fallback. The second pass either
+            # finds a complementary asset or stops, which prevents noisy loops.
+            if selected is None and index == 0:
+                fallback_strategy = strategies[1]
+                selected = self._pick_best(candidates, fallback_strategy)
+                if selected is None:
+                    return self._noop_response(
+                        request=request,
+                        reason=f"no candidate crossed the {strategy} or {fallback_strategy} threshold",
+                        candidate_asset_ids=[
+                            candidate.asset.asset_id for candidate in candidates
+                        ],
+                    )
+                strategy = fallback_strategy
+                strategies[1] = "explore" if strategy == "exploit" else "exploit"
+            elif selected is None:
+                break
 
-        # Offer a second branch when another plausible option exists.
-        secondary_strategy = "explore" if strategy == "exploit" else "exploit"
-        remaining = [
-            candidate
-            for candidate in candidates
-            if candidate.asset.asset_id != primary.asset.asset_id
-        ]
-        secondary = self._pick_best(remaining, secondary_strategy)
-        if secondary is not None:
             actions.append(
-                self._build_unlock_action(request.binding_id, secondary, secondary_strategy)
+                self._build_unlock_action(request.binding_id, selected, strategy)
             )
-            decisions.append(
-                self._build_decision_event(request, secondary, secondary_strategy)
-            )
+            decisions.append(self._build_decision_event(request, selected, strategy))
+            # Mark the selected asset as planned before the next pass so chained
+            # dependencies can be satisfied within this same response.
+            planned_unlocked_asset_ids.append(selected.asset.asset_id)
 
         return ControllerTickResponse(
             binding_id=request.binding_id,
             actions=actions,
             decision_events=decisions,
-            candidate_asset_ids=[candidate.asset.asset_id for candidate in candidates],
+            candidate_asset_ids=self._candidate_asset_ids(candidate_scores),
         )
 
     def _score_asset(
@@ -160,16 +178,78 @@ class ControllerService:
     def _is_eligible(
         self,
         asset: AssetDefinition,
+        request: ControllerTickRequest,
         unlocked_asset_ids: list[str],
     ) -> bool:
-        # Filter by exposure type, duplicates, unlock cap, and dependencies.
+        # Filter by exposure type, duplicates, unlock cap, dependencies, and profile signals.
         if asset.exposure_type != "internal":
             return False
         if asset.asset_id in unlocked_asset_ids:
             return False
         if len(unlocked_asset_ids) >= self._config.unlock_cap:
             return False
-        return set(asset.dependencies).issubset(unlocked_asset_ids)
+        if not set(asset.dependencies).issubset(unlocked_asset_ids):
+            return False
+        return self._matches_unlock_signals(asset, request)
+
+    def _matches_unlock_signals(
+        self,
+        asset: AssetDefinition,
+        request: ControllerTickRequest,
+    ) -> bool:
+        """Return whether profile evidence satisfies catalog unlock signals.
+
+        Catalog entries may declare several signal groups, for example a
+        suspicious public HTTP path or a local rule name. Matching any configured
+        group is enough to unlock the asset once normal dependencies are met.
+        """
+        unlock_signals = asset.default_settings.get("unlock_signals")
+        if not isinstance(unlock_signals, dict) or not unlock_signals:
+            return True
+
+        profile = request.profile
+        # These keys deliberately mirror data/assets/catalog.json so the asset
+        # catalog can stay declarative.
+        observed = {
+            "any_http_paths": set(profile.recent_public_http_paths),
+            "any_http_rules": set(profile.recent_public_http_rules),
+            "any_http_indicators": set(profile.recent_public_http_indicators),
+        }
+
+        # Empty or malformed signal lists should not accidentally block legacy
+        # assets that do not use the public-surface dependency model.
+        configured_signal_keys = [
+            key
+            for key in observed
+            if isinstance(unlock_signals.get(key), list) and unlock_signals[key]
+        ]
+        if not configured_signal_keys:
+            return True
+
+        for key in configured_signal_keys:
+            required = {
+                item for item in unlock_signals[key] if isinstance(item, str)
+            }
+            if observed[key].intersection(required):
+                return True
+        return False
+
+    def _candidate_asset_ids(
+        self,
+        candidates: list[CandidateScore],
+    ) -> list[str]:
+        """Return candidate IDs once, preserving the order they became eligible."""
+        return self._dedupe_preserve(
+            [candidate.asset.asset_id for candidate in candidates]
+        )
+
+    def _dedupe_preserve(self, values: list[str]) -> list[str]:
+        """Drop duplicates without changing dashboard/debug ordering."""
+        ordered: list[str] = []
+        for value in values:
+            if value not in ordered:
+                ordered.append(value)
+        return ordered
 
     def _pick_best(
         self,
@@ -259,4 +339,3 @@ class ControllerService:
             ],
             candidate_asset_ids=candidate_asset_ids or [],
         )
-

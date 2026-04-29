@@ -1,0 +1,6 @@
+# Fake remote access gateway backup.
+hostname=ra-gw-02
+realm=Employees
+mfa_policy=Corp-Access-Default
+split_tunnel=false
+last_backup=2026-04-21T02:15:00Z

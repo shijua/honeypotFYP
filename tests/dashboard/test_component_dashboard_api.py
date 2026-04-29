@@ -43,8 +43,13 @@ def test_dashboard_summary_endpoint_returns_live_snapshot(
         {
             "profiles": {
                 "198.51.100.10": {
+                    # Dashboard exposes these profile breadcrumbs so we can
+                    # debug which public request unlocked an internal asset.
                     "recent_tactics": ["Credential Access", "Discovery"],
                     "recent_techniques": ["T1110", "T1087"],
+                    "recent_public_http_paths": ["/.env"],
+                    "recent_public_http_rules": ["public_http_credential_discovery"],
+                    "recent_public_http_indicators": ["combined:.env"],
                     "conf_by_tactic": {"Credential Access": 0.7},
                 }
             }
@@ -319,6 +324,11 @@ def test_dashboard_summary_endpoint_returns_live_snapshot(
         "path:/.env",
         "ua:curl/8.0",
     ]
+    assert payload["attackers"][0]["recent_public_http_paths"] == ["/.env"]
+    assert payload["attackers"][0]["recent_public_http_rules"] == [
+        "public_http_credential_discovery"
+    ]
+    assert payload["attackers"][0]["recent_public_http_indicators"] == ["combined:.env"]
     assert payload["metrics"]["healthy_chain_stages"] >= 6
     assert {
         stage["stage"]: stage["status"]

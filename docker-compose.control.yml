@@ -113,6 +113,10 @@ services:
       HONEYPOT_ASSET_SSH_CANARY_PORT: "${SSH_CANARY_PORT:-12222}"
       HONEYPOT_ASSET_LEGACY_TELNET_PORT: "${LEGACY_TELNET_PORT:-12323}"
       HONEYPOT_ASSET_MAIL_RELAY_PORT: "${MAIL_RELAY_PORT:-2525}"
+      HONEYPOT_ASSET_FINANCE_SHARE_PORT: "${FINANCE_SHARE_PORT:-18082}"
+      HONEYPOT_ASSET_ICS_PLC_PORT: "${ICS_PLC_PORT:-18084}"
+      HONEYPOT_ASSET_VPN_APPLIANCE_PORT: "${VPN_APPLIANCE_PORT:-18443}"
+      HONEYPOT_ASSET_MALWARE_SINK_PORT: "${MALWARE_SINK_PORT:-18085}"
       HONEYPOT_PROJECT_NAME: "${PROJECT_NAME:-honeynet}"
       HONEYPOT_PROJECT_ROOT_IN_CONTAINER: /app
       HONEYPOT_HOST_PROJECT_ROOT: "${HOST_PROJECT_ROOT:-.}"
@@ -136,7 +140,7 @@ services:
       --orchestrator-url http://orchestrator:8005
       --trace-file data/runtime/decision_trace.json
       --loop-state-file data/runtime/adaptive_loop_state.json
-      --max-actions-per-trigger 1
+      --max-actions-per-trigger 2
       --poll-seconds 2"
     environment:
       PYTHONPATH: /app

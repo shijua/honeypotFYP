@@ -168,7 +168,22 @@ class ProfilerService:
                 if evidence.tech_id is not None
             ),
             recent_evidence_ids=[
-                evidence.evidence_id for evidence in recent_evidences[-5:]],
+                evidence.evidence_id for evidence in recent_evidences[-5:]
+            ],
+            # Public HTTP evidence is kept separate from ATT&CK confidence so
+            # the controller can use it as concrete breadcrumbs for dependencies.
+            recent_public_http_paths=self._public_http_values(
+                recent_evidences,
+                "http_path",
+            ),
+            recent_public_http_rules=self._public_http_values(
+                recent_evidences,
+                "http_rule_names",
+            ),
+            recent_public_http_indicators=self._public_http_values(
+                recent_evidences,
+                "http_indicators",
+            ),
             updated_at=latest_ts,
         )
         return self._profile_repository.upsert(snapshot)
@@ -227,6 +242,7 @@ class ProfilerService:
         ]
 
     def _mappings_from_tags(self, event: FalcoEvent) -> list[AttackMapping]:
+        """Convert ordered MITRE tags into tactic/technique evidence mappings."""
         reason = f"{event.falco_rule}: {event.output}"
         current_tactic: str | None = None
         tactic_only_mappings: list[AttackMapping] = []
@@ -272,7 +288,8 @@ class ProfilerService:
         return "failed" not in text and "denied" not in text
 
     def _build_source_ref(self, event: FalcoEvent) -> dict[str, object]:
-        # Keep a compact evidence reference for later decisions.
+        # Keep a compact evidence reference for dashboards and later controller
+        # decisions without storing the whole raw adapter event.
         source_ref = {
             "falco_rule": event.falco_rule,
             "priority": event.priority,
@@ -324,6 +341,30 @@ class ProfilerService:
             if value not in ordered:
                 ordered.append(value)
         return ordered
+
+    def _public_http_values(
+        self,
+        evidences: list[TechniqueEvidence],
+        source_ref_key: str,
+    ) -> list[str]:
+        """Extract recent public-surface breadcrumbs from evidence source refs.
+
+        Public portal requests are stored as normal evidence records, but only
+        values with source="public_http" should drive file/path-based asset
+        dependencies. This keeps Cowrie/OpenCanary evidence from accidentally
+        satisfying HTTP breadcrumb gates.
+        """
+        values: list[str] = []
+        for evidence in evidences:
+            source_ref = evidence.source_ref
+            if source_ref.get("source") != "public_http":
+                continue
+            value = source_ref.get(source_ref_key)
+            if isinstance(value, list):
+                values.extend(item for item in value if isinstance(item, str))
+            elif isinstance(value, str) and value:
+                values.append(value)
+        return self._dedupe_preserve(values)
 
 
 def _utc_aware(value: datetime) -> datetime:

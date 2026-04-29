@@ -214,6 +214,8 @@ def test_ingest_keeps_untagged_events_unclassified() -> None:
 
 
 def test_ingest_preserves_public_http_source_ref_fields() -> None:
+    # Public HTTP evidence has two jobs: it contributes ATT&CK context and it
+    # carries exact path/rule breadcrumbs for later controller decisions.
     service = ProfilerService(
         InMemoryEvidenceRepository(),
         InMemoryProfileRepository(),
@@ -252,6 +254,12 @@ def test_ingest_preserves_public_http_source_ref_fields() -> None:
     assert source_ref["http_rule_names"] == ["public_http_injection_probe"]
     assert source_ref["http_indicators"] == ["user_agent:sqlmap", "combined:union%20select"]
     assert source_ref["http_evidence_labels"] == ["public-http injection or exploit probe"]
+    assert response.profile.recent_public_http_paths == ["/api/search"]
+    assert response.profile.recent_public_http_rules == ["public_http_injection_probe"]
+    assert response.profile.recent_public_http_indicators == [
+        "user_agent:sqlmap",
+        "combined:union%20select",
+    ]
 
 
 def test_ingest_maps_multi_tactic_public_http_tags_per_technique() -> None:

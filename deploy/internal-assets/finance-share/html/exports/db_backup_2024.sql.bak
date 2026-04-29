@@ -1,0 +1,5 @@
+-- Fake backup lure for the honeynet internal finance share.
+-- No real credentials or customer data are present.
+CREATE DATABASE finance_archive;
+CREATE TABLE migration_notes (id int, note text);
+INSERT INTO migration_notes VALUES (1, 'Legacy export kept for finance portal migration testing.');

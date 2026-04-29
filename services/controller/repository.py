@@ -40,7 +40,12 @@ class TransitionRepository(Protocol):
 
 
 class InMemoryAssetRepository:
-    """Static asset catalog used by the MVP controller."""
+    """Static asset catalog used by tests and the in-process MVP.
+
+    This mirrors the important dependency semantics from data/assets/catalog.json
+    so component tests do not accidentally exercise a looser asset graph than
+    the real file-backed runtime.
+    """
 
     def __init__(self, assets: list[AssetDefinition] | None = None) -> None:
         # Keep a small built-in catalog for the MVP.
@@ -60,6 +65,12 @@ class InMemoryAssetRepository:
                 interaction_level="medium",
                 covers_tactics=["Credential Access", "Collection"],
                 dependencies=["internal-portal"],
+                default_settings={
+                    "unlock_signals": {
+                        "any_http_paths": ["/backup/db_backup_2024.sql.bak"],
+                        "any_http_indicators": ["path:.bak"],
+                    }
+                },
             ),
             AssetDefinition(
                 asset_id="git-internal",
@@ -68,6 +79,12 @@ class InMemoryAssetRepository:
                 interaction_level="medium",
                 covers_tactics=["Credential Access", "Discovery"],
                 dependencies=["internal-portal"],
+                default_settings={
+                    "unlock_signals": {
+                        "any_http_paths": ["/.env.old", "/assets/app.js.map"],
+                        "any_http_indicators": ["combined:.env", "path:.map"],
+                    }
+                },
             ),
             AssetDefinition(
                 asset_id="ops-db",

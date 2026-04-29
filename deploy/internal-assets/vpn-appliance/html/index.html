@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VPN Appliance</title>
+  <style>
+    body { margin: 0; font-family: Arial, sans-serif; background: #edf1f7; color: #182233; }
+    header { background: #1d3354; color: #fff; padding: 22px 36px; }
+    main { max-width: 420px; margin: 46px auto; background: #fff; border: 1px solid #ccd6e6; padding: 24px; }
+    label { display: block; margin-top: 14px; color: #4d5b70; font-size: 13px; }
+    input { width: 100%; box-sizing: border-box; margin-top: 6px; padding: 10px; border: 1px solid #b9c5d5; }
+    button { margin-top: 18px; width: 100%; padding: 11px; border: 0; background: #1d3354; color: #fff; font-weight: 700; }
+    .meta { margin-top: 18px; color: #65758b; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Remote Access Gateway</h1>
+    <p>Employees and approved contractors only.</p>
+  </header>
+  <main>
+    <h2>Sign in</h2>
+    <label for="user">Username</label>
+    <input id="user" name="user" autocomplete="off">
+    <label for="pass">Password</label>
+    <input id="pass" name="pass" type="password">
+    <button type="button">Continue</button>
+    <p class="meta">MFA policy: Corp-Access-Default. Appliance build: RA-2026.04.</p>
+    <p class="meta">Support bundle: <a href="/backup/ra-config-2026-04.bak">ra-config-2026-04.bak</a> | Client profile: <a href="/download/contractor-profile.ovpn">contractor-profile.ovpn</a></p>
+  </main>
+</body>
+</html>

@@ -39,7 +39,7 @@ services:
     working_dir: /app
     command: >
       bash -lc "python -m services.asset_gateway.app
-      --ports ${ASSET_GATEWAY_PORTS:-18080,19418,13306,16379,18081,12121,12222,12323,2525}
+      --ports ${ASSET_GATEWAY_PORTS:-18080,19418,13306,16379,18081,12121,12222,12323,2525,18082,18084,18443,18085}
       --routes data/runtime/asset_gateway_routes.json"
     environment:
       PYTHONPATH: /app
@@ -56,6 +56,10 @@ services:
       - "${HOST_BIND_ADDRESS:-127.0.0.1}:${SSH_CANARY_PORT:-12222}:12222"
       - "${HOST_BIND_ADDRESS:-127.0.0.1}:${LEGACY_TELNET_PORT:-12323}:12323"
       - "${HOST_BIND_ADDRESS:-127.0.0.1}:${MAIL_RELAY_PORT:-2525}:2525"
+      - "${HOST_BIND_ADDRESS:-127.0.0.1}:${FINANCE_SHARE_PORT:-18082}:18082"
+      - "${HOST_BIND_ADDRESS:-127.0.0.1}:${ICS_PLC_PORT:-18084}:18084"
+      - "${HOST_BIND_ADDRESS:-127.0.0.1}:${VPN_APPLIANCE_PORT:-18443}:18443"
+      - "${HOST_BIND_ADDRESS:-127.0.0.1}:${MALWARE_SINK_PORT:-18085}:18085"
     networks:
       - net_public
       - net_internal
