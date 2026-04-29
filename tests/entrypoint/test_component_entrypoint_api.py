@@ -47,4 +47,8 @@ def test_entrypoint_ingests_normalized_public_portal_event(
     payload = response.json()
     assert payload["observation"]["path"] == "/.env.old"
     assert payload["observation"]["attacker_key"] == "198.51.100.10"
+    assert payload["observation"]["matched_rules"] == [
+        "public_http_credential_discovery"
+    ]
     assert payload["profile"]["attacker_key"] == "198.51.100.10"
+    assert payload["profile"]["recent_techniques"] == ["T1552.001"]

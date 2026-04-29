@@ -55,7 +55,7 @@ def build_chain_health(
     latest_decision = _latest_record(decision_trace, "ts")
     latest_route = _latest_record(gateway_routes, "updated_at")
 
-    return [
+    stages = [
         _service_stage(
             project_name,
             containers,
@@ -85,51 +85,56 @@ def build_chain_health(
             detail=_record_detail(latest_entrypoint, ["method", "path", "attacker_key"]),
             empty_detail="waiting for public portal breadcrumb or direct HTTP probe",
         ),
-        _raw_opencanary_stage(raw_opencanary_event),
-        _forwarder_stage(
-            opencanary_forwarder,
-            opencanary_forwarder_log,
-            stage="OpenCanary forwarder",
-            component="opencanary-forwarder",
-            target="opencanary-adapter",
-        ),
-        _service_stage(
-            project_name,
-            containers,
-            service_name="opencanary-adapter",
-            stage="OpenCanary adapter",
-            detail=_record_detail(
-                latest_opencanary,
-                ["service", "dst_port", "attacker_key"],
-            ),
-            empty_detail="adapter is up, waiting for stored OpenCanary observation",
-        ),
-        _raw_cowrie_stage(raw_cowrie_event),
-        _forwarder_stage(
-            cowrie_forwarder,
-            cowrie_forwarder_log,
-            stage="Cowrie forwarder",
-            component="cowrie-forwarder",
-            target="cowrie-adapter",
-        ),
-        _service_stage(
-            project_name,
-            containers,
-            service_name="cowrie-adapter",
-            stage="Cowrie adapter",
-            detail=_record_detail(latest_cowrie, ["eventid", "command", "attacker_key"]),
-            empty_detail="adapter is up, waiting for stored Cowrie observation",
-        ),
-        _profile_stage(attackers, bindings, latest_decision),
-        _gateway_stage(latest_route),
-        _service_stage(
-            project_name,
-            containers,
-            service_name="dashboard",
-            stage="Dashboard",
-            detail=f"state dir {state_dir}",
-        ),
     ]
+    stages.extend(
+        [
+            _raw_opencanary_stage(raw_opencanary_event),
+            _forwarder_stage(
+                opencanary_forwarder,
+                opencanary_forwarder_log,
+                stage="OpenCanary forwarder",
+                component="opencanary-forwarder",
+                target="opencanary-adapter",
+            ),
+            _service_stage(
+                project_name,
+                containers,
+                service_name="opencanary-adapter",
+                stage="OpenCanary adapter",
+                detail=_record_detail(
+                    latest_opencanary,
+                    ["service", "dst_port", "attacker_key"],
+                ),
+                empty_detail="adapter is up, waiting for stored OpenCanary observation",
+            ),
+            _raw_cowrie_stage(raw_cowrie_event),
+            _forwarder_stage(
+                cowrie_forwarder,
+                cowrie_forwarder_log,
+                stage="Cowrie forwarder",
+                component="cowrie-forwarder",
+                target="cowrie-adapter",
+            ),
+            _service_stage(
+                project_name,
+                containers,
+                service_name="cowrie-adapter",
+                stage="Cowrie adapter",
+                detail=_record_detail(latest_cowrie, ["eventid", "command", "attacker_key"]),
+                empty_detail="adapter is up, waiting for stored Cowrie observation",
+            ),
+            _profile_stage(attackers, bindings, latest_decision),
+            _gateway_stage(latest_route),
+            _service_stage(
+                project_name,
+                containers,
+                service_name="dashboard",
+                stage="Dashboard",
+                detail=f"state dir {state_dir}",
+            ),
+        ]
+    )
+    return stages
 
 
 def _service_stage(

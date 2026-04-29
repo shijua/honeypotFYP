@@ -125,8 +125,8 @@ def entrypoint_client() -> TestClient:
     )
     service = EntrypointService(
         binding_service,
-        profiler_service,
         InMemoryEntrypointObservationRepository(),
+        profiler_service=profiler_service,
     )
 
     def _get_service() -> EntrypointService:

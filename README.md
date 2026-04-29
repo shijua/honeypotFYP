@@ -84,7 +84,7 @@ Each service has a FastAPI app object in `services/*/app.py`. Implemented entryp
 Current MVP flow:
 
 ```bash
-HTTP/Cowrie/OpenCanary event -> resolve binding -> ingest evidence -> read profile -> controller tick -> orchestrator apply -> gateway sync
+Public HTTP/Cowrie/OpenCanary evidence -> resolve binding -> ingest evidence -> read profile -> controller tick -> orchestrator apply -> gateway sync
 ```
 
 ## Runtime storage
@@ -100,7 +100,7 @@ The default local runtime now persists state under `data/runtime/`:
 - `gateway_routes.json`
 - `asset_gateway_routes.json`
 
-The controller asset catalog is now externalized at `data/assets/catalog.json`. Public HTTP detection hints live in `data/detections/public_http_rules.json`. Cowrie event mappings are externalized at `data/cowrie/event_mappings.json`. The profiler resolves tactic/technique relationships from the official MITRE ATT&CK `attack-stix-data` bundle at `data/mitre/enterprise-attack.json`.
+The controller asset catalog is now externalized at `data/assets/catalog.json`. Public HTTP profiling uses JSON-backed rules in `data/detections/public_http_rules.json`; only matching suspicious public-web requests create profiler evidence. Cowrie event mappings are externalized at `data/cowrie/event_mappings.json`. The profiler resolves tactic/technique relationships from the official MITRE ATT&CK `attack-stix-data` bundle at `data/mitre/enterprise-attack.json`.
 
 ## Simulation Helpers
 
@@ -136,7 +136,7 @@ Start the runnable stack without generating attacker traffic:
 ./scripts/start_enterprise_stack.sh
 ```
 
-The enterprise slice includes `public-portal`, a public-portal access-log forwarder, Cowrie, the public website HTTP backend, `SNARE + TANNER`, OpenCanary telemetry plumbing, and the first internal portal. The public portal implements the proposalv2 benign-surface breadcrumbs: login/support/status/API pages, `/robots.txt`, fake backup files, fake `.env.old`, `phpinfo.php`, and frontend source-map honeytokens. Public portal nginx access logs are forwarded into the HTTP backend, so suspicious benign-surface visits become `entrypoint_observations` and cold-start profile evidence.
+The enterprise slice includes `public-portal`, a public-portal access-log forwarder, Cowrie, the public website HTTP backend, optional `SNARE + TANNER`, OpenCanary telemetry plumbing, and the first internal portal. The public portal implements the proposalv2 benign-surface breadcrumbs: login/support/status/API pages, `/robots.txt`, fake backup files, fake `.env.old`, `phpinfo.php`, and frontend source-map honeytokens. Public portal nginx access logs are forwarded into the HTTP backend; suspicious requests are classified by `data/detections/public_http_rules.json` and sent to the profiler.
 
 Current service roles:
 
@@ -152,7 +152,7 @@ Current service roles:
 | `internal-portal` | internal baseline service | internal only; reached through `asset-gateway` on `18080` when dynamically unlocked | First internal asset in the adaptive path |
 | `binding-service`, `profiler`, `controller`, `orchestrator`, `gateway`, `adaptive-loop`, `dashboard` | control plane | dashboard on `8090`; APIs internal | Profiling, asset selection, runtime start, route state, and live monitoring |
 
-Adaptive internal Docker assets no longer publish host ports themselves. The orchestrator starts one backend container per binding on `net_internal`, writes `data/runtime/asset_gateway_routes.json`, and the `asset-gateway` container owns the fixed external ports. For the MVP, the data-plane gateway treats the same source IP as the same attacker and routes by `attacker_key + public_port`; if only one route exists for a port it falls back to that route for easier local testing.
+Adaptive internal Docker assets no longer publish host ports themselves. The orchestrator starts one backend container per binding on `net_internal`, writes `data/runtime/asset_gateway_routes.json`, and the `asset-gateway` container owns the fixed external ports. For the MVP, the data-plane gateway treats the same source IP as the same attacker and routes strictly by `attacker_key + public_port`; if the source IP has not unlocked that asset, the gateway closes the connection instead of falling back to another attacker route.
 
 OpenCanary is no longer an always-on attacker-facing entrypoint. OpenCanary telemetry is collected through `scripts/forward_opencanary_json.py`, which tails `deploy/opencanary/var/opencanary.log` and posts events into `services/opencanary`. Adaptive internal OpenCanary assets mount that shared log directory, so their Git/MySQL/Redis/HTTP/FTP/SSH/Telnet events flow into the dashboard after the controller unlocks them.
 
@@ -199,7 +199,7 @@ curl http://$TARGET_HOST:${DASHBOARD_PORT:-8090}/healthz
 
 Then open `http://$TARGET_HOST:${DASHBOARD_PORT:-8090}/` in a browser.
 
-The dashboard includes a Pipeline Health panel that traces the live path from public surface access logs to HTTP/Cowrie/OpenCanary forwarders, adapters, profile/controller, gateway, and dashboard state. This is the first place to look when public portal probes, raw Cowrie commands, OpenCanary internal asset probes, or public website backend probes do not appear in the profile view.
+The dashboard includes a Pipeline Health panel that traces the live path from public surface access logs, HTTP rule matching, Cowrie/OpenCanary forwarders, adapters, profile/controller, gateway, and dashboard state. This is the first place to look when public HTTP probes, raw Cowrie commands, OpenCanary internal asset probes, or public website backend observations do not appear in the profile view.
 
 Manual actor check after startup:
 
@@ -211,6 +211,6 @@ ssh -p 2222 root@$TARGET_HOST
 curl http://$TARGET_HOST:18080/
 ```
 
-The default compose stack includes an adaptive loop, so new entrypoint/Cowrie profile evidence can trigger controller/orchestrator asset unlocks without manually calling those APIs.
+The default compose stack includes an adaptive loop, so new public HTTP, Cowrie, or OpenCanary profile evidence can trigger controller/orchestrator asset unlocks without manually calling those APIs.
 
 The full rationale and Kubernetes mapping are in `DEPLOYMENT_DRAFT.md`.

@@ -48,6 +48,7 @@ def summarize_demo(state_dir: Path) -> dict[str, Any]:
     bindings = _list_from_file(state_dir / "bindings.json", "records")
     runtime_records = _list_from_file(state_dir / "asset_runtime.json", "records")
     decision_trace = _list_from_file(state_dir / "decision_trace.json", "records")
+    evidence_records = _evidence_records(state_dir / "evidence.json")
     profiles_payload = read_json(state_dir / "profiles.json", {"profiles": {}})
     profiles = profiles_payload.get("profiles", {})
     profiles = profiles if isinstance(profiles, dict) else {}
@@ -56,7 +57,7 @@ def summarize_demo(state_dir: Path) -> dict[str, Any]:
     attackers = sorted(
         {
             str(item.get("attacker_key"))
-            for item in [*observations, *bindings, *decision_trace]
+            for item in [*observations, *bindings, *decision_trace, *evidence_records]
             if isinstance(item, dict) and item.get("attacker_key")
         }
     )
@@ -72,6 +73,7 @@ def summarize_demo(state_dir: Path) -> dict[str, Any]:
                 profiles=profiles,
                 runtime_records=runtime_records,
                 decision_trace=decision_trace,
+                evidence_records=evidence_records,
                 docker_probe=docker_probe,
             )
             for attacker_key in attackers
@@ -124,6 +126,24 @@ def _list_from_file(path: Path, key: str) -> list[dict[str, Any]]:
     return [item for item in items if isinstance(item, dict)]
 
 
+def _evidence_records(path: Path) -> list[dict[str, Any]]:
+    payload = read_json(path, {"records": {}})
+    records = payload.get("records", {})
+    if not isinstance(records, dict):
+        return []
+    items: list[dict[str, Any]] = []
+    for attacker_key, attacker_records in records.items():
+        if not isinstance(attacker_records, list):
+            continue
+        for item in attacker_records:
+            if not isinstance(item, dict):
+                continue
+            item = dict(item)
+            item.setdefault("attacker_key", str(attacker_key))
+            items.append(item)
+    return items
+
+
 def _attacker_report(
     attacker_key: str,
     observations: list[dict[str, Any]],
@@ -131,6 +151,7 @@ def _attacker_report(
     profiles: dict[str, Any],
     runtime_records: list[dict[str, Any]],
     decision_trace: list[dict[str, Any]],
+    evidence_records: list[dict[str, Any]],
     docker_probe: DockerStatusProbe,
 ) -> dict[str, Any]:
     attacker_observations = [
@@ -145,6 +166,9 @@ def _attacker_report(
     ]
     attacker_trace = [
         item for item in decision_trace if item.get("attacker_key") == attacker_key
+    ]
+    attacker_evidence = [
+        item for item in evidence_records if item.get("attacker_key") == attacker_key
     ]
 
     historical_assets = [
@@ -167,7 +191,7 @@ def _attacker_report(
             sorted(Counter(_eventids(attacker_observations)).items())
         ),
         "commands": _commands(attacker_observations),
-        "public_http_evidence": _public_http_evidence(attacker_observations),
+        "public_http_evidence": _public_http_evidence(attacker_evidence),
         "recent_tactics": profile.get("recent_tactics", []),
         "recent_techniques": profile.get("recent_techniques", []),
         "confidence_by_tactic": profile.get("conf_by_tactic", {}),
@@ -215,18 +239,39 @@ def _commands(observations: list[dict[str, Any]]) -> list[str]:
     return list(dict.fromkeys(commands))
 
 
-def _public_http_evidence(observations: list[dict[str, Any]]) -> list[str]:
-    """Return concise HTTP rule indicators for the attacker card."""
+def _public_http_evidence(evidences: list[dict[str, Any]]) -> list[str]:
+    """Return concise public HTTP evidence for the attacker card."""
     evidence: list[str] = []
-    for item in observations:
-        if not isinstance(item.get("method"), str) or not isinstance(item.get("path"), str):
+    for item in evidences:
+        source_ref = item.get("source_ref")
+        if not isinstance(source_ref, dict):
             continue
-        for indicator in item.get("indicators", []):
-            if isinstance(indicator, str) and indicator.strip():
-                evidence.append(indicator.strip())
-        for rule_name in item.get("matched_rules", []):
-            if isinstance(rule_name, str) and rule_name.strip():
-                evidence.append(f"rule:{rule_name.strip()}")
+        if source_ref.get("source") != "public_http":
+            continue
+        labels = source_ref.get("http_evidence_labels")
+        indicators = source_ref.get("http_indicators")
+        http_path = source_ref.get("http_path")
+        http_query = source_ref.get("http_query_string")
+        http_user_agent = source_ref.get("http_user_agent")
+        if isinstance(labels, list):
+            evidence.extend(
+                f"rule:{label.strip()}"
+                for label in labels
+                if isinstance(label, str) and label.strip()
+            )
+        if isinstance(indicators, list):
+            evidence.extend(
+                str(indicator).strip()
+                for indicator in indicators
+                if str(indicator).strip()
+            )
+        if isinstance(http_path, str) and http_path.strip():
+            target = http_path.strip()
+            if isinstance(http_query, str) and http_query.strip():
+                target = f"{target}?{http_query.strip()}"
+            evidence.append(f"path:{target}")
+        if isinstance(http_user_agent, str) and http_user_agent.strip():
+            evidence.append(f"ua:{http_user_agent.strip()}")
     return list(dict.fromkeys(evidence))
 
 

@@ -7,7 +7,6 @@ from scripts.forward_public_portal_access_log import (
     follow_log_file,
     iter_access_events,
     parse_access_line,
-    should_profile_public_request,
 )
 
 
@@ -32,14 +31,7 @@ def test_parse_access_line_builds_entrypoint_event() -> None:
     }
 
 
-def test_should_profile_public_request_classifies_suspicious_paths_and_tools() -> None:
-    assert should_profile_public_request("/.env.old")
-    assert should_profile_public_request("/assets/app.js.map")
-    assert should_profile_public_request("/", "gobuster/3.6")
-    assert not should_profile_public_request("/docs", "Mozilla/5.0")
-
-
-def test_iter_access_events_skips_bad_lines_and_normal_public_pages() -> None:
+def test_iter_access_events_skips_bad_lines_and_forwards_normal_public_pages() -> None:
     events = list(
         iter_access_events(
             [
@@ -51,8 +43,7 @@ def test_iter_access_events_skips_bad_lines_and_normal_public_pages() -> None:
         )
     )
 
-    assert len(events) == 1
-    assert events[0]["path"] == "/.env.old"
+    assert [event["path"] for event in events] == ["/robots.txt", "/.env.old"]
 
 
 def test_forward_lines_posts_public_portal_events(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -77,9 +68,9 @@ def test_forward_lines_posts_public_portal_events(monkeypatch: pytest.MonkeyPatc
         timeout_seconds=0.01,
     )
 
-    assert forwarded == 1
-    assert calls[0]["path"] == "/assets/app.js.map"
-    assert calls[0]["headers"] == {"user-agent": "sqlmap/1.8"}
+    assert forwarded == 2
+    assert [call["path"] for call in calls] == ["/docs", "/assets/app.js.map"]
+    assert calls[1]["headers"] == {"user-agent": "sqlmap/1.8"}
 
 
 def test_follow_log_file_creates_missing_file_in_tail_mode(tmp_path) -> None:

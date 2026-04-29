@@ -211,3 +211,82 @@ def test_ingest_keeps_untagged_events_unclassified() -> None:
     assert response.evidences[0].group is None
     assert response.profile.conf_by_tactic == {}
     assert response.profile.recent_tactics == []
+
+
+def test_ingest_preserves_public_http_source_ref_fields() -> None:
+    service = ProfilerService(
+        InMemoryEvidenceRepository(),
+        InMemoryProfileRepository(),
+        build_test_attack_catalog(),
+    )
+
+    response = service.ingest(
+        EvidenceIngestRequest(
+            attacker_key="198.51.100.50",
+            binding_id="binding-6",
+            event=FalcoEvent(
+                ts=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                falco_rule="HTTP honeypot request",
+                priority="WARNING",
+                output="HTTP GET /api/search?q=1 union select 1 matched public_http_injection_probe",
+                tags=["mitre_discovery", "T1046"],
+                output_fields={
+                    "source": "public_http",
+                    "http_method": "GET",
+                    "http_path": "/api/search",
+                    "http_query_string": "q=1 union select 1",
+                    "http_user_agent": "sqlmap/1.8",
+                    "http_rule_names": ["public_http_injection_probe"],
+                    "http_indicators": ["user_agent:sqlmap", "combined:union%20select"],
+                    "http_evidence_labels": ["public-http injection or exploit probe"],
+                },
+            ),
+        )
+    )
+
+    source_ref = response.evidences[0].source_ref
+    assert source_ref["source"] == "public_http"
+    assert source_ref["http_path"] == "/api/search"
+    assert source_ref["http_query_string"] == "q=1 union select 1"
+    assert source_ref["http_user_agent"] == "sqlmap/1.8"
+    assert source_ref["http_rule_names"] == ["public_http_injection_probe"]
+    assert source_ref["http_indicators"] == ["user_agent:sqlmap", "combined:union%20select"]
+    assert source_ref["http_evidence_labels"] == ["public-http injection or exploit probe"]
+
+
+def test_ingest_maps_multi_tactic_public_http_tags_per_technique() -> None:
+    service = ProfilerService(
+        InMemoryEvidenceRepository(),
+        InMemoryProfileRepository(),
+        build_test_attack_catalog(),
+    )
+
+    response = service.ingest(
+        EvidenceIngestRequest(
+            attacker_key="198.51.100.51",
+            binding_id="binding-7",
+            event=FalcoEvent(
+                ts=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                falco_rule="HTTP honeypot request",
+                priority="INFO",
+                output="GET /api/search?q=1%20union%20select%201",
+                    tags=[
+                        "mitre_initial_access",
+                        "T1566",
+                        "mitre_discovery",
+                        "T1046",
+                ],
+                output_fields={"source": "public_http"},
+            ),
+        )
+    )
+
+    evidence_by_technique = {
+        evidence.tech_id: evidence.group for evidence in response.evidences
+    }
+
+    assert evidence_by_technique == {
+        "T1566": "Initial Access",
+        "T1046": "Discovery",
+    }
+    assert response.profile.recent_tactics == ["Initial Access", "Discovery"]

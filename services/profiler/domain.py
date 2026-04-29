@@ -210,36 +210,12 @@ class ProfilerService:
         return weights.get(priority.upper(), 1.0)
 
     def _derive_attack_mappings(self, event: FalcoEvent) -> list[AttackMapping]:
-        # Trust explicit ATT&CK tags and let the catalog resolve tactic names.
-        tactic = self._tactic_from_tags(event.tags)
-        tech_ids = self._technique_ids_from_tags(event.tags)
-        if tactic and tech_ids:
-            return [
-                AttackMapping(
-                    tech_id=tech_id,
-                    reason=f"{event.falco_rule}: {event.output}",
-                    tactic=tactic,
-                )
-                for tech_id in tech_ids
-            ]
-        if tech_ids:
-            return [
-                self._mapping_for_technique(
-                    tech_id=tech_id,
-                    reason=f"{event.falco_rule}: {event.output}",
-                    tagged_tactic=tactic,
-                )
-                for tech_id in tech_ids
-            ]
-
-        if tactic is not None:
-            return [
-                AttackMapping(
-                    tech_id=None,
-                    reason=f"Tag-only tactic mapping for rule {event.falco_rule}",
-                    tactic=tactic,
-                )
-            ]
+        # Interpret tags in order so a rule can emit
+        # ["mitre_initial_access", "T1190", "mitre_discovery", "T1046"].
+        # Each technique gets the nearest preceding tactic as context.
+        mappings = self._mappings_from_tags(event)
+        if mappings:
+            return mappings
 
         # Without ATT&CK tags, keep the fallback unclassified. TODO
         return [
@@ -250,28 +226,45 @@ class ProfilerService:
             )
         ]
 
-    def _tactic_from_tags(self, tags: list[str]) -> str | None:
-        for tag in tags:
-            if tag.startswith("mitre_"):
-                raw = tag[len("mitre_"):]
-                return self._attack_catalog.canonical_tactic_name(raw)
-        return None
+    def _mappings_from_tags(self, event: FalcoEvent) -> list[AttackMapping]:
+        reason = f"{event.falco_rule}: {event.output}"
+        current_tactic: str | None = None
+        tactic_only_mappings: list[AttackMapping] = []
+        mappings: list[AttackMapping] = []
+        seen_mapping_keys: set[tuple[str | None, str | None]] = set()
 
-    def _technique_ids_from_tags(self, tags: list[str]) -> list[str]:
-        # Accept only canonical ATT&CK technique tags.
-        return [tag for tag in tags if self._TECHNIQUE_TAG_RE.match(tag)]
+        for tag in event.tags:
+            if not tag.startswith("mitre_"):
+                if self._TECHNIQUE_TAG_RE.match(tag):
+                    tactic = current_tactic or self._attack_catalog.tactic_for_technique(
+                        tag
+                    )
+                    mapping_key = (tag, tactic)
+                    if mapping_key not in seen_mapping_keys:
+                        mappings.append(
+                            AttackMapping(
+                                tech_id=tag,
+                                reason=reason,
+                                tactic=tactic,
+                            )
+                        )
+                        seen_mapping_keys.add(mapping_key)
+                continue
 
-    def _mapping_for_technique(
-        self,
-        tech_id: str,
-        reason: str,
-        tagged_tactic: str | None,
-    ) -> AttackMapping:
-        return AttackMapping(
-            tech_id=tech_id,
-            reason=reason,
-            tactic=tagged_tactic or self._attack_catalog.tactic_for_technique(tech_id),
-        )
+            raw = tag[len("mitre_"):]
+            current_tactic = self._attack_catalog.canonical_tactic_name(raw)
+            mapping_key = (None, current_tactic)
+            if current_tactic and mapping_key not in seen_mapping_keys:
+                tactic_only_mappings.append(
+                    AttackMapping(
+                        tech_id=None,
+                        reason=f"Tag-only tactic mapping for rule {event.falco_rule}",
+                        tactic=current_tactic,
+                    )
+                )
+                seen_mapping_keys.add(mapping_key)
+
+        return mappings or tactic_only_mappings
 
     def _infer_success(self, event: FalcoEvent) -> bool:
         # Infer success from obvious failure language.
@@ -288,7 +281,30 @@ class ProfilerService:
         }
         if event.hostname:
             source_ref["hostname"] = event.hostname
-        for key in ("proc_cmdline", "proc_name", "fd_name"):
+        for key in (
+            "proc_cmdline",
+            "proc_name",
+            "fd_name",
+            "source",
+            "event_type",
+            "signature",
+            "category",
+            "severity",
+            "src_ip",
+            "src_port",
+            "dest_ip",
+            "dest_port",
+            "proto",
+            "http_hostname",
+            "http_url",
+            "http_method",
+            "http_path",
+            "http_query_string",
+            "http_user_agent",
+            "http_rule_names",
+            "http_indicators",
+            "http_evidence_labels",
+        ):
             if key in event.output_fields:
                 source_ref[key] = event.output_fields[key]
         return source_ref

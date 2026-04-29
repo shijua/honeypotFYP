@@ -1,7 +1,8 @@
 """Domain logic for the low-interaction public web honeypot.
 
 This module captures HTTP requests, resolves a sticky binding for the source,
-stores the raw observation, and forwards a normalized event into the profiler.
+stores a redacted observation, and sends suspicious public HTTP probes into the
+profiler.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from libs.contracts.models import (
     EntrypointObservation,
     EvidenceIngestRequest,
     FalcoEvent,
+    ProfileSnapshot,
     ResolveBindingRequest,
 )
 from services.binding_service.domain import BindingService
@@ -43,7 +45,7 @@ _SECRET_BODY_FIELD_RE = re.compile(
 
 
 class EntrypointService:
-    """Capture public HTTP probes and feed them into the profiling pipeline.
+    """Capture public HTTP probes and profile suspicious public-web behavior.
 
     Example:
         capture_http_request(GET /.env) -> observation + binding + profile update
@@ -52,13 +54,13 @@ class EntrypointService:
     def __init__(
         self,
         binding_service: BindingService,
-        profiler_service: ProfilerService,
         observation_repository: EntrypointObservationRepository,
+        profiler_service: ProfilerService | None = None,
         public_http_rule_matcher: PublicHttpRuleMatcher | None = None,
     ) -> None:
         self._binding_service = binding_service
-        self._profiler_service = profiler_service
         self._observation_repository = observation_repository
+        self._profiler_service = profiler_service
         self._public_http_rule_matcher = (
             public_http_rule_matcher or FilePublicHttpRuleMatcher()
         )
@@ -67,7 +69,7 @@ class EntrypointService:
         self,
         request: EntrypointCaptureRequest,
     ) -> EntrypointCaptureResponse:
-        """Capture one HTTP request and update binding/profile state."""
+        """Capture one HTTP request and update binding/observation state."""
         now = utcnow()
         # The binding service owns attacker session identity. Entrypoint only
         # asks for the current sticky binding for this source and protocol.
@@ -83,9 +85,8 @@ class EntrypointService:
         safe_headers = _redact_headers(request.headers)
         safe_body_preview = _redact_body_preview(request.body_preview)
 
-        # Feed the HTTP probe into the same profiler path as other telemetry.
-        # Detection rules live in data/detections/public_http_rules.json so
-        # MITRE tags and visible indicators can evolve outside service logic.
+        # Only suspicious public HTTP requests become profiler evidence. Normal
+        # public-page visits are retained as benign-surface context.
         rule_matches = self._public_http_rule_matcher.matches_for(
             method=request.method,
             path=request.path,
@@ -101,33 +102,38 @@ class EntrypointService:
             for match in rule_matches
             if match.evidence_label is not None
         ]
-        ingest_response = self._profiler_service.ingest(
-            EvidenceIngestRequest(
-                attacker_key=request.attacker_key,
-                binding_id=binding.binding_id,
-                event=FalcoEvent(
-                    ts=now,
-                    falco_rule="HTTP honeypot request",
-                    priority="INFO",
-                    output=_format_http_output(request, indicators),
-                    tags=tags,
-                    output_fields={
-                        "http_method": request.method.upper(),
-                        "http_path": request.path,
-                        "http_query_string": request.query_string,
-                        "http_user_agent": safe_headers.get("user-agent"),
-                        "http_body_preview": safe_body_preview,
-                        "http_rule_names": matched_rules,
-                        "http_indicators": indicators,
-                        "http_evidence_labels": evidence_labels,
-                    },
-                ),
+        profile = ProfileSnapshot(attacker_key=request.attacker_key)
+        profiler_evidence_ids: list[str] = []
+        if rule_matches and self._profiler_service is not None:
+            ingest_response = self._profiler_service.ingest(
+                EvidenceIngestRequest(
+                    attacker_key=request.attacker_key,
+                    binding_id=binding.binding_id,
+                    event=FalcoEvent(
+                        ts=now,
+                        falco_rule="HTTP honeypot request",
+                        priority="INFO",
+                        output=_format_http_output(request, indicators),
+                        tags=tags,
+                        output_fields={
+                            "source": "public_http",
+                            "http_method": request.method.upper(),
+                            "http_path": request.path,
+                            "http_query_string": request.query_string,
+                            "http_user_agent": safe_headers.get("user-agent"),
+                            "http_body_preview": safe_body_preview,
+                            "http_rule_names": matched_rules,
+                            "http_indicators": indicators,
+                            "http_evidence_labels": evidence_labels,
+                        },
+                    ),
+                )
             )
-        )
+            profile = ingest_response.profile
+            profiler_evidence_ids = [
+                evidence.evidence_id for evidence in ingest_response.evidences
+            ]
 
-        # Observation is the research/debug record for this public-web probe.
-        # matched_rules/tags/indicators explain why it was profiled, while
-        # profiler_evidence_ids link it back to normalized ATT&CK evidence.
         observation = EntrypointObservation(
             observation_id=str(uuid4()),
             ts=now,
@@ -144,15 +150,13 @@ class EntrypointService:
             matched_rules=matched_rules,
             tags=tags,
             indicators=indicators,
-            profiler_evidence_ids=[
-                evidence.evidence_id for evidence in ingest_response.evidences
-            ],
+            profiler_evidence_ids=profiler_evidence_ids,
         )
         stored_observation = self._observation_repository.add(observation)
         return EntrypointCaptureResponse(
             observation=stored_observation,
             binding=binding,
-            profile=ingest_response.profile,
+            profile=profile,
         )
 
 

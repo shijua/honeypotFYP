@@ -82,8 +82,15 @@ truncate_log() {
   local dir
   local tmp
   dir="$(dirname "$path")"
-  mkdir -p "$dir"
-  tmp="$(mktemp "$dir/.reset-log.XXXXXX")"
+  mkdir -p "$dir" 2>/dev/null || true
+  if [[ -e "$path" ]] && : >"$path" 2>/dev/null; then
+    chmod 666 "$path" 2>/dev/null || true
+    return
+  fi
+  if ! tmp="$(mktemp "$dir/.reset-log.XXXXXX" 2>/dev/null)"; then
+    echo "Warning: could not reset log $path; fix directory ownership or remove it manually" >&2
+    return 0
+  fi
   chmod 666 "$tmp" || true
   mv -f "$tmp" "$path"
 }

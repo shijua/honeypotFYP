@@ -15,29 +15,29 @@ from tests.support.attack_catalog import build_test_attack_catalog
 pytestmark = pytest.mark.unit
 
 
-def test_capture_http_request_creates_binding_observation_and_profile_evidence() -> None:
+def test_capture_http_request_creates_binding_and_observation_without_profile_evidence() -> None:
     observation_repository = InMemoryEntrypointObservationRepository()
     service = EntrypointService(
         BindingService(InMemoryBindingRepository()),
-        ProfilerService(
+        observation_repository,
+        profiler_service=ProfilerService(
             InMemoryEvidenceRepository(),
             InMemoryProfileRepository(),
             build_test_attack_catalog(),
         ),
-        observation_repository,
     )
 
     response = service.capture_http_request(
         EntrypointCaptureRequest(
             attacker_key="198.51.100.200",
             method="POST",
-            path="/wp-login.php",
-            query_string="redirect_to=/wp-admin",
+            path="/contact",
+            query_string="",
             headers={
                 "user-agent": "curl/8.0",
                 "authorization": "Bearer secret",
             },
-            body_preview="log=admin&pwd=hunter2",
+            body_preview="message=hello",
         )
     )
 
@@ -45,24 +45,25 @@ def test_capture_http_request_creates_binding_observation_and_profile_evidence()
     assert len(observations) == 1
     assert observations[0].binding_id == response.binding.binding_id
     assert observations[0].headers["authorization"] == "[redacted]"
-    assert observations[0].body_preview == "log=admin&pwd=[redacted]"
-    assert observations[0].profiler_evidence_ids == response.profile.recent_evidence_ids
-    assert observations[0].matched_rules == ["public_http_login_attempt"]
-    assert "body_preview:pwd=" in observations[0].indicators
-    assert response.profile.recent_tactics == ["Credential Access"]
-    assert response.profile.recent_techniques == ["T1110"]
+    assert observations[0].body_preview == "message=hello"
+    assert observations[0].profiler_evidence_ids == []
+    assert observations[0].matched_rules == []
+    assert observations[0].indicators == []
+    assert response.profile.attacker_key == "198.51.100.200"
+    assert response.profile.recent_tactics == []
+    assert response.profile.recent_techniques == []
 
 
-def test_capture_http_request_maps_public_secret_probe_to_credential_access() -> None:
+def test_capture_http_request_profiles_public_secret_probe() -> None:
     observation_repository = InMemoryEntrypointObservationRepository()
     service = EntrypointService(
         BindingService(InMemoryBindingRepository()),
-        ProfilerService(
+        observation_repository,
+        profiler_service=ProfilerService(
             InMemoryEvidenceRepository(),
             InMemoryProfileRepository(),
             build_test_attack_catalog(),
         ),
-        observation_repository,
     )
 
     response = service.capture_http_request(
@@ -76,18 +77,23 @@ def test_capture_http_request_maps_public_secret_probe_to_credential_access() ->
 
     assert response.profile.recent_tactics == ["Credential Access"]
     assert response.profile.recent_techniques == ["T1552.001"]
+    observations = tuple(observation_repository.list_recent())
+    assert observations[0].path == "/.env.old"
+    assert observations[0].matched_rules == ["public_http_credential_discovery"]
+    assert "combined:.env" in observations[0].indicators
+    assert observations[0].profiler_evidence_ids
 
 
-def test_capture_http_request_maps_source_map_probe_to_discovery() -> None:
+def test_capture_http_request_profiles_source_map_probe() -> None:
     observation_repository = InMemoryEntrypointObservationRepository()
     service = EntrypointService(
         BindingService(InMemoryBindingRepository()),
-        ProfilerService(
+        observation_repository,
+        profiler_service=ProfilerService(
             InMemoryEvidenceRepository(),
             InMemoryProfileRepository(),
             build_test_attack_catalog(),
         ),
-        observation_repository,
     )
 
     response = service.capture_http_request(
@@ -103,5 +109,4 @@ def test_capture_http_request_maps_source_map_probe_to_discovery() -> None:
     assert response.profile.recent_techniques == ["T1046"]
     observations = tuple(observation_repository.list_recent())
     assert observations[0].matched_rules == ["public_http_web_discovery"]
-    assert "user_agent:gobuster" in observations[0].indicators
     assert "path:.map" in observations[0].indicators

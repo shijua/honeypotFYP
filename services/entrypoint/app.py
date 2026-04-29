@@ -4,8 +4,9 @@ The same service has two roles:
 - backend ingestion for public-portal access-log events
 - direct low-interaction HTTP probe handling for manual or attacker tests
 
-Captured requests are persisted, sent to the profiler, and answered with a
-plain 404 when the service is reached directly.
+Captured requests are persisted as observation context and answered with a
+plain 404 when the service is reached directly. Suspicious public HTTP requests
+also create profiler evidence through the local JSON rule matcher.
 """
 
 from __future__ import annotations

@@ -51,6 +51,35 @@ def test_dashboard_summary_endpoint_returns_live_snapshot(
         },
     )
     _write_json(
+        state_dir / "evidence.json",
+        {
+            "records": {
+                "198.51.100.10": [
+                    {
+                        "evidence_id": "e-public-http-1",
+                        "ts": "2026-01-01T00:00:01Z",
+                        "attacker_key": "198.51.100.10",
+                        "binding_id": "binding-1",
+                        "tech_id": "T1552.001",
+                        "group": "Credential Access",
+                        "weight": 2.5,
+                        "success": True,
+                        "reason": "HTTP honeypot request",
+                        "source_ref": {
+                            "source": "public_http",
+                            "http_path": "/.env",
+                            "http_user_agent": "curl/8.0",
+                            "http_evidence_labels": [
+                                "public-http credential or backup discovery"
+                            ],
+                            "http_indicators": ["combined:.env"],
+                        },
+                    }
+                ]
+            }
+        },
+    )
+    _write_json(
         state_dir / "asset_runtime.json",
         {
             "records": [
@@ -119,9 +148,9 @@ def test_dashboard_summary_endpoint_returns_live_snapshot(
                     "method": "GET",
                     "path": "/.env",
                     "response_status": 404,
-                    "matched_rules": ["public_http_credential_discovery"],
-                    "tags": ["mitre_credential_access", "T1552.001"],
-                    "indicators": ["combined:.env"],
+                    "matched_rules": [],
+                    "tags": [],
+                    "indicators": [],
                 }
             ]
         },
@@ -285,8 +314,10 @@ def test_dashboard_summary_endpoint_returns_live_snapshot(
     assert payload["gateway_routes"][0]["exposed_assets"] == ["internal-portal"]
     assert payload["attackers"][0]["current_running_assets"][0]["asset_id"] == "internal-portal"
     assert payload["attackers"][0]["public_http_evidence"] == [
+        "rule:public-http credential or backup discovery",
         "combined:.env",
-        "rule:public_http_credential_discovery",
+        "path:/.env",
+        "ua:curl/8.0",
     ]
     assert payload["metrics"]["healthy_chain_stages"] >= 6
     assert {
@@ -303,7 +334,7 @@ def test_dashboard_summary_endpoint_returns_live_snapshot(
     }["OpenCanary forwarder"] == "ok"
     assert "do-not-render" not in json.dumps(payload["chain_health"])
     assert payload["recent_entrypoint_observations"][0]["path"] == "/.env"
-    assert payload["recent_entrypoint_observations"][0]["indicators"] == ["combined:.env"]
+    assert payload["recent_entrypoint_observations"][0]["indicators"] == []
     assert payload["recent_cowrie_observations"][0]["command"] == "cat /etc/passwd"
     assert payload["recent_opencanary_observations"][0]["service"] == "redis"
 

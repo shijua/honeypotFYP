@@ -1,8 +1,4 @@
-"""Default local wiring for the public entrypoint service.
-
-The entrypoint shares binding and profiler runtimes so captured traffic enters
-the same MVP control loop used by the rest of the app.
-"""
+"""Default local wiring for the public entrypoint service."""
 
 from __future__ import annotations
 
@@ -10,16 +6,24 @@ from libs.common.config import RuntimeConfig
 from services.binding_service.runtime import get_runtime_service as get_binding_service
 from services.entrypoint.domain import EntrypointService
 from services.entrypoint.repository import FileEntrypointObservationRepository
-from services.profiler.app import get_service as get_profiler_service
+from services.profiler.attack_catalog import MitreAttackCatalog
+from services.profiler.domain import ProfilerService
+from services.profiler.repository import FileEvidenceRepository, FileProfileRepository
 
 _config = RuntimeConfig()
 _repository = FileEntrypointObservationRepository(
     f"{_config.state_dir}/entrypoint_observations.json"
 )
+_profiler_service = ProfilerService(
+    FileEvidenceRepository(f"{_config.state_dir}/evidence.json"),
+    FileProfileRepository(f"{_config.state_dir}/profiles.json"),
+    MitreAttackCatalog(_config.mitre_attack_stix_path),
+    config=_config,
+)
 _service = EntrypointService(
     get_binding_service(),
-    get_profiler_service(),
     _repository,
+    profiler_service=_profiler_service,
 )
 
 
