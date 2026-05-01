@@ -295,6 +295,9 @@ class AssetDefinition(VersionedModel):
     evidence before they become eligible. Supported signal keys are
     `any_http_paths`, `any_http_rules`, and `any_http_indicators`; each matches
     against the corresponding `ProfileSnapshot.recent_public_http_*` field.
+    Optional `default_settings.selection_profile` metadata describes reveal
+    outputs and tactic difficulty for future controller scoring without adding
+    new top-level contract fields.
 
     Example:
         {
@@ -307,6 +310,10 @@ class AssetDefinition(VersionedModel):
                 "unlock_signals": {
                     "any_http_paths": ["/backup/db_backup_2024.sql.bak"],
                     "any_http_indicators": ["path:.bak"]
+                },
+                "selection_profile": {
+                    "tactic_difficulties": {"Collection": 2},
+                    "reveal_outputs": ["finance exports"]
                 }
             },
             "covers_tactics": ["Credential Access", "Collection"]

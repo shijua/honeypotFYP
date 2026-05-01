@@ -1,6 +1,8 @@
-# Fake remote access gateway backup.
 hostname=ra-gw-02
 realm=Employees
 mfa_policy=Corp-Access-Default
 split_tunnel=false
+profile_store=/download/contractor-profile.ovpn
+admin_console=http://intranet-admin-02.internal
+source_control=git.internal.local:9418/infra-deploy.git
 last_backup=2026-04-21T02:15:00Z

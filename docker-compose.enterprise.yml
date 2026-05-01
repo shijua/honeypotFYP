@@ -199,6 +199,8 @@ services:
     image: nginx:alpine
     expose:
       - "80"
+    volumes:
+      - ./deploy/internal-assets/internal-portal/html:/usr/share/nginx/html:ro
     networks:
       - net_internal
     restart: unless-stopped

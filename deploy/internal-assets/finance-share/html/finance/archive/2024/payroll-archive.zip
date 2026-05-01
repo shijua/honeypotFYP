@@ -1,6 +1,5 @@
-FAKE ZIP PLACEHOLDER
-This lab file is intentionally plain text with a zip-looking name.
-Contained names:
+Archive manifest: payroll-archive.zip
+Contained files:
 - payroll-april.csv
 - contractor-accounts.csv
 - notes/password-rotation.txt

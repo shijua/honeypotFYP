@@ -1,0 +1,6 @@
+# Redis cache inventory snapshot
+session:portal.reader={"user":"portal.reader","role":"directory-readonly","expires":"2026-05-03T23:00:00Z"}
+feature:admin-console:mfa-bypass-window={"enabled":false,"ticket":"OPS-1842","owner":"platform-operations"}
+service:customer-portal:upstream={"api":"customer-portal.internal.local","db":"db01.internal.local","git":"git.internal.local:9418"}
+deploy:latest:customer-portal={"version":"2026.04.27","repo":"infra-deploy","pipeline":"deploy-prod-1842"}
+token:reporting:readonly={"owner":"finance-reader","scope":"reports:read","rotation":"OPS-1811"}

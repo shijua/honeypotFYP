@@ -3,8 +3,8 @@
   "file": "app.js",
   "sources": ["webpack://northbridge-portal/src/config.ts", "webpack://northbridge-portal/src/internalRoutes.ts"],
   "sourcesContent": [
-    "export const INTERNAL_API_KEY = 'DECOY_INTERNAL_API_KEY_PUBLIC_SURFACE';\nexport const GITEA_TOKEN = 'DECOY_GITEA_TOKEN_PUBLIC_SURFACE';\nexport const BACKUP_READER_PASSWORD = 'DECOY_BACKUP_READER_PASSWORD';\n",
-    "export const routes = ['/api/v1/login', '/api/v1/invoices', '/admin/status', '/internal-api/status'];\nexport const hosts = ['git.internal.local', 'db01.internal.local', 'redis-cache.internal.local'];\n"
+    "export const INTERNAL_API_KEY = 'nb_api_ro_2026_04_status';\nexport const GITEA_TOKEN = 'nbg_git_ro_2026_04_legacy';\nexport const BACKUP_READER_PASSWORD = 'NbBackupReader-2026-04';\nexport const PORTAL_READER_TOKEN = 'nbp_reader_2026_04_window';\n",
+    "export const routes = ['/api/v1/login', '/api/v1/invoices', '/admin/status', '/internal-api/status'];\nexport const hosts = ['git.internal.local', 'db01.internal.local', 'redis-cache.internal.local', 'intranet.internal.local'];\n"
   ],
   "names": [],
   "mappings": ""

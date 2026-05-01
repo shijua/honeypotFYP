@@ -1,5 +1,9 @@
--- Decoy backup for attacker-behaviour testing only.
+-- Customer portal archive extracted during April migration.
 CREATE TABLE customers (id integer, email varchar(255), account_tier varchar(32));
 CREATE TABLE invoices (id integer, customer_id integer, amount_cents integer, status varchar(32));
 CREATE TABLE api_tokens (id integer, owner varchar(64), token_hint varchar(128));
-INSERT INTO api_tokens VALUES (1, 'platform-support', 'DECOY_INTERNAL_API_KEY_PUBLIC_SURFACE');
+CREATE TABLE service_inventory (id integer, service_name varchar(64), internal_host varchar(128));
+INSERT INTO api_tokens VALUES (1, 'platform-support', 'nb_api_ro_2026_04_status');
+INSERT INTO service_inventory VALUES (1, 'finance-share', 'finance-share.internal.local');
+INSERT INTO service_inventory VALUES (2, 'redis-cache', 'redis-cache.internal.local');
+INSERT INTO service_inventory VALUES (3, 'archive-transfer', 'archive-ftps.internal.local');

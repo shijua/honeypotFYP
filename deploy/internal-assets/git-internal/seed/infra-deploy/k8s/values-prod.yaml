@@ -1,0 +1,22 @@
+global:
+  environment: production
+  owner: platform-operations
+
+customerPortal:
+  publicHost: portal.northbridge.example
+  internalStatusUrl: http://intranet.internal.local/internal-api/status
+  adminConsoleUrl: http://intranet-admin-02.internal
+
+redis:
+  host: redis-cache.internal.local
+  port: 6379
+  readOnlyUser: portal_cache_ro
+
+finance:
+  shareHost: finance-share.internal.local
+  archivePath: /finance/archive/2024/
+  backupReader: backup-reader
+
+mail:
+  relayHost: mail-relay.internal.local
+  senderDomain: corp.example

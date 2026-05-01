@@ -1,5 +1,10 @@
--- Fake backup lure for the honeynet internal finance share.
--- No real credentials or customer data are present.
+-- Finance archive migration export.
 CREATE DATABASE finance_archive;
 CREATE TABLE migration_notes (id int, note text);
-INSERT INTO migration_notes VALUES (1, 'Legacy export kept for finance portal migration testing.');
+CREATE TABLE export_locations (id int, label text, path text, owner text);
+CREATE TABLE service_accounts (id int, username text, target_host text, rotation_ticket text);
+INSERT INTO migration_notes VALUES (1, 'Legacy export retained until FIN-2026-Q2 close is signed off.');
+INSERT INTO export_locations VALUES (1, 'q4 budget review', '/finance/archive/2024/budget-q4-review.xlsx', 'finance.ops');
+INSERT INTO export_locations VALUES (2, 'payroll archive', '/finance/archive/2024/payroll-archive.zip', 'payroll.shared');
+INSERT INTO service_accounts VALUES (1, 'finance-reader', 'finance-share.internal.local', 'OPS-1842');
+INSERT INTO service_accounts VALUES (2, 'backup-reader', 'archive-ftps.internal.local', 'OPS-1811');

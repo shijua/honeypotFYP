@@ -20,6 +20,8 @@ def _catalog_by_id() -> dict[str, AssetDefinition]:
 def test_static_internal_assets_have_nginx_runtime_and_files() -> None:
     assets = _catalog_by_id()
     expected_ports = {
+        "internal-portal": 18080,
+        "web-admin-console": 18081,
         "finance-share": 18082,
         "ics-plc": 18084,
         "vpn-appliance": 18443,
@@ -44,7 +46,7 @@ def test_static_internal_assets_have_nginx_runtime_and_files() -> None:
 
 
 def test_static_internal_assets_include_breadcrumb_files() -> None:
-    # These files are intentional decoys. Public-surface probes for similar
+    # These files are realistic breadcrumbs. Public-surface probes for similar
     # names should become evidence that can unlock related internal assets.
     breadcrumb_paths = [
         "deploy/internal-assets/finance-share/html/finance/archive/2024/budget-q4-review.xlsx",
@@ -61,6 +63,22 @@ def test_static_internal_assets_include_breadcrumb_files() -> None:
     ]
 
     for relative_path in breadcrumb_paths:
+        path = ROOT / relative_path
+
+        assert path.exists()
+        assert path.stat().st_size > 0
+
+
+def test_git_and_redis_seed_material_exists_for_realistic_future_runtime() -> None:
+    seed_paths = [
+        "deploy/internal-assets/git-internal/seed/infra-deploy/README.md",
+        "deploy/internal-assets/git-internal/seed/infra-deploy/k8s/values-prod.yaml",
+        "deploy/internal-assets/git-internal/seed/infra-deploy/runbooks/incident-admin-console.md",
+        "deploy/internal-assets/git-internal/seed/customer-portal/config/application-prod.yml",
+        "deploy/internal-assets/redis-cache/seed/keys.txt",
+    ]
+
+    for relative_path in seed_paths:
         path = ROOT / relative_path
 
         assert path.exists()
@@ -111,3 +129,22 @@ def test_internal_assets_declare_public_http_unlock_signals() -> None:
         ]
 
         assert expected_signal in signal_values
+
+
+def test_internal_assets_declare_selection_profiles() -> None:
+    # Selection metadata keeps the asset catalogue useful for controller scoring
+    # without adding new top-level fields to the shared AssetDefinition schema.
+    assets = _catalog_by_id()
+
+    for asset in assets.values():
+        selection_profile = asset.default_settings.get("selection_profile")
+
+        assert isinstance(selection_profile, dict)
+        assert selection_profile["reveal_outputs"]
+        assert selection_profile["selection_notes"]
+
+        tactic_difficulties = selection_profile["tactic_difficulties"]
+        assert set(asset.covers_tactics).issubset(tactic_difficulties)
+        for difficulty in tactic_difficulties.values():
+            assert isinstance(difficulty, int)
+            assert 1 <= difficulty <= 5

@@ -194,6 +194,12 @@ curl -i http://$CLIENT_TARGET_HOST:${VPN_APPLIANCE_PORT:-18443}/backup/ra-config
 curl -i http://$CLIENT_TARGET_HOST:${MALWARE_SINK_PORT:-18085}/downloads/agent-update.bin
 ```
 
+For manual port/page testing, `scripts/unlock_internal_assets_for_test.sh` can force-open gateway-testable internal Docker assets for one source IP through the normal orchestrator API:
+
+```bash
+ATTACKER_KEY=$CLIENT_TARGET_HOST ./scripts/unlock_internal_assets_for_test.sh
+```
+
 Vulnerable internal assets are now represented in the normal asset catalog. Clone Vulhub under the ignored `vendor/vulhub/` path before triggering `log4shell-app`:
 
 ```bash
@@ -237,5 +243,3 @@ curl http://$TARGET_HOST:18080/
 ```
 
 The default compose stack includes an adaptive loop, so new public HTTP, Cowrie, or OpenCanary profile evidence can trigger controller/orchestrator asset unlocks without manually calling those APIs.
-
-The full rationale and Kubernetes mapping are in `DEPLOYMENT_DRAFT.md`.

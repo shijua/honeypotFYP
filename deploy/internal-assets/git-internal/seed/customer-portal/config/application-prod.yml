@@ -1,0 +1,19 @@
+app:
+  name: customer-portal
+  apiBase: /api/v1
+  internalStatusEndpoint: /internal-api/status
+
+internal:
+  portalUrl: http://intranet.internal.local
+  gitCloneUrl: git://git.internal.local:9418/infra-deploy.git
+  financeShareUrl: http://finance-share.internal.local
+
+credentials:
+  portalReaderUser: portal.reader
+  portalReaderTokenEnv: PORTAL_READER_TOKEN
+  backupReaderUser: backup-reader
+
+cache:
+  host: redis-cache.internal.local
+  port: 6379
+  readOnlyUser: portal_cache_ro

@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Operations Portal</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #17202f;
+      --muted: #627084;
+      --line: #d8e0eb;
+      --panel: #ffffff;
+      --page: #eef3f8;
+      --accent: #0f766e;
+      --accent-soft: #dff4ef;
+      --warn: #9a5b00;
+      --warn-soft: #fff3d7;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: var(--page);
+      color: var(--ink);
+    }
+
+    header {
+      background: #15243a;
+      color: #f8fbff;
+      padding: 18px 34px;
+      border-bottom: 4px solid #2ea99c;
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: 24px;
+      line-height: 1.2;
+    }
+
+    header p {
+      margin: 6px 0 0;
+      color: #b9c7d8;
+      font-size: 14px;
+    }
+
+    main {
+      max-width: 1180px;
+      margin: 24px auto;
+      padding: 0 20px 36px;
+      display: grid;
+      grid-template-columns: minmax(230px, 280px) minmax(0, 1fr);
+      gap: 20px;
+    }
+
+    section,
+    aside {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+    }
+
+    aside {
+      padding: 18px;
+    }
+
+    aside h2,
+    section h2 {
+      margin: 0 0 14px;
+      font-size: 17px;
+    }
+
+    .nav-list,
+    .doc-list,
+    .ticket-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+
+    .nav-list li + li,
+    .doc-list li + li,
+    .ticket-list li + li {
+      border-top: 1px solid #edf1f6;
+    }
+
+    .nav-list a {
+      display: block;
+      padding: 12px 0;
+      color: #1f4e79;
+      text-decoration: none;
+      font-weight: 700;
+    }
+
+    .nav-list span {
+      display: block;
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 400;
+    }
+
+    .content {
+      display: grid;
+      gap: 20px;
+    }
+
+    .access-panel {
+      grid-column: 1 / -1;
+      padding: 24px;
+    }
+
+    .access-panel p {
+      margin: 0 0 18px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .auth-grid {
+      display: grid;
+      grid-template-columns: minmax(180px, 1fr) minmax(220px, 1.4fr) auto;
+      gap: 12px;
+      align-items: end;
+    }
+
+    label {
+      display: block;
+      color: #34445a;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    input {
+      width: 100%;
+      margin-top: 7px;
+      padding: 10px 11px;
+      border: 1px solid #b9c6d7;
+      border-radius: 4px;
+    }
+
+    button {
+      padding: 11px 15px;
+      border: 0;
+      border-radius: 4px;
+      background: var(--accent);
+      color: #ffffff;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .auth-error {
+      display: none;
+      margin-top: 12px;
+      color: #9b2c2c;
+      font-size: 13px;
+    }
+
+    .locked .systems,
+    .locked .content {
+      display: none;
+    }
+
+    .unlocked .access-panel {
+      display: none;
+    }
+
+    .hero {
+      padding: 24px;
+    }
+
+    .hero h2 {
+      font-size: 22px;
+    }
+
+    .hero p {
+      margin: 0;
+      max-width: 720px;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 18px;
+    }
+
+    .status {
+      border: 1px solid #d7e4ef;
+      border-radius: 6px;
+      padding: 14px;
+      min-height: 88px;
+    }
+
+    .status strong {
+      display: block;
+      font-size: 13px;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+
+    .status span {
+      display: block;
+      margin-top: 8px;
+      font-size: 20px;
+      font-weight: 700;
+    }
+
+    .status small {
+      display: block;
+      margin-top: 5px;
+      color: var(--muted);
+    }
+
+    .columns {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 20px;
+    }
+
+    .panel-body {
+      padding: 18px;
+    }
+
+    .doc-list a,
+    .ticket-list a {
+      display: block;
+      padding: 12px 0;
+      color: #1f4e79;
+      text-decoration: none;
+      font-weight: 700;
+    }
+
+    .doc-list span,
+    .ticket-list span {
+      display: block;
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 400;
+    }
+
+    .notice {
+      margin-top: 18px;
+      padding: 13px 14px;
+      border: 1px solid #d6ecdf;
+      border-radius: 6px;
+      background: var(--accent-soft);
+      color: #155e54;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .maintenance {
+      border-color: #f1d59b;
+      background: var(--warn-soft);
+      color: var(--warn);
+    }
+
+    @media (max-width: 820px) {
+      main,
+      .columns,
+      .status-grid,
+      .auth-grid {
+        grid-template-columns: 1fr;
+      }
+
+      header {
+        padding: 16px 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Northbridge Operations Portal</h1>
+    <p>Internal service directory, operational notices, and team resources.</p>
+  </header>
+
+  <main id="portal-root" class="locked">
+    <section class="access-panel">
+      <h2>Service Directory Recovery</h2>
+      <p>This directory is restricted to operations staff and approved service accounts. Use the portal reader account from the April migration notes to restore read-only access.</p>
+      <form id="portal-auth" class="auth-grid">
+        <div>
+          <label for="portal-user">Username</label>
+          <input id="portal-user" name="portal-user" autocomplete="username" value="portal.reader">
+        </div>
+        <div>
+          <label for="portal-token">Recovery token</label>
+          <input id="portal-token" name="portal-token" autocomplete="off">
+        </div>
+        <button type="submit">Open directory</button>
+      </form>
+      <div id="auth-error" class="auth-error">Recovery token rejected. Check the migration access list and try again.</div>
+      <div class="notice">
+        Hint: April migration access entries were copied into the customer portal backup area before Vault cutover.
+      </div>
+    </section>
+
+    <aside class="systems">
+      <h2>Systems</h2>
+      <ul class="nav-list">
+        <li><a data-port="18082" href="#">Finance Share<span>Budget archives, payroll exports, vendor records</span></a></li>
+        <li><a data-port="19418" data-protocol="git" href="#">Source Control<span>Infrastructure and service deployment repositories</span></a></li>
+        <li><a data-port="18081" href="#">Admin Console<span>Operations web console and maintenance login</span></a></li>
+        <li><a data-port="18443" href="#">VPN Appliance<span>Remote access gateway and client bundles</span></a></li>
+        <li><a data-port="18084" href="#">Plant PLC Panel<span>Water treatment telemetry and device maps</span></a></li>
+        <li><a data-port="18085" href="#">Update Staging<span>Endpoint package staging and upload area</span></a></li>
+      </ul>
+      <div class="notice maintenance">
+        Weekend migration window: source control and finance archive services may briefly return maintenance pages.
+      </div>
+    </aside>
+
+    <div class="content">
+      <section class="hero">
+        <h2>Operations Overview</h2>
+        <p>Use this portal for internal service discovery, current maintenance windows, and team-owned operational resources. External support cases should be cross-checked before changes are applied to production services.</p>
+        <div class="status-grid">
+          <div class="status">
+            <strong>Open Tickets</strong>
+            <span>17</span>
+            <small>4 waiting on infrastructure</small>
+          </div>
+          <div class="status">
+            <strong>Maintenance</strong>
+            <span>2</span>
+            <small>VPN and source control</small>
+          </div>
+          <div class="status">
+            <strong>Backups</strong>
+            <span>96%</span>
+            <small>Last archive completed 02:10 UTC</small>
+          </div>
+        </div>
+      </section>
+
+      <div class="columns">
+        <section>
+          <div class="panel-body">
+            <h2>Recent Documents</h2>
+            <ul class="doc-list">
+              <li><a data-port="18082" data-path="/finance/archive/2024/budget-q4-review.xlsx" href="#">budget-q4-review.xlsx<span>Finance archive updated by accounts.payable</span></a></li>
+              <li><a data-port="18443" data-path="/download/contractor-profile.ovpn" href="#">contractor-profile.ovpn<span>Remote access profile for approved contractors</span></a></li>
+              <li><a data-port="18084" data-path="/maps/modbus-unit-map.csv" href="#">modbus-unit-map.csv<span>PLC unit map exported from plant telemetry</span></a></li>
+              <li><a data-port="18085" data-path="/downloads/agent-update.bin" href="#">agent-update.bin<span>Endpoint staging package, pending release approval</span></a></li>
+            </ul>
+          </div>
+        </section>
+
+        <section>
+          <div class="panel-body">
+            <h2>Open Requests</h2>
+            <ul class="ticket-list">
+              <li><a data-port="18081" href="#">OPS-1842 Admin console password rotation<span>Assigned to platform operations</span></a></li>
+              <li><a data-port="19418" data-protocol="git" href="#">OPS-1839 Review infra deploy repository<span>Pending merge window confirmation</span></a></li>
+              <li><a data-port="12121" data-protocol="ftp" href="#">OPS-1811 Archive transfer audit<span>Finance archive handoff review</span></a></li>
+              <li><a data-port="16379" data-protocol="redis" href="#">OPS-1797 Redis cache probe from staging<span>Confirm cache inventory before cleanup</span></a></li>
+            </ul>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    const portalRoot = document.getElementById("portal-root");
+    const portalAuth = document.getElementById("portal-auth");
+    const authError = document.getElementById("auth-error");
+    const host = window.location.hostname || "127.0.0.1";
+
+    portalAuth.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const username = document.getElementById("portal-user").value.trim();
+      const token = document.getElementById("portal-token").value.trim();
+      if (username === "portal.reader" && token === "nbp_reader_2026_04_window") {
+        portalRoot.className = "unlocked";
+        authError.style.display = "none";
+      } else {
+        authError.style.display = "block";
+      }
+    });
+
+    document.querySelectorAll("[data-port]").forEach((link) => {
+      const port = link.getAttribute("data-port");
+      const path = link.getAttribute("data-path") || "/";
+      const protocol = link.getAttribute("data-protocol") || "http";
+      if (protocol === "git") {
+        link.href = `git://${host}:${port}/infra-deploy.git`;
+      } else if (protocol === "ftp") {
+        link.href = `ftp://${host}:${port}/`;
+      } else if (protocol === "redis") {
+        link.href = `redis://${host}:${port}/`;
+      } else {
+        link.href = `http://${host}:${port}${path}`;
+      }
+    });
+  </script>
+</body>
+</html>

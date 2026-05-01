@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Operations Admin Console</title>
+  <style>
+    :root {
+      --ink: #182233;
+      --muted: #66758a;
+      --line: #d4dde9;
+      --panel: #ffffff;
+      --page: #eef3f8;
+      --primary: #1f4e79;
+      --primary-dark: #163b5c;
+      --danger: #a33a35;
+      --danger-soft: #fae8e6;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Arial, Helvetica, sans-serif;
+      color: var(--ink);
+      background: var(--page);
+      display: grid;
+      grid-template-columns: minmax(320px, 460px) minmax(0, 1fr);
+    }
+
+    aside {
+      background: #16243a;
+      color: #f7fbff;
+      padding: 34px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    aside h1 {
+      margin: 0;
+      font-size: 28px;
+      line-height: 1.15;
+    }
+
+    aside p {
+      margin: 14px 0 0;
+      color: #b9c8d9;
+      line-height: 1.55;
+    }
+
+    .aside-meta {
+      margin-top: 34px;
+      padding-top: 20px;
+      border-top: 1px solid rgba(255, 255, 255, .18);
+      color: #b9c8d9;
+      font-size: 13px;
+      line-height: 1.7;
+    }
+
+    main {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 32px;
+    }
+
+    .card {
+      width: min(100%, 430px);
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      box-shadow: 0 18px 44px rgba(22, 36, 58, .12);
+      padding: 28px;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: 22px;
+    }
+
+    .subtitle {
+      margin: 8px 0 22px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    label {
+      display: block;
+      margin-top: 15px;
+      color: #34445a;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    input {
+      width: 100%;
+      margin-top: 7px;
+      padding: 11px 12px;
+      border: 1px solid #b9c6d7;
+      border-radius: 4px;
+      font-size: 15px;
+    }
+
+    input:focus {
+      outline: 3px solid #d8ecff;
+      border-color: var(--primary);
+    }
+
+    button {
+      width: 100%;
+      margin-top: 22px;
+      padding: 12px 14px;
+      border: 0;
+      border-radius: 4px;
+      background: var(--primary);
+      color: #ffffff;
+      font-weight: 700;
+      font-size: 15px;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: var(--primary-dark);
+    }
+
+    .alert {
+      display: none;
+      margin-top: 18px;
+      padding: 12px 13px;
+      border: 1px solid #edc4c0;
+      border-radius: 4px;
+      background: var(--danger-soft);
+      color: var(--danger);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .meta {
+      margin-top: 18px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    .system-list {
+      margin: 18px 0 0;
+      padding: 0;
+      list-style: none;
+      border: 1px solid rgba(255, 255, 255, .15);
+      border-radius: 6px;
+    }
+
+    .system-list li {
+      padding: 12px 14px;
+      border-top: 1px solid rgba(255, 255, 255, .12);
+    }
+
+    .system-list li:first-child {
+      border-top: 0;
+    }
+
+    .system-list strong {
+      display: block;
+      color: #ffffff;
+    }
+
+    .system-list span {
+      display: block;
+      margin-top: 4px;
+      color: #b9c8d9;
+      font-size: 12px;
+    }
+
+    @media (max-width: 760px) {
+      body {
+        grid-template-columns: 1fr;
+      }
+
+      aside {
+        padding: 24px;
+      }
+
+      main {
+        padding: 24px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <aside>
+    <div>
+      <h1>Operations Admin Console</h1>
+      <p>Administrative access for service owners, platform operators, and incident response staff.</p>
+      <ul class="system-list">
+        <li><strong>Change Window</strong><span>Friday 23:00-01:00 UTC</span></li>
+        <li><strong>Authentication</strong><span>SSO password plus step-up MFA</span></li>
+        <li><strong>Audit Mode</strong><span>Privileged actions require ticket reference</span></li>
+      </ul>
+    </div>
+    <div class="aside-meta">
+      Build admin-console-2026.04.29<br>
+      Node intranet-admin-02<br>
+      Support queue OPS-ADMIN
+    </div>
+  </aside>
+
+  <main>
+    <form class="card" id="login-form">
+      <h2>Sign in</h2>
+      <p class="subtitle">Use your employee account. Shared break-glass accounts are disabled outside approved maintenance windows.</p>
+
+      <label for="username">Username</label>
+      <input id="username" name="username" autocomplete="username" placeholder="firstname.lastname">
+
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password">
+
+      <label for="ticket">Change ticket</label>
+      <input id="ticket" name="ticket" placeholder="OPS-0000">
+
+      <button type="submit">Continue</button>
+
+      <div class="alert" id="login-alert">
+        Authentication could not be completed. Check the change ticket and try again, or contact platform operations.
+      </div>
+
+      <p class="meta">This console is monitored. Unauthorized access attempts are logged and reviewed by platform security.</p>
+    </form>
+  </main>
+
+  <script>
+    document.getElementById("login-form").addEventListener("submit", (event) => {
+      event.preventDefault();
+      const alert = document.getElementById("login-alert");
+      alert.style.display = "block";
+    });
+  </script>
+</body>
+</html>

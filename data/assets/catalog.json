@@ -4,8 +4,8 @@
     "asset_name": "Internal Portal",
     "exposure_type": "internal",
     "interaction_level": "medium",
-    "description": "A stable static web lure used as the first internal foothold after public entrypoint interaction.",
-    "template_family": "web-honeypot",
+    "description": "A stable static web service used as the first internal foothold after public entrypoint interaction.",
+    "template_family": "web-service",
     "protocols": ["http"],
     "ports": [80],
     "source_refs": ["mvp:internal-portal-nginx"],
@@ -14,6 +14,9 @@
       "runtime": {
         "backend": "docker",
         "image": "nginx:alpine",
+        "network": "{project_name}_net_internal",
+        "memory_limit": "128m",
+        "volumes": ["{host_project_root}/deploy/internal-assets/internal-portal/html:/usr/share/nginx/html:ro"],
         "port_mappings": [
           {
             "host": "127.0.0.1",
@@ -30,7 +33,14 @@
       },
       "image_references": ["nginx:alpine"],
       "credential_hints": false,
-      "log_profile_events": true
+      "log_profile_events": true,
+      "selection_profile": {
+        "tactic_difficulties": {
+          "Discovery": 1
+        },
+        "reveal_outputs": ["service directory", "selected internal hostnames", "credential-gated links"],
+        "selection_notes": "Best first internal asset after public-surface discovery or leaked portal references."
+      }
     },
     "covers_tactics": ["Discovery"],
     "dependencies": []
@@ -40,8 +50,8 @@
     "asset_name": "Finance File Share",
     "exposure_type": "internal",
     "interaction_level": "medium",
-    "description": "A fake internal finance file-share portal with believable document names and credential-looking breadcrumbs.",
-    "template_family": "file-share-honeypot",
+    "description": "An internal finance file-share portal with believable document names and credential-looking breadcrumbs.",
+    "template_family": "file-share-service",
     "protocols": ["http"],
     "ports": [80],
     "source_refs": ["mvp:static-finance-share", "planned:tpotce/dionaea"],
@@ -52,9 +62,7 @@
         "image": "nginx:alpine",
         "network": "{project_name}_net_internal",
         "memory_limit": "128m",
-        "volumes": [
-          "{host_project_root}/deploy/internal-assets/finance-share/html:/usr/share/nginx/html:ro"
-        ],
+        "volumes": ["{host_project_root}/deploy/internal-assets/finance-share/html:/usr/share/nginx/html:ro"],
         "port_mappings": [
           {
             "host": "127.0.0.1",
@@ -77,6 +85,14 @@
       "unlock_signals": {
         "any_http_paths": ["/backup/db_backup_2024.sql.bak", "/backup/passwords_internal.txt"],
         "any_http_indicators": ["combined:backup", "combined:password", "path:.bak"]
+      },
+      "selection_profile": {
+        "tactic_difficulties": {
+          "Credential Access": 2,
+          "Collection": 2
+        },
+        "reveal_outputs": ["finance exports", "SQL backup references", "archive filenames"],
+        "selection_notes": "Use after backup, finance, password, or data-collection breadcrumbs."
       }
     },
     "covers_tactics": ["Credential Access", "Collection"],
@@ -87,8 +103,8 @@
     "asset_name": "Internal Git",
     "exposure_type": "internal",
     "interaction_level": "medium",
-    "description": "An OpenCanary-backed Git lure exposed as a standalone internal canary asset.",
-    "template_family": "developer-service-honeypot",
+    "description": "An OpenCanary-backed Git service exposed as a standalone internal canary asset.",
+    "template_family": "developer-service",
     "protocols": ["git"],
     "ports": [9418],
     "source_refs": ["opencanary:git"],
@@ -119,16 +135,27 @@
         "source": "opencanary/git"
       },
       "repo_names": ["infra-deploy", "customer-portal"],
-      "expose_fake_secrets": true,
+      "expose_seeded_credentials": true,
       "allow_clone": false,
       "route_path": "/git",
       "image_references": ["thinkst/opencanary"],
       "unlock_signals": {
         "any_http_paths": ["/.env.old", "/assets/app.js.map"],
         "any_http_indicators": ["combined:.env", "path:.map"]
-      }
+      },
+      "selection_profile": {
+        "tactic_difficulties": {
+          "Credential Access": 3,
+          "Discovery": 2,
+          "Collection": 3
+        },
+        "reveal_outputs": ["clone URLs", "repository names", "CI configuration", "deployment hostnames"],
+        "selection_notes": "Use after source-map access, Git token references, developer API paths, or .git probing."
+      },
+      "planned_clone_mode": "seeded-git-daemon",
+      "planned_repositories": ["infra-deploy", "customer-portal", "ops-runbooks"]
     },
-    "covers_tactics": ["Credential Access", "Discovery"],
+    "covers_tactics": ["Credential Access", "Discovery", "Collection"],
     "dependencies": ["internal-portal"]
   },
   {
@@ -136,8 +163,8 @@
     "asset_name": "Operations Database",
     "exposure_type": "internal",
     "interaction_level": "medium",
-    "description": "An OpenCanary-backed MySQL lure exposed only after the attacker finds internal developer context.",
-    "template_family": "database-honeypot",
+    "description": "An OpenCanary-backed MySQL service exposed only after the attacker finds internal developer context.",
+    "template_family": "database-service",
     "protocols": ["mysql"],
     "ports": [3306],
     "source_refs": ["opencanary:mysql"],
@@ -168,13 +195,21 @@
         "source": "opencanary/mysql"
       },
       "database_names": ["ops", "inventory"],
-      "auth_mode": "fake-login",
+      "auth_mode": "credential-prompt",
       "query_logging": true,
       "sample_rows": 25,
       "image_references": ["thinkst/opencanary"],
       "unlock_signals": {
         "any_http_paths": ["/.env.old", "/backup/db_backup_2024.sql.bak"],
         "any_http_indicators": ["combined:.env", "combined:backup", "path:.bak"]
+      },
+      "selection_profile": {
+        "tactic_difficulties": {
+          "Credential Access": 3,
+          "Collection": 4
+        },
+        "reveal_outputs": ["database names", "login prompts", "table-name hints"],
+        "selection_notes": "Use after Git or backup artifacts point toward database credentials or data access."
       }
     },
     "covers_tactics": ["Credential Access", "Collection"],
@@ -185,8 +220,8 @@
     "asset_name": "Admin Jumpbox",
     "exposure_type": "internal",
     "interaction_level": "high",
-    "description": "A Cowrie-backed SSH lure for observing credential reuse, shell commands, and lateral movement attempts.",
-    "template_family": "ssh-honeypot",
+    "description": "A Cowrie-backed SSH service for observing credential reuse, shell commands, and lateral movement attempts.",
+    "template_family": "ssh-service",
     "protocols": ["ssh"],
     "ports": [22],
     "source_refs": ["tpotce:cowrie"],
@@ -215,7 +250,15 @@
         "source": "tpotce/docker/cowrie"
       },
       "hostname": "admin-jumpbox-01",
-      "image_references": ["ghcr.io/telekom-security/cowrie:24.04.1"]
+      "image_references": ["ghcr.io/telekom-security/cowrie:24.04.1"],
+      "selection_profile": {
+        "tactic_difficulties": {
+          "Lateral Movement": 4,
+          "Privilege Escalation": 5
+        },
+        "reveal_outputs": ["interactive shell telemetry", "command breadcrumbs", "operator filesystem hints"],
+        "selection_notes": "Use only after SSH behaviour, admin host discovery, or strong credential reuse."
+      }
     },
     "covers_tactics": ["Lateral Movement", "Privilege Escalation"],
     "dependencies": ["git-internal"]
@@ -225,8 +268,8 @@
     "asset_name": "Redis Cache",
     "exposure_type": "internal",
     "interaction_level": "medium",
-    "description": "An OpenCanary-backed Redis lure for service discovery and credential probing.",
-    "template_family": "redis-honeypot",
+    "description": "An OpenCanary-backed Redis service for service discovery and credential probing.",
+    "template_family": "redis-service",
     "protocols": ["redis"],
     "ports": [6379],
     "source_refs": ["opencanary:redis"],
@@ -260,7 +303,24 @@
       "unlock_signals": {
         "any_http_paths": ["/.env.old"],
         "any_http_indicators": ["combined:.env"]
-      }
+      },
+      "selection_profile": {
+        "tactic_difficulties": {
+          "Credential Access": 3,
+          "Discovery": 2,
+          "Collection": 3
+        },
+        "reveal_outputs": ["cache key names", "session metadata", "service upstream hints"],
+        "selection_notes": "Use after REDIS_HOST, .env access, cache credential references, or Redis probing."
+      },
+      "planned_read_mode": "seeded-read-only-redis",
+      "planned_seed_keys": [
+        "session:portal.reader",
+        "feature:admin-console:mfa-bypass-window",
+        "service:customer-portal:upstream",
+        "deploy:latest:customer-portal",
+        "token:reporting:readonly"
+      ]
     },
     "covers_tactics": ["Credential Access", "Discovery", "Collection"],
     "dependencies": ["internal-portal"]
@@ -270,23 +330,19 @@
     "asset_name": "Web Admin Console",
     "exposure_type": "internal",
     "interaction_level": "medium",
-    "description": "An OpenCanary-backed HTTP login lure exposed as an internal admin console.",
-    "template_family": "web-honeypot",
+    "description": "A realistic internal admin login surface exposed after admin or API probing.",
+    "template_family": "web-service",
     "protocols": ["http"],
     "ports": [80],
-    "source_refs": ["opencanary:http"],
-    "telemetry_source": "opencanary",
+    "source_refs": ["mvp:static-web-admin-console", "planned:opencanary:http"],
+    "telemetry_source": "asset_runtime",
     "default_settings": {
       "runtime": {
         "backend": "docker",
-        "image": "thinkst/opencanary",
+        "image": "nginx:alpine",
         "network": "{project_name}_net_internal",
-        "memory_limit": "256m",
-        "tmpfs": ["/run"],
-        "volumes": [
-          "{host_project_root}/deploy/opencanary/internal/http.conf:/root/.opencanary.conf:ro",
-          "{host_project_root}/deploy/opencanary/var:/var/tmp"
-        ],
+        "memory_limit": "128m",
+        "volumes": ["{host_project_root}/deploy/internal-assets/web-admin-console/html:/usr/share/nginx/html:ro"],
         "port_mappings": [
           {
             "host": "127.0.0.1",
@@ -299,13 +355,21 @@
           "host": "127.0.0.1",
           "port_setting": "host_port"
         },
-        "source": "opencanary/http"
+        "source": "mvp/static-web-admin-console-nginx"
       },
       "login_realm": "Admin",
-      "image_references": ["thinkst/opencanary"],
+      "image_references": ["nginx:alpine"],
       "unlock_signals": {
         "any_http_paths": ["/admin", "/api/search"],
         "any_http_indicators": ["path:/admin", "path:/api", "user_agent:sqlmap"]
+      },
+      "selection_profile": {
+        "tactic_difficulties": {
+          "Credential Access": 3,
+          "Discovery": 2
+        },
+        "reveal_outputs": ["admin login surface", "ticket IDs", "admin node names"],
+        "selection_notes": "Use after /admin, admin source-map references, API probing, or scanner user agents."
       }
     },
     "covers_tactics": ["Credential Access", "Discovery"],
@@ -316,8 +380,8 @@
     "asset_name": "FTP Archive",
     "exposure_type": "internal",
     "interaction_level": "medium",
-    "description": "An OpenCanary-backed FTP lure for archive discovery and credential probes.",
-    "template_family": "file-transfer-honeypot",
+    "description": "An OpenCanary-backed FTP service for archive discovery and credential probes.",
+    "template_family": "file-transfer-service",
     "protocols": ["ftp"],
     "ports": [21],
     "source_refs": ["opencanary:ftp"],
@@ -352,6 +416,15 @@
       "unlock_signals": {
         "any_http_paths": ["/backup/db_backup_2024.sql.bak", "/backup/passwords_internal.txt"],
         "any_http_indicators": ["combined:backup", "combined:password", "path:.bak"]
+      },
+      "selection_profile": {
+        "tactic_difficulties": {
+          "Credential Access": 2,
+          "Collection": 3,
+          "Discovery": 2
+        },
+        "reveal_outputs": ["archive names", "backup bundle references", "older config filenames"],
+        "selection_notes": "Use after backup path discovery, password files, or archive-oriented behaviour."
       }
     },
     "covers_tactics": ["Credential Access", "Collection", "Discovery"],
@@ -362,8 +435,8 @@
     "asset_name": "SSH Canary",
     "exposure_type": "internal",
     "interaction_level": "medium",
-    "description": "An OpenCanary-backed SSH credential lure for lightweight internal login attempts.",
-    "template_family": "ssh-honeypot",
+    "description": "An OpenCanary-backed SSH credential service for lightweight internal login attempts.",
+    "template_family": "ssh-service",
     "protocols": ["ssh"],
     "ports": [22],
     "source_refs": ["opencanary:ssh"],
@@ -398,6 +471,14 @@
       "unlock_signals": {
         "any_http_paths": ["/backup/passwords_internal.txt"],
         "any_http_indicators": ["combined:password"]
+      },
+      "selection_profile": {
+        "tactic_difficulties": {
+          "Credential Access": 3,
+          "Discovery": 2
+        },
+        "reveal_outputs": ["SSH banner", "login attempt telemetry", "host naming clues"],
+        "selection_notes": "Use after leaked password files or SSH-oriented credential reuse."
       }
     },
     "covers_tactics": ["Credential Access", "Discovery"],
@@ -408,8 +489,8 @@
     "asset_name": "Legacy Telnet",
     "exposure_type": "internal",
     "interaction_level": "medium",
-    "description": "An OpenCanary-backed Telnet lure for legacy service probing.",
-    "template_family": "legacy-service-honeypot",
+    "description": "An OpenCanary-backed Telnet service for legacy service probing.",
+    "template_family": "legacy-service",
     "protocols": ["telnet"],
     "ports": [23],
     "source_refs": ["opencanary:telnet"],
@@ -444,6 +525,15 @@
       "unlock_signals": {
         "any_http_paths": ["/backup/passwords_internal.txt"],
         "any_http_indicators": ["combined:password"]
+      },
+      "selection_profile": {
+        "tactic_difficulties": {
+          "Credential Access": 3,
+          "Discovery": 2,
+          "Lateral Movement": 4
+        },
+        "reveal_outputs": ["legacy service banner", "credential prompts", "network device naming clues"],
+        "selection_notes": "Use after legacy host references, password files, or broad protocol scanning."
       }
     },
     "covers_tactics": ["Credential Access", "Discovery", "Lateral Movement"],
@@ -454,8 +544,8 @@
     "asset_name": "Mail Relay",
     "exposure_type": "internal",
     "interaction_level": "medium",
-    "description": "A Mailoney-backed mail lure for SMTP enumeration and credential attempts.",
-    "template_family": "mail-honeypot",
+    "description": "A Mailoney-backed mail service for SMTP enumeration and credential attempts.",
+    "template_family": "mail-service",
     "protocols": ["smtp"],
     "ports": [25],
     "source_refs": ["tpotce:mailoney"],
@@ -486,6 +576,15 @@
       "unlock_signals": {
         "any_http_paths": ["/.env.old", "/backup/passwords_internal.txt"],
         "any_http_indicators": ["combined:.env", "combined:password"]
+      },
+      "selection_profile": {
+        "tactic_difficulties": {
+          "Credential Access": 3,
+          "Discovery": 2,
+          "Collection": 3
+        },
+        "reveal_outputs": ["mail domains", "mailbox names", "SMTP command telemetry"],
+        "selection_notes": "Use after mail hostnames, SMTP probing, leaked accounts, or address enumeration."
       }
     },
     "covers_tactics": ["Credential Access", "Discovery", "Collection"],
@@ -497,7 +596,7 @@
     "exposure_type": "internal",
     "interaction_level": "high",
     "description": "A static plant-control panel that gives ICS-interested attackers a safe internal target before any real Conpot-style runtime exists.",
-    "template_family": "ics-honeypot",
+    "template_family": "ics-service",
     "protocols": ["http"],
     "ports": [80],
     "source_refs": ["mvp:static-ics-panel", "planned:tpotce/conpot"],
@@ -508,9 +607,7 @@
         "image": "nginx:alpine",
         "network": "{project_name}_net_internal",
         "memory_limit": "128m",
-        "volumes": [
-          "{host_project_root}/deploy/internal-assets/ics-plc/html:/usr/share/nginx/html:ro"
-        ],
+        "volumes": ["{host_project_root}/deploy/internal-assets/ics-plc/html:/usr/share/nginx/html:ro"],
         "port_mappings": [
           {
             "host": "127.0.0.1",
@@ -531,6 +628,15 @@
       "unlock_signals": {
         "any_http_paths": ["/internal-api/status"],
         "any_http_indicators": ["path:/internal-api"]
+      },
+      "selection_profile": {
+        "tactic_difficulties": {
+          "Discovery": 3,
+          "Collection": 3,
+          "Lateral Movement": 4
+        },
+        "reveal_outputs": ["PLC status paths", "unit maps", "plant segment references"],
+        "selection_notes": "Use after internal API status access, plant references, or ICS-shaped probing."
       }
     },
     "covers_tactics": ["Discovery", "Collection", "Lateral Movement"],
@@ -542,7 +648,7 @@
     "exposure_type": "internal",
     "interaction_level": "high",
     "description": "A Vulhub-backed legacy Java service used as the first real vulnerable internal asset after web or credential-oriented profiling.",
-    "template_family": "vulnerable-webapp-honeypot",
+    "template_family": "vulnerable-webapp",
     "protocols": ["http"],
     "ports": [8080],
     "source_refs": ["vulhub:log4j/CVE-2021-44228", "proposalv2:adaptive-vulnerable-asset"],
@@ -565,6 +671,15 @@
       "unlock_signals": {
         "any_http_rules": ["public_http_exploit_probe"],
         "any_http_indicators": ["combined:${jndi:", "combined:ldap://", "combined:log4j"]
+      },
+      "selection_profile": {
+        "tactic_difficulties": {
+          "Initial Access": 4,
+          "Execution": 5,
+          "Discovery": 3
+        },
+        "reveal_outputs": ["vulnerable endpoint behaviour", "stack-trace style context", "exploit telemetry"],
+        "selection_notes": "Use only after Java, JNDI, Log4j, or exploit-payload evidence."
       }
     },
     "covers_tactics": ["Initial Access", "Execution", "Discovery"],
@@ -576,7 +691,7 @@
     "exposure_type": "internal",
     "interaction_level": "medium",
     "description": "A VPN-looking internal appliance login portal used to attract appliance fingerprinting and credential attacks.",
-    "template_family": "network-appliance-honeypot",
+    "template_family": "network-appliance",
     "protocols": ["http"],
     "ports": [80],
     "source_refs": ["mvp:static-vpn-appliance", "planned:tpotce/ciscoasa", "planned:tpotce/citrixhoneypot"],
@@ -587,9 +702,7 @@
         "image": "nginx:alpine",
         "network": "{project_name}_net_internal",
         "memory_limit": "128m",
-        "volumes": [
-          "{host_project_root}/deploy/internal-assets/vpn-appliance/html:/usr/share/nginx/html:ro"
-        ],
+        "volumes": ["{host_project_root}/deploy/internal-assets/vpn-appliance/html:/usr/share/nginx/html:ro"],
         "port_mappings": [
           {
             "host": "127.0.0.1",
@@ -612,6 +725,15 @@
       "unlock_signals": {
         "any_http_paths": ["/admin", "/.env.old", "/assets/app.js.map"],
         "any_http_indicators": ["path:/admin", "combined:.env", "path:.map"]
+      },
+      "selection_profile": {
+        "tactic_difficulties": {
+          "Initial Access": 3,
+          "Credential Access": 3,
+          "Discovery": 2
+        },
+        "reveal_outputs": ["VPN login surface", "profile paths", "remote-access configuration references"],
+        "selection_notes": "Use after admin references, internal portal access, VPN paths, or credential reuse."
       }
     },
     "covers_tactics": ["Initial Access", "Credential Access", "Discovery"],
@@ -622,8 +744,8 @@
     "asset_name": "Malware Drop Sink",
     "exposure_type": "internal",
     "interaction_level": "high",
-    "description": "A safe HTTP drop-zone lure for downloader and collection behaviour. It advertises upload paths but does not persist payloads.",
-    "template_family": "malware-capture-honeypot",
+    "description": "A safe HTTP drop-zone service for downloader and collection behaviour. It advertises upload paths but does not persist payloads.",
+    "template_family": "malware-capture-service",
     "protocols": ["http"],
     "ports": [80],
     "source_refs": ["mvp:static-malware-sink", "planned:tpotce/dionaea", "planned:tpotce/honeytrap"],
@@ -634,9 +756,7 @@
         "image": "nginx:alpine",
         "network": "{project_name}_net_internal",
         "memory_limit": "128m",
-        "volumes": [
-          "{host_project_root}/deploy/internal-assets/malware-sink/html:/usr/share/nginx/html:ro"
-        ],
+        "volumes": ["{host_project_root}/deploy/internal-assets/malware-sink/html:/usr/share/nginx/html:ro"],
         "port_mappings": [
           {
             "host": "127.0.0.1",
@@ -658,6 +778,15 @@
       "unlock_signals": {
         "any_http_rules": ["public_http_exploit_probe"],
         "any_http_indicators": ["combined:php://filter", "combined:../", "combined:ldap://"]
+      },
+      "selection_profile": {
+        "tactic_difficulties": {
+          "Command and Control": 5,
+          "Execution": 4,
+          "Collection": 4
+        },
+        "reveal_outputs": ["download paths", "upload endpoints", "transfer-attempt telemetry"],
+        "selection_notes": "Use after downloader, payload, traversal, or command-and-control shaped behaviour."
       }
     },
     "covers_tactics": ["Command and Control", "Execution", "Collection"],
