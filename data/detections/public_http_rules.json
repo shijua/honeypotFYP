@@ -211,6 +211,49 @@
           "url": "https://attack.mitre.org/techniques/T1046/"
         }
       ]
+    },
+    {
+      "name": "internal_http_artifact_access",
+      "evidence_label": "internal-http artifact access",
+      "tags": ["mitre_collection", "T1005"],
+      "match": {
+        "all": [
+          {
+            "field": "surface",
+            "equals_any": ["internal"]
+          },
+          {
+            "any": [
+              {
+                "field": "path",
+                "contains_any": [
+                  "/archive/",
+                  "/backup/",
+                  "/config/",
+                  "/download",
+                  "/downloads/",
+                  "/exports/",
+                  "/finance/",
+                  "/logs/",
+                  "/maps/",
+                  "/upload/"
+                ]
+              },
+              {
+                "field": "path",
+                "endswith_any": [".bak", ".bin", ".cfg", ".csv", ".ovpn", ".sql", ".xlsx", ".zip"]
+              }
+            ]
+          }
+        ]
+      },
+      "source_refs": [
+        {
+          "type": "mitre_attack_technique",
+          "name": "Data from Local System",
+          "url": "https://attack.mitre.org/techniques/T1005/"
+        }
+      ]
     }
   ]
 }

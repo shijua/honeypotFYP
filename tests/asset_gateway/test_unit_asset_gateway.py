@@ -5,7 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from services.asset_gateway.app import AssetRoute, load_routes, select_route
+from services.asset_gateway.app import (
+    AssetRoute,
+    _parse_http_request,
+    load_routes,
+    select_route,
+)
 
 
 pytestmark = pytest.mark.unit
@@ -80,3 +85,18 @@ def test_load_routes_skips_invalid_route_table_items(tmp_path: Path) -> None:
 
     assert len(routes) == 1
     assert routes[0].asset_id == "git-internal"
+
+
+def test_parse_http_request_extracts_path_query_and_headers() -> None:
+    request = _parse_http_request(
+        b"GET /finance/archive/payroll.zip?download=1 HTTP/1.1\r\n"
+        b"Host: example.internal\r\n"
+        b"User-Agent: curl/8.0\r\n"
+        b"\r\n"
+    )
+
+    assert request is not None
+    assert request.method == "GET"
+    assert request.path == "/finance/archive/payroll.zip"
+    assert request.query_string == "download=1"
+    assert request.headers["user-agent"] == "curl/8.0"

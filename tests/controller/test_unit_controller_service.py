@@ -205,3 +205,49 @@ def test_tick_blocks_file_gated_asset_without_matching_public_http_signal() -> N
 
     assert response.actions[0].action_type == "noop"
     assert response.candidate_asset_ids == []
+
+
+def test_tick_can_use_internal_http_signal_for_later_asset() -> None:
+    assets = [
+        AssetDefinition(
+            asset_id="backup-store",
+            asset_name="Backup Store",
+            exposure_type="internal",
+            interaction_level="medium",
+            covers_tactics=["Collection"],
+            dependencies=["finance-share"],
+            default_settings={
+                "unlock_signals": {
+                    "any_internal_http_paths": [
+                        "/finance/archive/2024/payroll-archive.zip"
+                    ],
+                    "any_internal_http_indicators": ["path:.zip"],
+                }
+            },
+        )
+    ]
+    service = ControllerService(
+        InMemoryAssetRepository(assets),
+        InMemoryTransitionRepository(),
+        config=RuntimeConfig(epsilon=0.0),
+        rng=random.Random(0),
+    )
+
+    response = service.tick(
+        ControllerTickRequest(
+            attacker_key="198.51.100.42",
+            binding_id="binding-6",
+            profile=ProfileSnapshot(
+                attacker_key="198.51.100.42",
+                conf_by_tactic={"Collection": 0.8},
+                recent_tactics=["Collection"],
+                recent_internal_http_paths=[
+                    "/finance/archive/2024/payroll-archive.zip"
+                ],
+                recent_internal_http_indicators=["path:.zip"],
+            ),
+            unlocked_asset_ids=["finance-share"],
+        )
+    )
+
+    assert [action.asset_id for action in response.actions] == ["backup-store"]

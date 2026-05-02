@@ -1,8 +1,8 @@
-"""Domain logic for the low-interaction public web honeypot.
+"""Domain logic for HTTP observation surfaces.
 
-This module captures HTTP requests, resolves a sticky binding for the source,
-stores a redacted observation, and sends suspicious public HTTP probes into the
-profiler.
+This module captures public website requests and already-unlocked internal HTTP
+asset requests, resolves a sticky binding for the source, stores a redacted
+observation, and sends suspicious HTTP probes into the profiler.
 """
 
 from __future__ import annotations
@@ -93,6 +93,8 @@ class EntrypointService:
             query_string=request.query_string,
             body_preview=safe_body_preview,
             user_agent=safe_headers.get("user-agent"),
+            surface=request.surface,
+            asset_id=request.asset_id,
         )
         tags = _tags_from_rule_matches(rule_matches)
         indicators = _indicators_from_rule_matches(rule_matches)
@@ -111,12 +113,14 @@ class EntrypointService:
                     binding_id=binding.binding_id,
                     event=FalcoEvent(
                         ts=now,
-                        falco_rule="HTTP honeypot request",
+                        falco_rule=_falco_rule_for_surface(request.surface),
                         priority="INFO",
                         output=_format_http_output(request, indicators),
                         tags=tags,
                         output_fields={
-                            "source": "public_http",
+                            "source": _source_for_surface(request.surface),
+                            "http_surface": request.surface,
+                            "asset_id": request.asset_id,
                             "http_method": request.method.upper(),
                             "http_path": request.path,
                             "http_query_string": request.query_string,
@@ -151,6 +155,8 @@ class EntrypointService:
             tags=tags,
             indicators=indicators,
             profiler_evidence_ids=profiler_evidence_ids,
+            surface=request.surface,
+            asset_id=request.asset_id,
         )
         stored_observation = self._observation_repository.add(observation)
         return EntrypointCaptureResponse(
@@ -168,10 +174,24 @@ def _format_http_output(
     target = request.path
     if request.query_string:
         target = f"{target}?{request.query_string}"
-    output = f"{request.method.upper()} {target} from {request.attacker_key}"
+    surface = request.surface
+    asset = f" asset={request.asset_id}" if request.asset_id else ""
+    output = f"{surface} HTTP {request.method.upper()} {target}{asset} from {request.attacker_key}"
     if indicators:
         output = f"{output}; indicators={', '.join(indicators)}"
     return output
+
+
+def _source_for_surface(surface: str) -> str:
+    """Return the profiler source label for public vs internal HTTP."""
+    return "internal_http" if surface == "internal" else "public_http"
+
+
+def _falco_rule_for_surface(surface: str) -> str:
+    """Return a stable event title for profiler evidence."""
+    if surface == "internal":
+        return "Internal HTTP asset request"
+    return "HTTP honeypot request"
 
 
 def _tags_from_rule_matches(rule_matches: list[PublicHttpRuleMatch]) -> list[str]:

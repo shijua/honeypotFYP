@@ -44,6 +44,8 @@ services:
     environment:
       PYTHONPATH: /app
       HONEYPOT_STATE_DIR: data/runtime
+      HONEYPOT_INTERNAL_HTTP_EVENTS_FILE: data/runtime/internal_http_events.jsonl
+      HONEYPOT_ASSET_GATEWAY_HTTP_PORTS: "${ASSET_GATEWAY_HTTP_PORTS:-18080,18081,18082,18084,18443,18085}"
     volumes:
       - .:/app
     ports:
@@ -63,6 +65,24 @@ services:
     networks:
       - net_public
       - net_internal
+    restart: unless-stopped
+
+  internal-http-forwarder:
+    image: python:3.10-slim
+    working_dir: /app
+    command: >
+      bash -lc "python scripts/forward_internal_http_events.py
+      --events-file data/runtime/internal_http_events.jsonl
+      --observer-url http://entrypoint-observer:8010/v1/entrypoint/events
+      --poll-seconds 0.5"
+    environment:
+      PYTHONPATH: /app
+    volumes:
+      - .:/app
+    networks:
+      - net_control
+    depends_on:
+      - entrypoint-observer
     restart: unless-stopped
 
   cowrie:

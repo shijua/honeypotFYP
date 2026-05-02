@@ -52,3 +52,33 @@ def test_entrypoint_ingests_normalized_public_portal_event(
     ]
     assert payload["profile"]["attacker_key"] == "198.51.100.10"
     assert payload["profile"]["recent_techniques"] == ["T1552.001"]
+
+
+def test_entrypoint_ingests_normalized_internal_asset_event(
+    entrypoint_client: TestClient,
+) -> None:
+    response = entrypoint_client.post(
+        "/v1/entrypoint/events",
+        json={
+            "attacker_key": "198.51.100.11",
+            "method": "GET",
+            "path": "/downloads/agent-update.bin",
+            "query_string": "",
+            "headers": {"user-agent": "curl/8.0"},
+            "protocol": "http",
+            "surface": "internal",
+            "asset_id": "malware-sink",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["observation"]["surface"] == "internal"
+    assert payload["observation"]["asset_id"] == "malware-sink"
+    assert payload["observation"]["matched_rules"] == [
+        "internal_http_artifact_access"
+    ]
+    assert payload["profile"]["recent_techniques"] == ["T1005"]
+    assert payload["profile"]["recent_internal_http_paths"] == [
+        "/downloads/agent-update.bin"
+    ]

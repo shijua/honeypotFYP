@@ -191,7 +191,8 @@ def _attacker_report(
             sorted(Counter(_eventids(attacker_observations)).items())
         ),
         "commands": _commands(attacker_observations),
-        "public_http_evidence": _public_http_evidence(attacker_evidence),
+        "public_http_evidence": _http_evidence(attacker_evidence, "public_http"),
+        "internal_http_evidence": _http_evidence(attacker_evidence, "internal_http"),
         "recent_tactics": profile.get("recent_tactics", []),
         "recent_techniques": profile.get("recent_techniques", []),
         # These fields explain why catalog-gated internal assets became
@@ -199,6 +200,9 @@ def _attacker_report(
         "recent_public_http_paths": profile.get("recent_public_http_paths", []),
         "recent_public_http_rules": profile.get("recent_public_http_rules", []),
         "recent_public_http_indicators": profile.get("recent_public_http_indicators", []),
+        "recent_internal_http_paths": profile.get("recent_internal_http_paths", []),
+        "recent_internal_http_rules": profile.get("recent_internal_http_rules", []),
+        "recent_internal_http_indicators": profile.get("recent_internal_http_indicators", []),
         "confidence_by_tactic": profile.get("conf_by_tactic", {}),
         "docker_probe_error": docker_probe.error,
         "unlocked_assets": binding.get("unlocked_assets", []) if binding else [],
@@ -229,7 +233,8 @@ def _eventids(observations: list[dict[str, Any]]) -> list[str]:
             eventids.append(f"opencanary.{item['service']}")
             continue
         if isinstance(item.get("method"), str) and isinstance(item.get("path"), str):
-            eventids.append(f"public_http.{str(item['method']).upper()}")
+            surface = str(item.get("surface") or "public")
+            eventids.append(f"{surface}_http.{str(item['method']).upper()}")
     return eventids
 
 
@@ -244,14 +249,14 @@ def _commands(observations: list[dict[str, Any]]) -> list[str]:
     return list(dict.fromkeys(commands))
 
 
-def _public_http_evidence(evidences: list[dict[str, Any]]) -> list[str]:
-    """Return concise public HTTP evidence for the attacker card."""
+def _http_evidence(evidences: list[dict[str, Any]], source: str) -> list[str]:
+    """Return concise HTTP evidence for the attacker card."""
     evidence: list[str] = []
     for item in evidences:
         source_ref = item.get("source_ref")
         if not isinstance(source_ref, dict):
             continue
-        if source_ref.get("source") != "public_http":
+        if source_ref.get("source") != source:
             continue
         labels = source_ref.get("http_evidence_labels")
         indicators = source_ref.get("http_indicators")

@@ -4,16 +4,13 @@
 from __future__ import annotations
 
 import argparse
-import json
-import os
 import re
 import sys
-import time
 from pathlib import Path
-from typing import IO, Iterable, Iterator, NamedTuple
-from urllib.error import HTTPError, URLError
+from typing import Iterable, Iterator
 from urllib.parse import urlsplit
-from urllib.request import Request, urlopen
+
+from scripts.forwarder_common import follow_file, forward_events, post_json_event
 
 
 _COMBINED_LOG_RE = re.compile(
@@ -75,21 +72,7 @@ def parse_access_line(line: str) -> dict[str, object] | None:
     }
 
 
-def post_event(
-    payload: dict[str, object],
-    observer_url: str,
-    timeout_seconds: float,
-) -> tuple[int, str]:
-    """POST one normalized public portal event to the entrypoint observer."""
-    body = json.dumps(payload).encode("utf-8")
-    request = Request(
-        observer_url,
-        data=body,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    with urlopen(request, timeout=timeout_seconds) as response:
-        return response.status, response.read().decode("utf-8")
+post_event = post_json_event
 
 
 def forward_lines(
@@ -98,31 +81,14 @@ def forward_lines(
     timeout_seconds: float,
 ) -> int:
     """Forward a finite batch of nginx access lines and return success count."""
-    forwarded = 0
-    for event in iter_access_events(lines):
-        try:
-            status_code, _ = post_event(event, observer_url, timeout_seconds)
-        except HTTPError as exc:
-            print(f"Observer rejected public portal event with HTTP {exc.code}", file=sys.stderr)
-            continue
-        except URLError as exc:
-            print(f"Could not reach entrypoint observer: {exc}", file=sys.stderr)
-            continue
-        if 200 <= status_code < 300:
-            forwarded += 1
-            print(
-                f"Forwarded public-portal {event['method']} {event['path']}",
-                flush=True,
-            )
-        else:
-            print(f"Observer returned unexpected HTTP {status_code}", file=sys.stderr)
-    return forwarded
-
-
-class _OpenLog(NamedTuple):
-    handle: IO[str]
-    identity: tuple[int, int]
-    position: int
+    return forward_events(
+        iter_access_events(lines),
+        target_url=observer_url,
+        timeout_seconds=timeout_seconds,
+        post_event=post_event,
+        success_message=lambda event: f"Forwarded public-portal {event['method']} {event['path']}",
+        rejected_label="public portal event",
+    )
 
 
 def follow_log_file(
@@ -134,72 +100,17 @@ def follow_log_file(
     timeout_seconds: float,
 ) -> int:
     """Tail an nginx access log and forward new public portal observations."""
-    forwarded = 0
-    current_log: _OpenLog | None = None
-    initial_open = True
-    try:
-        while True:
-            current_log = _refresh_log_handle(
-                log_file,
-                current_log,
-                from_start=from_start,
-                initial_open=initial_open,
-            )
-            initial_open = False
-
-            line = current_log.handle.readline()
-            if line:
-                forwarded += forward_lines(
-                    [line],
-                    observer_url=observer_url,
-                    timeout_seconds=timeout_seconds,
-                )
-                current_log = current_log._replace(position=current_log.handle.tell())
-                continue
-            if once:
-                return forwarded
-            time.sleep(poll_seconds)
-    finally:
-        if current_log is not None:
-            current_log.handle.close()
-
-
-def _refresh_log_handle(
-    log_file: Path,
-    current_log: _OpenLog | None,
-    *,
-    from_start: bool,
-    initial_open: bool,
-) -> _OpenLog:
-    """Open or reopen the log file when nginx rotates or truncates it."""
-    _ensure_log_file(log_file)
-    stat_result = log_file.stat()
-    identity = (stat_result.st_dev, stat_result.st_ino)
-    should_reopen = (
-        current_log is None
-        or current_log.identity != identity
-        or stat_result.st_size < current_log.position
+    return follow_file(
+        log_file,
+        from_start=from_start,
+        once=once,
+        poll_seconds=poll_seconds,
+        handle_line=lambda line: forward_lines(
+            [line],
+            observer_url=observer_url,
+            timeout_seconds=timeout_seconds,
+        ),
     )
-    if not should_reopen:
-        return current_log
-
-    if current_log is not None:
-        current_log.handle.close()
-
-    handle = log_file.open("r", encoding="utf-8")
-    if initial_open and not from_start:
-        handle.seek(0, os.SEEK_END)
-    else:
-        handle.seek(0)
-    return _OpenLog(handle=handle, identity=identity, position=handle.tell())
-
-
-def _ensure_log_file(log_file: Path) -> None:
-    if log_file.exists():
-        return
-    log_file.parent.mkdir(parents=True, exist_ok=True)
-    log_file.touch()
-    log_file.chmod(0o666)
 
 
 def _empty_dash_to_none(value: str) -> str | None:

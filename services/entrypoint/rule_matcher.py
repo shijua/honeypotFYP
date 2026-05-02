@@ -1,6 +1,6 @@
-"""Rule matcher for public HTTP detection evidence.
+"""Rule matcher for HTTP detection evidence.
 
-The matcher keeps public-web detection content in JSON so entrypoint code does
+The matcher keeps web detection content in JSON so entrypoint code does
 not grow a hard-coded list of scanner paths and user-agent strings. Matching
 rules return both profiler tags and human-readable indicators for the dashboard.
 """
@@ -28,8 +28,10 @@ class PublicHttpRuleMatcher(Protocol):
         query_string: str = "",
         body_preview: str | None = None,
         user_agent: str | None = None,
+        surface: str = "public",
+        asset_id: str | None = None,
     ) -> list["PublicHttpRuleMatch"]:
-        """Return detailed rule matches for one public HTTP event."""
+        """Return detailed rule matches for one HTTP event."""
         ...
 
     def tags_for(
@@ -40,6 +42,8 @@ class PublicHttpRuleMatcher(Protocol):
         query_string: str = "",
         body_preview: str | None = None,
         user_agent: str | None = None,
+        surface: str = "public",
+        asset_id: str | None = None,
     ) -> list[str]:
         """Return de-duplicated profiler tags from the matching rules."""
         ...
@@ -47,7 +51,7 @@ class PublicHttpRuleMatcher(Protocol):
 
 @dataclass(frozen=True)
 class PublicHttpDetectionRule:
-    """One JSON-backed public HTTP detection rule."""
+    """One JSON-backed HTTP detection rule."""
 
     name: str
     tags: tuple[str, ...]
@@ -66,7 +70,7 @@ class PublicHttpRuleMatch:
 
 
 class FilePublicHttpRuleMatcher:
-    """Load public HTTP rules from disk and match them against request fields."""
+    """Load HTTP rules from disk and match them against request fields."""
 
     def __init__(self, path: str | Path = DEFAULT_PUBLIC_HTTP_RULES_PATH) -> None:
         self._path = Path(path)
@@ -80,6 +84,8 @@ class FilePublicHttpRuleMatcher:
         query_string: str = "",
         body_preview: str | None = None,
         user_agent: str | None = None,
+        surface: str = "public",
+        asset_id: str | None = None,
     ) -> list[str]:
         """Return tags from all matching rules, preserving rule order."""
         matches = self.matches_for(
@@ -88,6 +94,8 @@ class FilePublicHttpRuleMatcher:
             query_string=query_string,
             body_preview=body_preview,
             user_agent=user_agent,
+            surface=surface,
+            asset_id=asset_id,
         )
         tags: list[str] = []
         for match in matches:
@@ -104,6 +112,8 @@ class FilePublicHttpRuleMatcher:
         query_string: str = "",
         body_preview: str | None = None,
         user_agent: str | None = None,
+        surface: str = "public",
+        asset_id: str | None = None,
     ) -> list[PublicHttpRuleMatch]:
         """Return matching rule names, tags, and concrete indicators."""
         fields = _normalize_fields(
@@ -112,9 +122,13 @@ class FilePublicHttpRuleMatcher:
             query_string=query_string,
             body_preview=body_preview,
             user_agent=user_agent,
+            surface=surface,
+            asset_id=asset_id,
         )
         matches: list[PublicHttpRuleMatch] = []
         for rule in self._load_rules():
+            if not _rule_applies_to_surface(rule.name, surface):
+                continue
             indicators = _matched_indicators(rule.match, fields)
             if not indicators:
                 continue
@@ -169,6 +183,8 @@ def _normalize_fields(
     query_string: str,
     body_preview: str | None,
     user_agent: str | None,
+    surface: str,
+    asset_id: str | None,
 ) -> dict[str, str]:
     fields = {
         "method": method,
@@ -176,6 +192,8 @@ def _normalize_fields(
         "query_string": query_string,
         "body_preview": body_preview or "",
         "user_agent": user_agent or "",
+        "surface": surface,
+        "asset_id": asset_id or "",
     }
     fields["combined"] = " ".join(fields.values())
     return {key: value.lower() for key, value in fields.items()}
@@ -248,3 +266,11 @@ def _matched_indicators(
 
 def _format_indicator(field: str, marker: str) -> str:
     return f"{field}:{marker}"
+
+
+def _rule_applies_to_surface(rule_name: str, surface: str) -> bool:
+    """Keep internal-asset rules from matching public traffic and vice versa."""
+    is_internal_rule = rule_name.startswith("internal_http_")
+    if surface == "internal":
+        return is_internal_rule
+    return not is_internal_rule

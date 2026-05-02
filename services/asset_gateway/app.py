@@ -11,8 +11,10 @@ For every new connection the gateway uses:
 - the JSON route table written by the orchestrator
 
 to pick the per-attacker backend container and proxy bytes in both directions.
-The gateway does not understand HTTP, Redis, Git, or MySQL; it is intentionally
-just a generic TCP proxy.
+The gateway is intentionally still a generic TCP proxy for backend traffic. For
+configured HTTP asset ports only, it also peeks at the first client request so
+internal file/config exploration can become profiler evidence before the bytes
+are forwarded to the backend.
 """
 
 from __future__ import annotations
@@ -24,6 +26,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 
 @dataclass(frozen=True)
@@ -42,6 +45,18 @@ class AssetRoute:
     backend_host: str
     backend_port: int
     updated_at: str = ""
+
+
+@dataclass(frozen=True)
+class ParsedHttpRequest:
+    """Minimal HTTP request material observed before proxying to the asset."""
+
+    method: str
+    path: str
+    query_string: str
+    headers: dict[str, str]
+    body_preview: str | None = None
+    body_truncated: bool = False
 
 
 def load_routes(path: Path) -> list[AssetRoute]:
@@ -122,6 +137,15 @@ async def _handle_connection(
         await client_writer.wait_closed()
         return
 
+    initial_client_data = b""
+    if _should_observe_http(public_port):
+        initial_client_data = await _read_initial_client_data(client_reader)
+        await _report_internal_http_request(
+            initial_client_data,
+            route=route,
+            client_ip=client_ip,
+        )
+
     try:
         backend_reader, backend_writer = await asyncio.open_connection(
             route.backend_host,
@@ -131,6 +155,10 @@ async def _handle_connection(
         client_writer.close()
         await client_writer.wait_closed()
         return
+
+    if initial_client_data:
+        backend_writer.write(initial_client_data)
+        await backend_writer.drain()
 
     await asyncio.gather(
         _pipe(client_reader, backend_writer),
@@ -177,6 +205,109 @@ def _peer_ip(writer: asyncio.StreamWriter) -> str:
     if isinstance(peer, tuple) and peer:
         return str(peer[0])
     return ""
+
+
+async def _read_initial_client_data(
+    client_reader: asyncio.StreamReader,
+) -> bytes:
+    """Peek at the first client bytes for HTTP-only asset ports.
+
+    Non-HTTP ports are never read here because some protocols, such as SSH,
+    expect the server banner first. For HTTP assets, clients send the request
+    first, so a short read lets the gateway observe the path without changing
+    backend behavior.
+    """
+    timeout = float(os.environ.get("HONEYPOT_ASSET_GATEWAY_HTTP_PEEK_TIMEOUT", "0.5"))
+    try:
+        return await asyncio.wait_for(client_reader.read(65536), timeout=timeout)
+    except (asyncio.TimeoutError, ConnectionError, OSError):
+        return b""
+
+
+async def _report_internal_http_request(
+    initial_data: bytes,
+    *,
+    route: AssetRoute,
+    client_ip: str,
+) -> None:
+    """Write an observed internal HTTP request for the control-plane forwarder."""
+    parsed = _parse_http_request(initial_data)
+    if parsed is None:
+        return
+    events_file = _internal_http_events_path()
+    payload: dict[str, object] = {
+        "attacker_key": client_ip,
+        "method": parsed.method,
+        "path": parsed.path,
+        "query_string": parsed.query_string,
+        "headers": parsed.headers,
+        "body_preview": parsed.body_preview,
+        "body_truncated": parsed.body_truncated,
+        "protocol": "http",
+        "surface": "internal",
+        "asset_id": route.asset_id,
+    }
+    _append_jsonl(events_file, payload)
+
+
+def _append_jsonl(path: Path, payload: dict[str, object]) -> None:
+    """Append one internal HTTP observation without touching control services."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    line = json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n"
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(line)
+
+
+def _internal_http_events_path() -> Path:
+    raw_path = os.environ.get("HONEYPOT_INTERNAL_HTTP_EVENTS_FILE", "").strip()
+    if raw_path:
+        return Path(raw_path)
+    state_dir = Path(os.environ.get("HONEYPOT_STATE_DIR", "data/runtime"))
+    return state_dir / "internal_http_events.jsonl"
+
+
+def _parse_http_request(data: bytes) -> ParsedHttpRequest | None:
+    """Parse a best-effort HTTP/1 request from the first client data chunk."""
+    if not data:
+        return None
+    try:
+        text = data.decode("iso-8859-1")
+    except UnicodeDecodeError:
+        return None
+    header_text, _, body = text.partition("\r\n\r\n")
+    lines = header_text.split("\r\n")
+    if not lines:
+        return None
+    parts = lines[0].split()
+    if len(parts) < 2:
+        return None
+    method, target = parts[0].upper(), parts[1]
+    if method not in {"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"}:
+        return None
+    parsed_target = urlsplit(target)
+    headers: dict[str, str] = {}
+    for line in lines[1:]:
+        if ":" not in line:
+            continue
+        name, value = line.split(":", 1)
+        headers[name.strip().lower()] = value.strip()
+    body_preview = body[:4096] if body else None
+    return ParsedHttpRequest(
+        method=method,
+        path=parsed_target.path or "/",
+        query_string=parsed_target.query,
+        headers=headers,
+        body_preview=body_preview,
+        body_truncated=len(body) > 4096,
+    )
+
+
+def _should_observe_http(public_port: int) -> bool:
+    raw_ports = os.environ.get(
+        "HONEYPOT_ASSET_GATEWAY_HTTP_PORTS",
+        "18080,18081,18082,18084,18443,18085",
+    )
+    return public_port in set(_parse_ports(raw_ports))
 
 
 class _server_group:

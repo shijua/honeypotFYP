@@ -184,6 +184,18 @@ class ProfilerService:
                 recent_evidences,
                 "http_indicators",
             ),
+            recent_internal_http_paths=self._internal_http_values(
+                recent_evidences,
+                "http_path",
+            ),
+            recent_internal_http_rules=self._internal_http_values(
+                recent_evidences,
+                "http_rule_names",
+            ),
+            recent_internal_http_indicators=self._internal_http_values(
+                recent_evidences,
+                "http_indicators",
+            ),
             updated_at=latest_ts,
         )
         return self._profile_repository.upsert(snapshot)
@@ -303,6 +315,7 @@ class ProfilerService:
             "proc_name",
             "fd_name",
             "source",
+            "asset_id",
             "event_type",
             "signature",
             "category",
@@ -313,6 +326,7 @@ class ProfilerService:
             "dest_port",
             "proto",
             "http_hostname",
+            "http_surface",
             "http_url",
             "http_method",
             "http_path",
@@ -358,6 +372,24 @@ class ProfilerService:
         for evidence in evidences:
             source_ref = evidence.source_ref
             if source_ref.get("source") != "public_http":
+                continue
+            value = source_ref.get(source_ref_key)
+            if isinstance(value, list):
+                values.extend(item for item in value if isinstance(item, str))
+            elif isinstance(value, str) and value:
+                values.append(value)
+        return self._dedupe_preserve(values)
+
+    def _internal_http_values(
+        self,
+        evidences: list[TechniqueEvidence],
+        source_ref_key: str,
+    ) -> list[str]:
+        """Extract recent internal-asset HTTP breadcrumbs from evidence refs."""
+        values: list[str] = []
+        for evidence in evidences:
+            source_ref = evidence.source_ref
+            if source_ref.get("source") != "internal_http":
                 continue
             value = source_ref.get(source_ref_key)
             if isinstance(value, list):

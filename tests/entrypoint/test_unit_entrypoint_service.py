@@ -110,3 +110,37 @@ def test_capture_http_request_profiles_source_map_probe() -> None:
     observations = tuple(observation_repository.list_recent())
     assert observations[0].matched_rules == ["public_http_web_discovery"]
     assert "path:.map" in observations[0].indicators
+
+
+def test_capture_http_request_profiles_internal_artifact_access() -> None:
+    observation_repository = InMemoryEntrypointObservationRepository()
+    service = EntrypointService(
+        BindingService(InMemoryBindingRepository()),
+        observation_repository,
+        profiler_service=ProfilerService(
+            InMemoryEvidenceRepository(),
+            InMemoryProfileRepository(),
+            build_test_attack_catalog(),
+        ),
+    )
+
+    response = service.capture_http_request(
+        EntrypointCaptureRequest(
+            attacker_key="198.51.100.203",
+            method="GET",
+            path="/finance/archive/2024/payroll-archive.zip",
+            headers={"user-agent": "curl/8.0"},
+            surface="internal",
+            asset_id="finance-share",
+        )
+    )
+
+    assert response.profile.recent_tactics == ["Collection"]
+    assert response.profile.recent_techniques == ["T1005"]
+    assert response.profile.recent_internal_http_paths == [
+        "/finance/archive/2024/payroll-archive.zip"
+    ]
+    observations = tuple(observation_repository.list_recent())
+    assert observations[0].surface == "internal"
+    assert observations[0].asset_id == "finance-share"
+    assert observations[0].matched_rules == ["internal_http_artifact_access"]

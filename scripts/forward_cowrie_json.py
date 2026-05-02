@@ -11,13 +11,12 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
-import time
 from pathlib import Path
-from typing import IO, Iterable, Iterator, NamedTuple
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from typing import Iterable, Iterator
+
+from scripts.forwarder_common import follow_file, forward_events, post_json_event
+from scripts.forwarder_common import refresh_log_handle as _refresh_log_handle
 
 
 def iter_json_events(lines: Iterable[str]) -> Iterator[dict[str, object]]:
@@ -71,21 +70,7 @@ def normalize_event(event: dict[str, object]) -> dict[str, object] | None:
     return normalized
 
 
-def post_event(
-    payload: dict[str, object],
-    adapter_url: str,
-    timeout_seconds: float,
-) -> tuple[int, str]:
-    """POST one wrapped Cowrie event to the adapter API."""
-    body = json.dumps(payload).encode("utf-8")
-    request = Request(
-        adapter_url,
-        data=body,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    with urlopen(request, timeout=timeout_seconds) as response:
-        return response.status, response.read().decode("utf-8")
+post_event = post_json_event
 
 
 def forward_lines(
@@ -95,34 +80,33 @@ def forward_lines(
     timeout_seconds: float,
 ) -> int:
     """Forward a finite batch of Cowrie JSON lines and return success count."""
-    forwarded = 0
-    for event in iter_json_events(lines):
-        normalized = normalize_event(event)
-        if normalized is None:
-            print(f"Skipped noisy {event.get('eventid', '<unknown>')}", flush=True)
-            continue
+    def _payloads() -> Iterator[dict[str, object]]:
+        for event in iter_json_events(lines):
+            normalized = normalize_event(event)
+            if normalized is None:
+                print(f"Skipped noisy {event.get('eventid', '<unknown>')}", flush=True)
+                continue
+            yield build_adapter_payload(normalized, protocol=protocol)
 
-        payload = build_adapter_payload(normalized, protocol=protocol)
-        try:
-            status_code, _ = post_event(payload, adapter_url, timeout_seconds)
-        except HTTPError as exc:
-            print(f"Adapter rejected event with HTTP {exc.code}", file=sys.stderr)
-            continue
-        except URLError as exc:
-            print(f"Could not reach adapter: {exc}", file=sys.stderr)
-            continue
-        if 200 <= status_code < 300:
-            forwarded += 1
-            print(f"Forwarded {normalized.get('eventid', '<unknown>')}", flush=True)
-        else:
-            print(f"Adapter returned unexpected HTTP {status_code}", file=sys.stderr)
-    return forwarded
+    return forward_events(
+        _payloads(),
+        target_url=adapter_url,
+        timeout_seconds=timeout_seconds,
+        post_event=post_event,
+        success_message=lambda payload: (
+            f"Forwarded {_payload_event(payload).get('eventid', '<unknown>')}"
+        ),
+        rejected_label="event",
+        endpoint_label="Adapter",
+        unreachable_target="adapter",
+    )
 
 
-class _OpenLog(NamedTuple):
-    handle: IO[str]
-    identity: tuple[int, int]
-    position: int
+def _payload_event(payload: dict[str, object]) -> dict[str, object]:
+    event = payload.get("event")
+    if isinstance(event, dict):
+        return event
+    return {}
 
 
 def follow_log_file(
@@ -135,77 +119,18 @@ def follow_log_file(
     timeout_seconds: float,
 ) -> int:
     """Tail a Cowrie JSON log file and forward new events to the adapter."""
-    forwarded = 0
-    current_log: _OpenLog | None = None
-    initial_open = True
-    try:
-        while True:
-            current_log = _refresh_log_handle(
-                log_file,
-                current_log,
-                from_start=from_start,
-                initial_open=initial_open,
-            )
-            initial_open = False
-
-            line = current_log.handle.readline()
-            if line:
-                forwarded += forward_lines(
-                    [line],
-                    adapter_url=adapter_url,
-                    protocol=protocol,
-                    timeout_seconds=timeout_seconds,
-                )
-                current_log = current_log._replace(position=current_log.handle.tell())
-                continue
-            if once:
-                return forwarded
-            time.sleep(poll_seconds)
-    finally:
-        if current_log is not None:
-            current_log.handle.close()
-
-
-def _refresh_log_handle(
-    log_file: Path,
-    current_log: _OpenLog | None,
-    *,
-    from_start: bool,
-    initial_open: bool,
-) -> _OpenLog:
-    """Open or reopen the log file when Cowrie rotates or truncates it."""
-    _ensure_log_file(log_file)
-    stat_result = log_file.stat()
-    identity = (stat_result.st_dev, stat_result.st_ino)
-    should_reopen = (
-        current_log is None
-        or current_log.identity != identity
-        or stat_result.st_size < current_log.position
+    return follow_file(
+        log_file,
+        from_start=from_start,
+        once=once,
+        poll_seconds=poll_seconds,
+        handle_line=lambda line: forward_lines(
+            [line],
+            adapter_url=adapter_url,
+            protocol=protocol,
+            timeout_seconds=timeout_seconds,
+        ),
     )
-    if not should_reopen:
-        return current_log
-
-    if current_log is not None:
-        current_log.handle.close()
-
-    handle = log_file.open("r", encoding="utf-8")
-    if initial_open and not from_start:
-        handle.seek(0, os.SEEK_END)
-    else:
-        handle.seek(0)
-    return _OpenLog(handle=handle, identity=identity, position=handle.tell())
-
-
-def _ensure_log_file(log_file: Path) -> None:
-    if log_file.exists():
-        return
-    # Create the path eagerly so the runner can start before Cowrie has emitted
-    # its first event. In --once mode this simply forwards 0 events.
-    log_file.parent.mkdir(parents=True, exist_ok=True)
-    log_file.touch()
-    # Local Docker Cowrie runs as a container user; keep a pre-created file
-    # writable by that user if the forwarder starts first.
-    log_file.chmod(0o666)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:

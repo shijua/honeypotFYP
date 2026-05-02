@@ -12,6 +12,11 @@
     input { width: 100%; box-sizing: border-box; margin-top: 6px; padding: 10px; border: 1px solid #b9c5d5; }
     button { margin-top: 18px; width: 100%; padding: 11px; border: 0; background: #1d3354; color: #fff; font-weight: 700; }
     .meta { margin-top: 18px; color: #65758b; font-size: 13px; }
+    .downloads { display: none; margin-top: 22px; border-top: 1px solid #d7dfeb; padding-top: 18px; }
+    .downloads.active { display: block; }
+    .error { display: none; margin-top: 12px; color: #9b1c1c; font-size: 13px; }
+    ul { margin: 10px 0 0; padding-left: 20px; }
+    li { margin: 8px 0; }
   </style>
 </head>
 <body>
@@ -25,9 +30,37 @@
     <input id="user" name="user" autocomplete="off">
     <label for="pass">Password</label>
     <input id="pass" name="pass" type="password">
-    <button type="button">Continue</button>
+    <button id="login" type="button">Continue</button>
+    <p id="error" class="error">Authentication failed. Contact the network operations desk if access was recently changed.</p>
     <p class="meta">MFA policy: Corp-Access-Default. Appliance build: RA-2026.04.</p>
-    <p class="meta">Support bundle: <a href="/backup/ra-config-2026-04.bak">ra-config-2026-04.bak</a> | Client profile: <a href="/download/contractor-profile.ovpn">contractor-profile.ovpn</a></p>
+    <div id="downloads" class="downloads">
+      <h3>Remote access files</h3>
+      <p class="meta">Protected downloads may trigger a browser authentication prompt.</p>
+      <ul>
+        <li><a href="/download/contractor-profile.ovpn">contractor-profile.ovpn</a></li>
+        <li><a href="/backup/ra-config-2026-04.bak">ra-config-2026-04.bak</a></li>
+        <li><a href="/logs/vpn-auth.log">vpn-auth.log</a></li>
+      </ul>
+    </div>
   </main>
+  <script>
+    const loginButton = document.getElementById('login');
+    const error = document.getElementById('error');
+    const downloads = document.getElementById('downloads');
+
+    loginButton.addEventListener('click', () => {
+      const user = document.getElementById('user').value.trim();
+      const pass = document.getElementById('pass').value;
+
+      if (user === 'contractor.ops' && pass === 'RemoteAccess-0426') {
+        error.style.display = 'none';
+        downloads.classList.add('active');
+        return;
+      }
+
+      downloads.classList.remove('active');
+      error.style.display = 'block';
+    });
+  </script>
 </body>
 </html>

@@ -214,6 +214,9 @@ class ControllerService:
             "any_http_paths": set(profile.recent_public_http_paths),
             "any_http_rules": set(profile.recent_public_http_rules),
             "any_http_indicators": set(profile.recent_public_http_indicators),
+            "any_internal_http_paths": set(profile.recent_internal_http_paths),
+            "any_internal_http_rules": set(profile.recent_internal_http_rules),
+            "any_internal_http_indicators": set(profile.recent_internal_http_indicators),
         }
 
         # Empty or malformed signal lists should not accidentally block legacy

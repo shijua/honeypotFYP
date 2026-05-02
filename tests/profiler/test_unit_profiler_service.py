@@ -262,6 +262,49 @@ def test_ingest_preserves_public_http_source_ref_fields() -> None:
     ]
 
 
+def test_ingest_preserves_internal_http_source_ref_fields() -> None:
+    service = ProfilerService(
+        InMemoryEvidenceRepository(),
+        InMemoryProfileRepository(),
+        build_test_attack_catalog(),
+    )
+
+    response = service.ingest(
+        EvidenceIngestRequest(
+            attacker_key="198.51.100.52",
+            binding_id="binding-8",
+            event=FalcoEvent(
+                ts=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                falco_rule="Internal HTTP asset request",
+                priority="INFO",
+                output="internal HTTP GET /downloads/agent-update.bin asset=malware-sink",
+                tags=["mitre_collection", "T1005"],
+                output_fields={
+                    "source": "internal_http",
+                    "http_surface": "internal",
+                    "asset_id": "malware-sink",
+                    "http_method": "GET",
+                    "http_path": "/downloads/agent-update.bin",
+                    "http_rule_names": ["internal_http_artifact_access"],
+                    "http_indicators": ["path:.bin"],
+                },
+            ),
+        )
+    )
+
+    source_ref = response.evidences[0].source_ref
+    assert source_ref["source"] == "internal_http"
+    assert source_ref["http_surface"] == "internal"
+    assert source_ref["asset_id"] == "malware-sink"
+    assert response.profile.recent_internal_http_paths == [
+        "/downloads/agent-update.bin"
+    ]
+    assert response.profile.recent_internal_http_rules == [
+        "internal_http_artifact_access"
+    ]
+    assert response.profile.recent_internal_http_indicators == ["path:.bin"]
+
+
 def test_ingest_maps_multi_tactic_public_http_tags_per_technique() -> None:
     service = ProfilerService(
         InMemoryEvidenceRepository(),

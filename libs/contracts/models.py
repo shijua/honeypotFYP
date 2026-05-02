@@ -227,6 +227,9 @@ class ProfileSnapshot(VersionedModel):
     - recent_public_http_paths: suspicious public web paths observed in the short window
     - recent_public_http_rules: local public HTTP rule names that matched those paths
     - recent_public_http_indicators: concrete matched tokens such as path:.bak or combined:.env
+    - recent_internal_http_paths: suspicious internal asset paths observed after unlock
+    - recent_internal_http_rules: local internal HTTP rule names that matched those paths
+    - recent_internal_http_indicators: concrete matched internal asset tokens
     - updated_at: timestamp of the newest evidence included in this snapshot
 
     Example:
@@ -242,6 +245,7 @@ class ProfileSnapshot(VersionedModel):
             "recent_public_http_paths": ["/.env.old"],
             "recent_public_http_rules": ["public_http_credential_discovery"],
             "recent_public_http_indicators": ["combined:.env", "path:.old"],
+            "recent_internal_http_paths": ["/finance/archive/2024/payroll-archive.zip"],
             "updated_at": "2026-04-18T12:00:00Z"
         }
     """
@@ -258,6 +262,9 @@ class ProfileSnapshot(VersionedModel):
     recent_public_http_paths: List[str] = Field(default_factory=list)
     recent_public_http_rules: List[str] = Field(default_factory=list)
     recent_public_http_indicators: List[str] = Field(default_factory=list)
+    recent_internal_http_paths: List[str] = Field(default_factory=list)
+    recent_internal_http_rules: List[str] = Field(default_factory=list)
+    recent_internal_http_indicators: List[str] = Field(default_factory=list)
     updated_at: datetime = Field(default_factory=utcnow)
 
 
@@ -295,6 +302,8 @@ class AssetDefinition(VersionedModel):
     evidence before they become eligible. Supported signal keys are
     `any_http_paths`, `any_http_rules`, and `any_http_indicators`; each matches
     against the corresponding `ProfileSnapshot.recent_public_http_*` field.
+    Internal asset exploration can use `any_internal_http_paths`,
+    `any_internal_http_rules`, and `any_internal_http_indicators`.
     Optional `default_settings.selection_profile` metadata describes reveal
     outputs and tactic difficulty for future controller scoring without adding
     new top-level contract fields.
@@ -498,9 +507,12 @@ class GatewaySyncResponse(VersionedModel):
     state: GatewayBindingState
 
 
-# ---- Public entrypoint capture contracts ----
+# ---- HTTP observation capture contracts ----
 class EntrypointCaptureRequest(VersionedModel):
-    """Normalized HTTP request captured by the low-interaction web honeypot.
+    """Normalized HTTP request captured by a web-facing observation point.
+
+    `surface` marks whether the event came from the public website or from an
+    already-unlocked internal HTTP asset. `asset_id` is only set for the latter.
 
     Example:
         {
@@ -509,7 +521,8 @@ class EntrypointCaptureRequest(VersionedModel):
             "path": "/wp-login.php",
             "query_string": "redirect_to=/wp-admin",
             "headers": {"user-agent": "curl/8.0"},
-            "body_preview": "log=admin&pwd=[redacted]"
+            "body_preview": "log=admin&pwd=[redacted]",
+            "surface": "public"
         }
     """
 
@@ -521,10 +534,12 @@ class EntrypointCaptureRequest(VersionedModel):
     body_preview: Optional[str] = None
     body_truncated: bool = False
     protocol: str = Field(default="tcp", min_length=1)
+    surface: Literal["public", "internal"] = "public"
+    asset_id: Optional[str] = None
 
 
 class EntrypointObservation(VersionedModel):
-    """Persisted observation from one public honeypot request.
+    """Persisted observation from one HTTP honeypot request.
 
     Rule metadata is stored with the observation so the dashboard can show the
     concrete evidence, such as `user_agent:sqlmap`, behind a MITRE tag.
@@ -539,7 +554,8 @@ class EntrypointObservation(VersionedModel):
             "status_code": 404,
             "matched_rules": ["public_http_credential_discovery"],
             "tags": ["mitre_credential_access", "T1552.001"],
-            "indicators": ["combined:.env"]
+            "indicators": ["combined:.env"],
+            "surface": "public"
         }
     """
 
@@ -559,6 +575,8 @@ class EntrypointObservation(VersionedModel):
     tags: List[str] = Field(default_factory=list)
     indicators: List[str] = Field(default_factory=list)
     profiler_evidence_ids: List[str] = Field(default_factory=list)
+    surface: Literal["public", "internal"] = "public"
+    asset_id: Optional[str] = None
 
 
 class EntrypointCaptureResponse(VersionedModel):

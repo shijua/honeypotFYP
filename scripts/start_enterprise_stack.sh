@@ -69,6 +69,7 @@ ENTERPRISE_SERVICES=(
   public-portal
   public-portal-forwarder
   asset-gateway
+  internal-http-forwarder
   cowrie
   opencanary-adapter
   opencanary-forwarder
@@ -88,7 +89,6 @@ Options:
   --no-reset       Do not stop containers or clear runtime state before starting.
   --keep-state     Stop/recreate containers but preserve data/runtime JSON state.
   --no-wait        Do not wait for HTTP health checks.
-  --with-web-clone Start optional SNARE/TANNER web clone services.
   --project-name   Compose project name. Default: honeynet.
   -h, --help       Show this help.
 EOF
@@ -104,9 +104,6 @@ while [[ $# -gt 0 ]]; do
       ;;
     --no-wait)
       WAIT_FOR_SERVICES=0
-      ;;
-    --with-web-clone)
-      ENABLE_WEB_CLONE=1
       ;;
     --project-name)
       PROJECT_NAME="$2"
@@ -198,7 +195,6 @@ echo "Public portal:   http://${CLIENT_TARGET_HOST:-127.0.0.1}:${PUBLIC_PORTAL_P
 echo "HTTP observer:   http://${CLIENT_TARGET_HOST:-127.0.0.1}:${ENTRYPOINT_OBSERVER_PORT:-8083}/.env"
 echo "Dashboard:       http://${CLIENT_TARGET_HOST:-127.0.0.1}:${DASHBOARD_PORT:-8090}/"
 echo "Cowrie SSH:      ssh -p ${COWRIE_SSH_PORT:-2222} root@${CLIENT_TARGET_HOST:-127.0.0.1}"
-echo "SNARE HTTP:      ./scripts/start_enterprise_stack.sh --with-web-clone to enable http://${CLIENT_TARGET_HOST:-127.0.0.1}:${SNARE_HTTP_PORT:-8081}/"
 echo "Adaptive Git:    git://${CLIENT_TARGET_HOST:-127.0.0.1}:${GIT_INTERNAL_PORT:-19418}/ after git-internal unlock"
 echo "Adaptive MySQL:  ${CLIENT_TARGET_HOST:-127.0.0.1}:${OPS_DB_PORT:-13306} after ops-db unlock"
 echo "Adaptive Redis:  ${CLIENT_TARGET_HOST:-127.0.0.1}:${REDIS_CACHE_PORT:-16379} after redis-cache unlock"

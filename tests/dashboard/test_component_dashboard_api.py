@@ -266,6 +266,13 @@ def test_dashboard_summary_endpoint_returns_live_snapshot(
                 "kind": "compose",
             },
             {
+                "name": "honeynet_internal-http-forwarder_1",
+                "image": "python:3.10-slim",
+                "status": "Up 12 seconds",
+                "ports": "",
+                "kind": "compose",
+            },
+            {
                 "name": "honeynet_opencanary-forwarder_1",
                 "image": "python:3.10-slim",
                 "status": "Up 12 seconds",
@@ -313,7 +320,7 @@ def test_dashboard_summary_endpoint_returns_live_snapshot(
     assert payload["metrics"]["attacker_count"] == 1
     assert payload["metrics"]["active_bindings"] == 1
     assert payload["metrics"]["running_assets"] == 1
-    assert payload["metrics"]["containers_up"] == 9
+    assert payload["metrics"]["containers_up"] == 10
     assert payload["metrics"]["opencanary_event_count"] == 1
     assert payload["bindings"][0]["binding_id"] == "binding-1"
     assert payload["gateway_routes"][0]["exposed_assets"] == ["internal-portal"]
@@ -338,6 +345,10 @@ def test_dashboard_summary_endpoint_returns_live_snapshot(
         stage["stage"]: stage["status"]
         for stage in payload["chain_health"]
     }["Benign surface forwarder"] == "ok"
+    assert {
+        stage["stage"]: stage["status"]
+        for stage in payload["chain_health"]
+    }["Internal HTTP forwarder"] == "ok"
     assert {
         stage["stage"]: stage["status"]
         for stage in payload["chain_health"]

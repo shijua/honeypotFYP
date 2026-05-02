@@ -334,7 +334,7 @@
     "template_family": "web-service",
     "protocols": ["http"],
     "ports": [80],
-    "source_refs": ["mvp:static-web-admin-console", "planned:opencanary:http"],
+    "source_refs": ["mvp:static-web-admin-console"],
     "telemetry_source": "asset_runtime",
     "default_settings": {
       "runtime": {
@@ -702,7 +702,11 @@
         "image": "nginx:alpine",
         "network": "{project_name}_net_internal",
         "memory_limit": "128m",
-        "volumes": ["{host_project_root}/deploy/internal-assets/vpn-appliance/html:/usr/share/nginx/html:ro"],
+        "volumes": [
+          "{host_project_root}/deploy/internal-assets/vpn-appliance/html:/usr/share/nginx/html:ro",
+          "{host_project_root}/deploy/internal-assets/vpn-appliance/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro",
+          "{host_project_root}/deploy/internal-assets/vpn-appliance/nginx/.htpasswd:/etc/nginx/.htpasswd:ro"
+        ],
         "port_mappings": [
           {
             "host": "127.0.0.1",

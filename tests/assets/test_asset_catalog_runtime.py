@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import zipfile
 from pathlib import Path
 
 from libs.contracts.models import AssetDefinition
@@ -31,18 +32,22 @@ def test_static_internal_assets_have_nginx_runtime_and_files() -> None:
     for asset_id, port in expected_ports.items():
         asset = assets[asset_id]
         runtime = asset.default_settings["runtime"]
-        volume = runtime["volumes"][0]
+        primary_volume = runtime["volumes"][0]
 
         assert asset.exposure_type == "internal"
         assert asset.telemetry_source == "asset_runtime"
         assert runtime["backend"] == "docker"
         assert runtime["image"] == "nginx:alpine"
         assert runtime["port_mappings"][0]["requested_host_port"] == port
-        assert volume == (
+        assert primary_volume == (
             f"{{host_project_root}}/deploy/internal-assets/{asset_id}/html:"
             "/usr/share/nginx/html:ro"
         )
         assert (ROOT / f"deploy/internal-assets/{asset_id}/html/index.html").exists()
+
+    vpn_volumes = assets["vpn-appliance"].default_settings["runtime"]["volumes"]
+    assert "{host_project_root}/deploy/internal-assets/vpn-appliance/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro" in vpn_volumes
+    assert "{host_project_root}/deploy/internal-assets/vpn-appliance/nginx/.htpasswd:/etc/nginx/.htpasswd:ro" in vpn_volumes
 
 
 def test_static_internal_assets_include_breadcrumb_files() -> None:
@@ -67,6 +72,32 @@ def test_static_internal_assets_include_breadcrumb_files() -> None:
 
         assert path.exists()
         assert path.stat().st_size > 0
+
+
+def test_internal_asset_downloads_use_real_file_formats() -> None:
+    xlsx_path = ROOT / "deploy/internal-assets/finance-share/html/finance/archive/2024/budget-q4-review.xlsx"
+    payroll_path = ROOT / "deploy/internal-assets/finance-share/html/finance/archive/2024/payroll-archive.zip"
+    agent_path = ROOT / "deploy/internal-assets/malware-sink/html/downloads/agent-update.bin"
+
+    assert zipfile.is_zipfile(xlsx_path)
+    with zipfile.ZipFile(xlsx_path) as workbook:
+        names = set(workbook.namelist())
+
+    assert "[Content_Types].xml" in names
+    assert "xl/workbook.xml" in names
+    assert "xl/worksheets/sheet1.xml" in names
+
+    assert zipfile.is_zipfile(payroll_path)
+    with zipfile.ZipFile(payroll_path) as archive:
+        names = set(archive.namelist())
+
+    assert "payroll-april.csv" in names
+    assert "contractor-accounts.csv" in names
+    assert "notes/password-rotation.txt" in names
+
+    data = agent_path.read_bytes()
+    assert data.startswith(b"NBAGENTPKG\x00")
+    assert b"\x00" in data
 
 
 def test_git_and_redis_seed_material_exists_for_realistic_future_runtime() -> None:

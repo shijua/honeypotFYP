@@ -46,6 +46,25 @@ def test_public_http_rule_matcher_maps_secret_and_scanner_probes() -> None:
     assert injection_matches[0].tags == ("mitre_initial_access", "T1190")
 
 
+def test_public_http_rule_matcher_maps_internal_artifact_access() -> None:
+    matcher = FilePublicHttpRuleMatcher("data/detections/public_http_rules.json")
+
+    matches = matcher.matches_for(
+        method="GET",
+        path="/downloads/agent-update.bin",
+        surface="internal",
+        asset_id="malware-sink",
+    )
+
+    assert [match.rule_name for match in matches] == [
+        "internal_http_artifact_access"
+    ]
+    assert matches[0].tags == ("mitre_collection", "T1005")
+    assert "surface:internal" in matches[0].indicators
+    assert "path:/downloads/" in matches[0].indicators
+    assert "path:.bin" in matches[0].indicators
+
+
 def test_public_http_rule_matcher_supports_json_rule_files(tmp_path: Path) -> None:
     rules_path = tmp_path / "rules.json"
     rules_path.write_text(

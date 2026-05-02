@@ -25,6 +25,9 @@ def build_chain_health(
     """Build a visible health trace for the attacker telemetry pipeline."""
     raw_cowrie_event = _last_cowrie_log_event(_cowrie_log_path())
     raw_opencanary_event = _last_opencanary_log_event(_opencanary_log_path())
+    raw_internal_http_event = _last_internal_http_event(
+        state_dir / "internal_http_events.jsonl"
+    )
     cowrie_forwarder = _container_for_service(
         project_name,
         containers,
@@ -48,6 +51,14 @@ def build_chain_health(
     )
     opencanary_forwarder_log = _last_forwarder_log_line(
         opencanary_forwarder.get("name") if opencanary_forwarder else ""
+    )
+    internal_http_forwarder = _container_for_service(
+        project_name,
+        containers,
+        "internal-http-forwarder",
+    )
+    internal_http_forwarder_log = _last_forwarder_log_line(
+        internal_http_forwarder.get("name") if internal_http_forwarder else ""
     )
     latest_entrypoint = _latest_record(entrypoint_observations, "ts")
     latest_cowrie = _latest_record(cowrie_observations, "ts")
@@ -76,6 +87,14 @@ def build_chain_health(
             service_name="asset-gateway",
             stage="Asset data-plane gateway",
             detail="fixed public ports route to per-attacker backend containers",
+        ),
+        _raw_internal_http_stage(raw_internal_http_event),
+        _forwarder_stage(
+            internal_http_forwarder,
+            internal_http_forwarder_log,
+            stage="Internal HTTP forwarder",
+            component="internal-http-forwarder",
+            target="entrypoint-observer",
         ),
         _service_stage(
             project_name,
@@ -196,6 +215,24 @@ def _raw_opencanary_stage(event: dict[str, Any] | None) -> dict[str, str]:
         status="ok",
         signal=str(event.get("service", event.get("dst_port", "event"))),
         detail=_record_detail(event, ["utc_time", "src_host", "dst_port", "service"]),
+    )
+
+
+def _raw_internal_http_stage(event: dict[str, Any] | None) -> dict[str, str]:
+    if event is None:
+        return _health_stage(
+            stage="Internal HTTP raw log",
+            component="data/runtime/internal_http_events.jsonl",
+            status="warn",
+            signal="no raw event",
+            detail="waiting for asset-gateway to observe an unlocked HTTP asset request",
+        )
+    return _health_stage(
+        stage="Internal HTTP raw log",
+        component="internal_http_events.jsonl",
+        status="ok",
+        signal=str(event.get("path", "event")),
+        detail=_record_detail(event, ["attacker_key", "asset_id", "method", "path"]),
     )
 
 
@@ -421,6 +458,36 @@ def _last_opencanary_log_event(path: Path) -> dict[str, Any] | None:
         if isinstance(event, dict):
             return _safe_opencanary_log_event(event)
     return None
+
+
+def _last_internal_http_event(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    try:
+        with path.open("rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            size = handle.tell()
+            handle.seek(max(size - 65536, 0), os.SEEK_SET)
+            payload = handle.read().decode("utf-8", errors="ignore")
+    except OSError:
+        return None
+    for line in reversed(payload.splitlines()):
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(event, dict):
+            return _safe_internal_http_event(event)
+    return None
+
+
+def _safe_internal_http_event(event: dict[str, Any]) -> dict[str, Any]:
+    safe_fields = ["attacker_key", "asset_id", "method", "path", "query_string"]
+    return {
+        field: event[field]
+        for field in safe_fields
+        if isinstance(event.get(field), (str, int, float, bool))
+    }
 
 
 def _safe_opencanary_log_event(event: dict[str, Any]) -> dict[str, Any]:
