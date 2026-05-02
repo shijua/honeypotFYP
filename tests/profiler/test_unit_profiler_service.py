@@ -7,7 +7,7 @@ import pytest
 from libs.common.config import RuntimeConfig
 from libs.contracts.models import EvidenceIngestRequest, FalcoEvent
 from services.profiler.domain import ProfilerService
-from services.profiler.repository import InMemoryEvidenceRepository, InMemoryProfileRepository
+from tests.support.inmemory_repositories import InMemoryEvidenceRepository, InMemoryProfileRepository
 from tests.support.attack_catalog import build_test_attack_catalog
 
 

@@ -13,13 +13,13 @@ from fastapi import Depends, FastAPI
 from libs.common.config import RuntimeConfig
 from libs.contracts.models import ControllerTickRequest, ControllerTickResponse
 from services.controller.domain import ControllerService
-from services.controller.repository import FileAssetRepository, InMemoryTransitionRepository
+from services.controller.repository import FileAssetRepository, StaticTransitionRepository
 
 app = FastAPI(title="controller", version="0.1.0")
 
 _config = RuntimeConfig()
 _asset_repository = FileAssetRepository(_config.asset_catalog_path)
-_transition_repository = InMemoryTransitionRepository()
+_transition_repository = StaticTransitionRepository()
 _service = ControllerService(
     _asset_repository,
     _transition_repository,

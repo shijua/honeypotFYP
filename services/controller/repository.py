@@ -39,75 +39,6 @@ class TransitionRepository(Protocol):
         ...
 
 
-class InMemoryAssetRepository:
-    """Static asset catalog used by tests and the in-process MVP.
-
-    This mirrors the important dependency semantics from data/assets/catalog.json
-    so component tests do not accidentally exercise a looser asset graph than
-    the real file-backed runtime.
-    """
-
-    def __init__(self, assets: list[AssetDefinition] | None = None) -> None:
-        # Keep a small built-in catalog for the MVP.
-        self._assets = assets or [
-            AssetDefinition(
-                asset_id="internal-portal",
-                asset_name="Internal Portal",
-                exposure_type="internal",
-                interaction_level="medium",
-                covers_tactics=["Discovery"],
-                dependencies=[],
-            ),
-            AssetDefinition(
-                asset_id="finance-share",
-                asset_name="Finance File Share",
-                exposure_type="internal",
-                interaction_level="medium",
-                covers_tactics=["Credential Access", "Collection"],
-                dependencies=["internal-portal"],
-                default_settings={
-                    "unlock_signals": {
-                        "any_http_paths": ["/backup/db_backup_2024.sql.bak"],
-                        "any_http_indicators": ["path:.bak"],
-                    }
-                },
-            ),
-            AssetDefinition(
-                asset_id="git-internal",
-                asset_name="Internal Git",
-                exposure_type="internal",
-                interaction_level="medium",
-                covers_tactics=["Credential Access", "Discovery"],
-                dependencies=["internal-portal"],
-                default_settings={
-                    "unlock_signals": {
-                        "any_http_paths": ["/.env.old", "/assets/app.js.map"],
-                        "any_http_indicators": ["combined:.env", "path:.map"],
-                    }
-                },
-            ),
-            AssetDefinition(
-                asset_id="ops-db",
-                asset_name="Operations Database",
-                exposure_type="internal",
-                interaction_level="medium",
-                covers_tactics=["Credential Access", "Collection"],
-                dependencies=["git-internal"],
-            ),
-            AssetDefinition(
-                asset_id="admin-jumpbox",
-                asset_name="Admin Jumpbox",
-                exposure_type="internal",
-                interaction_level="high",
-                covers_tactics=["Lateral Movement", "Privilege Escalation"],
-                dependencies=["git-internal"],
-            ),
-        ]
-
-    def list_all(self) -> Iterable[AssetDefinition]:
-        return tuple(self._assets)
-
-
 class FileAssetRepository:
     """JSON-backed asset catalog used by the default controller runtime.
 
@@ -131,7 +62,7 @@ class FileAssetRepository:
         return tuple(AssetDefinition.model_validate(item) for item in payload)
 
 
-class InMemoryTransitionRepository:
+class StaticTransitionRepository:
     """Small hand-written tactic transition table for MVP procedure scores."""
 
     def __init__(self) -> None:

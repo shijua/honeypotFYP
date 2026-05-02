@@ -4,9 +4,9 @@ import pytest
 
 from libs.contracts.models import BindingStatus, GatewaySyncRequest, ResolveBindingRequest
 from services.binding_service.domain import BindingService
-from services.binding_service.repository import InMemoryBindingRepository
+from tests.support.inmemory_repositories import InMemoryBindingRepository
 from services.gateway.domain import GatewayService
-from services.gateway.repository import InMemoryGatewayRouteRepository
+from tests.support.inmemory_repositories import InMemoryGatewayRouteRepository
 
 
 pytestmark = pytest.mark.unit

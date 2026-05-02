@@ -30,20 +30,6 @@ class EntrypointObservationRepository(Protocol):
         ...
 
 
-class InMemoryEntrypointObservationRepository:
-    """In-memory observation store used by tests and isolated local runs."""
-
-    def __init__(self) -> None:
-        self._observations: list[EntrypointObservation] = []
-
-    def add(self, observation: EntrypointObservation) -> EntrypointObservation:
-        self._observations.append(observation)
-        return observation
-
-    def list_recent(self, limit: int = 100) -> Iterable[EntrypointObservation]:
-        return tuple(self._observations[-limit:])
-
-
 class FileEntrypointObservationRepository:
     """File-backed observation store used by the default local runtime.
 

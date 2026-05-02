@@ -1,8 +1,4 @@
-"""Repository interfaces and adapters for binding records.
-
-The service code depends on the BindingRepository protocol so the same domain
-logic can run against in-memory or file-backed storage.
-"""
+"""Repository interfaces and file-backed adapters for binding records."""
 
 from __future__ import annotations
 
@@ -37,39 +33,6 @@ class BindingRepository(Protocol):
     def list_all(self) -> Iterable[BindingRecord]:
         """List all records (mainly for diagnostics/tests)."""
         ...
-
-
-class InMemoryBindingRepository:
-    """In-memory repository used by local runs and tests.
-
-    This implementation keeps two indexes:
-    - binding_id -> BindingRecord
-    - attacker_key -> binding_id
-    """
-
-    def __init__(self) -> None:
-        # Primary index by logical binding id.
-        self._by_binding: dict[str, BindingRecord] = {}
-        # Secondary index for sticky attacker_key -> binding lookup.
-        self._by_attacker: dict[str, str] = {}
-
-    def get_by_attacker(self, attacker_key: str) -> BindingRecord | None:
-        binding_id = self._by_attacker.get(attacker_key)
-        if binding_id is None:
-            return None
-        return self._by_binding.get(binding_id)
-
-    def get_by_binding(self, binding_id: str) -> BindingRecord | None:
-        return self._by_binding.get(binding_id)
-
-    def upsert(self, record: BindingRecord) -> BindingRecord:
-        # Upsert keeps both indexes in sync and enables idempotent writes in tests.
-        self._by_binding[record.binding_id] = record
-        self._by_attacker[record.attacker_key] = record.binding_id
-        return record
-
-    def list_all(self) -> Iterable[BindingRecord]:
-        return tuple(self._by_binding.values())
 
 
 class FileBindingRepository:

@@ -9,32 +9,33 @@ from libs.common.config import RuntimeConfig
 from services.binding_service.app import app as binding_app
 from services.binding_service.app import get_service as get_binding_service
 from services.binding_service.domain import BindingService
-from services.binding_service.repository import InMemoryBindingRepository
+from tests.support.inmemory_repositories import InMemoryBindingRepository
 from services.controller.app import app as controller_app
 from services.controller.app import get_service as get_controller_service
 from services.controller.domain import ControllerService
-from services.controller.repository import InMemoryAssetRepository, InMemoryTransitionRepository
+from services.controller.repository import StaticTransitionRepository
+from tests.support.inmemory_repositories import InMemoryAssetRepository
 from services.cowrie.app import app as cowrie_app
 from services.cowrie.app import get_service as get_cowrie_service
 from services.cowrie.command_mapping import FileCowrieCommandRuleCatalog
 from services.cowrie.domain import CowrieService
 from services.cowrie.event_catalog import FileCowrieEventCatalog
-from services.cowrie.repository import InMemoryCowrieObservationRepository
+from tests.support.inmemory_repositories import InMemoryCowrieObservationRepository
 from services.entrypoint.app import app as entrypoint_app
 from services.entrypoint.app import get_service as get_entrypoint_service
 from services.entrypoint.domain import EntrypointService
-from services.entrypoint.repository import InMemoryEntrypointObservationRepository
+from tests.support.inmemory_repositories import InMemoryEntrypointObservationRepository
 from services.gateway.app import app as gateway_app
 from services.gateway.app import get_service as get_gateway_service
 from services.gateway.domain import GatewayService
-from services.gateway.repository import InMemoryGatewayRouteRepository
+from tests.support.inmemory_repositories import InMemoryGatewayRouteRepository
 from services.orchestrator.app import app as orchestrator_app
 from services.orchestrator.app import get_service as get_orchestrator_service
 from services.orchestrator.domain import OrchestratorService
 from services.profiler.app import app as profiler_app
 from services.profiler.app import get_service as get_profiler_service
 from services.profiler.domain import ProfilerService
-from services.profiler.repository import InMemoryEvidenceRepository, InMemoryProfileRepository
+from tests.support.inmemory_repositories import InMemoryEvidenceRepository, InMemoryProfileRepository
 from tests.support.attack_catalog import build_test_attack_catalog
 
 
@@ -82,7 +83,7 @@ def profiler_client() -> TestClient:
 def controller_client() -> TestClient:
     service = ControllerService(
         InMemoryAssetRepository(),
-        InMemoryTransitionRepository(),
+        StaticTransitionRepository(),
         config=RuntimeConfig(epsilon=0.0),
         rng=random.Random(0),
     )
@@ -180,7 +181,7 @@ def mvp_clients() -> dict[str, TestClient]:
     )
     controller_service = ControllerService(
         InMemoryAssetRepository(),
-        InMemoryTransitionRepository(),
+        StaticTransitionRepository(),
         config=RuntimeConfig(epsilon=0.0),
         rng=random.Random(0),
     )

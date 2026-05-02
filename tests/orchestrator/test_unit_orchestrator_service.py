@@ -13,16 +13,16 @@ from libs.contracts.models import (
     ResolveBindingRequest,
 )
 from services.binding_service.domain import BindingService
-from services.binding_service.repository import InMemoryBindingRepository
-from services.controller.repository import InMemoryAssetRepository
+from tests.support.inmemory_repositories import InMemoryBindingRepository
+from tests.support.inmemory_repositories import InMemoryAssetRepository
 from services.gateway.domain import GatewayService
-from services.gateway.repository import InMemoryGatewayRouteRepository
+from tests.support.inmemory_repositories import InMemoryGatewayRouteRepository
+from tests.support.inmemory_repositories import InMemoryTemplateRuntimeRepository
 from services.orchestrator.domain import OrchestratorService
 from services.orchestrator.template_runtime import (
     ComposeTemplateRuntime,
     DockerTemplateRuntime,
     _resolve_host_port,
-    InMemoryTemplateRuntimeRepository,
     MockTemplateRuntime,
     HybridTemplateRuntime,
 )

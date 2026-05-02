@@ -22,20 +22,6 @@ class OpenCanaryObservationRepository(Protocol):
         ...
 
 
-class InMemoryOpenCanaryObservationRepository:
-    """In-memory OpenCanary observation store used by tests."""
-
-    def __init__(self) -> None:
-        self._observations: list[OpenCanaryObservation] = []
-
-    def add(self, observation: OpenCanaryObservation) -> OpenCanaryObservation:
-        self._observations.append(observation)
-        return observation
-
-    def list_recent(self, limit: int = 100) -> Iterable[OpenCanaryObservation]:
-        return tuple(self._observations[-limit:])
-
-
 class FileOpenCanaryObservationRepository:
     """File-backed OpenCanary observation store used by local runtime."""
 
@@ -55,4 +41,3 @@ class FileOpenCanaryObservationRepository:
             OpenCanaryObservation.model_validate(item)
             for item in observations
         )
-

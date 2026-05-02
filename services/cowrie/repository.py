@@ -30,20 +30,6 @@ class CowrieObservationRepository(Protocol):
         ...
 
 
-class InMemoryCowrieObservationRepository:
-    """In-memory Cowrie observation store used by tests and isolated runs."""
-
-    def __init__(self) -> None:
-        self._observations: list[CowrieObservation] = []
-
-    def add(self, observation: CowrieObservation) -> CowrieObservation:
-        self._observations.append(observation)
-        return observation
-
-    def list_recent(self, limit: int = 100) -> Iterable[CowrieObservation]:
-        return tuple(self._observations[-limit:])
-
-
 class FileCowrieObservationRepository:
     """File-backed Cowrie observation store used by the default local runtime.
 

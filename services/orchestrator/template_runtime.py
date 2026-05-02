@@ -42,24 +42,6 @@ class TemplateRuntimeRepository(Protocol):
         ...
 
 
-class InMemoryTemplateRuntimeRepository:
-    """In-memory runtime store used by tests."""
-
-    def __init__(self) -> None:
-        self._records: dict[str, AssetRuntimeRecord] = {}
-
-    def upsert(self, record: AssetRuntimeRecord) -> AssetRuntimeRecord:
-        self._records[record.runtime_id] = record
-        return record
-
-    def list_by_binding(self, binding_id: str) -> Iterable[AssetRuntimeRecord]:
-        return tuple(
-            record
-            for record in self._records.values()
-            if record.binding_id == binding_id
-        )
-
-
 class FileTemplateRuntimeRepository:
     """File-backed runtime store for default local orchestration."""
 

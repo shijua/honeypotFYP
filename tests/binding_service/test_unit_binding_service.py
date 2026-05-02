@@ -5,7 +5,7 @@ import pytest
 from libs.common.clock import utcnow
 from libs.contracts.models import HeartbeatRequest, RecycleRequest, ResolveBindingRequest
 from services.binding_service.domain import BindingService
-from services.binding_service.repository import InMemoryBindingRepository
+from tests.support.inmemory_repositories import InMemoryBindingRepository
 
 
 pytestmark = pytest.mark.unit

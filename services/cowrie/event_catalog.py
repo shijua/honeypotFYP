@@ -75,27 +75,6 @@ class FileCowrieEventCatalog:
         self._loaded = True
 
 
-class InMemoryCowrieEventCatalog:
-    """In-memory Cowrie event catalog used by tests when custom mappings are needed."""
-
-    def __init__(
-        self,
-        mappings: dict[str, CowrieEventMapping],
-        default_mapping: CowrieEventMapping | None = None,
-    ) -> None:
-        self._mappings = mappings
-        self._default_mapping = default_mapping or CowrieEventMapping(
-            priority="INFO",
-            tags=(),
-            output_template="{eventid} from {src_ip}",
-            output_fields=("source", "cowrie_eventid", "src_ip"),
-            profile=False,
-        )
-
-    def mapping_for(self, eventid: str) -> CowrieEventMapping:
-        return self._mappings.get(eventid, self._default_mapping)
-
-
 def _mapping_from_payload(payload: object) -> CowrieEventMapping:
     if not isinstance(payload, dict):
         payload = {}

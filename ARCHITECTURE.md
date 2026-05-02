@@ -150,8 +150,8 @@ benign-surface signals provide baseline context
 - Purpose: storage abstraction for the binding slice.
 - Includes:
   - `BindingRepository` protocol (port interface).
-  - `InMemoryBindingRepository` adapter (tests/local isolation).
   - `FileBindingRepository` adapter (default runtime).
+  - test doubles live under `tests/support/inmemory_repositories.py`.
 
 Additional repositories now exist for:
 

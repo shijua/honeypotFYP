@@ -7,7 +7,8 @@ import pytest
 from libs.common.config import RuntimeConfig
 from libs.contracts.models import AssetDefinition, ControllerTickRequest, ProfileSnapshot
 from services.controller.domain import ControllerService
-from services.controller.repository import InMemoryAssetRepository, InMemoryTransitionRepository
+from services.controller.repository import StaticTransitionRepository
+from tests.support.inmemory_repositories import InMemoryAssetRepository
 
 
 pytestmark = pytest.mark.unit
@@ -37,7 +38,7 @@ def _assets() -> list[AssetDefinition]:
 def test_tick_prefers_exploit_then_secondary_explore() -> None:
     service = ControllerService(
         InMemoryAssetRepository(_assets()),
-        InMemoryTransitionRepository(),
+        StaticTransitionRepository(),
         config=RuntimeConfig(epsilon=0.0),
         rng=random.Random(0),
     )
@@ -65,7 +66,7 @@ def test_tick_prefers_exploit_then_secondary_explore() -> None:
 def test_tick_returns_noop_when_everything_is_already_unlocked() -> None:
     service = ControllerService(
         InMemoryAssetRepository(_assets()),
-        InMemoryTransitionRepository(),
+        StaticTransitionRepository(),
         config=RuntimeConfig(epsilon=0.0, unlock_cap=2),
         rng=random.Random(0),
     )
@@ -86,7 +87,7 @@ def test_tick_returns_noop_when_everything_is_already_unlocked() -> None:
 def test_tick_can_switch_to_explore_strategy() -> None:
     service = ControllerService(
         InMemoryAssetRepository(_assets()),
-        InMemoryTransitionRepository(),
+        StaticTransitionRepository(),
         config=RuntimeConfig(epsilon=1.0),
         rng=random.Random(0),
     )
@@ -137,7 +138,7 @@ def test_tick_can_chain_first_internal_unlock_into_file_gated_asset() -> None:
     ]
     service = ControllerService(
         InMemoryAssetRepository(assets),
-        InMemoryTransitionRepository(),
+        StaticTransitionRepository(),
         config=RuntimeConfig(epsilon=0.0),
         rng=random.Random(0),
     )
@@ -185,7 +186,7 @@ def test_tick_blocks_file_gated_asset_without_matching_public_http_signal() -> N
     ]
     service = ControllerService(
         InMemoryAssetRepository(assets),
-        InMemoryTransitionRepository(),
+        StaticTransitionRepository(),
         config=RuntimeConfig(epsilon=0.0),
         rng=random.Random(0),
     )
@@ -228,7 +229,7 @@ def test_tick_can_use_internal_http_signal_for_later_asset() -> None:
     ]
     service = ControllerService(
         InMemoryAssetRepository(assets),
-        InMemoryTransitionRepository(),
+        StaticTransitionRepository(),
         config=RuntimeConfig(epsilon=0.0),
         rng=random.Random(0),
     )

@@ -1,8 +1,4 @@
-"""Repository adapters for gateway route state.
-
-The gateway service depends on this protocol so it can store route views in
-memory during tests or in JSON files during local runs.
-"""
+"""Repository interfaces and file-backed adapters for gateway route state."""
 
 from __future__ import annotations
 
@@ -36,29 +32,6 @@ class GatewayRouteRepository(Protocol):
     def list_all(self) -> Iterable[GatewayBindingState]:
         """List known gateway states."""
         ...
-
-
-class InMemoryGatewayRouteRepository:
-    """In-memory gateway state used by tests and local isolated runs."""
-
-    def __init__(self) -> None:
-        self._by_binding: dict[str, GatewayBindingState] = {}
-
-    def get(self, binding_id: str) -> GatewayBindingState | None:
-        return self._by_binding.get(binding_id)
-
-    def get_by_attacker(self, attacker_key: str) -> GatewayBindingState | None:
-        for state in self._by_binding.values():
-            if state.attacker_key == attacker_key:
-                return state
-        return None
-
-    def upsert(self, state: GatewayBindingState) -> GatewayBindingState:
-        self._by_binding[state.binding_id] = state
-        return state
-
-    def list_all(self) -> Iterable[GatewayBindingState]:
-        return tuple(self._by_binding.values())
 
 
 class FileGatewayRouteRepository:

@@ -6,13 +6,13 @@ import pytest
 
 from libs.contracts.models import CowrieIngestRequest, CowrieLogEvent
 from services.binding_service.domain import BindingService
-from services.binding_service.repository import InMemoryBindingRepository
+from tests.support.inmemory_repositories import InMemoryBindingRepository
 from services.cowrie.command_mapping import FileCowrieCommandRuleCatalog
 from services.cowrie.domain import CowrieService
 from services.cowrie.event_catalog import FileCowrieEventCatalog
-from services.cowrie.repository import InMemoryCowrieObservationRepository
+from tests.support.inmemory_repositories import InMemoryCowrieObservationRepository
 from services.profiler.domain import ProfilerService
-from services.profiler.repository import InMemoryEvidenceRepository, InMemoryProfileRepository
+from tests.support.inmemory_repositories import InMemoryEvidenceRepository, InMemoryProfileRepository
 from tests.support.attack_catalog import build_test_attack_catalog
 
 
