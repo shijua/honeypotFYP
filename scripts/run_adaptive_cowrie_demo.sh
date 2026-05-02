@@ -211,7 +211,7 @@ start_uvicorn() {
 
 start_adaptive_loop() {
   echo "Starting adaptive controller loop..."
-  "$PYTHON_BIN" "$ROOT_DIR/scripts/adaptive_controller_loop.py" \
+  "$PYTHON_BIN" "$ROOT_DIR/scripts/runtime/adaptive_controller_loop.py" \
     --state-dir "$RUNTIME_DIR" \
     --controller-url "$CONTROLLER_URL" \
     --orchestrator-url "$ORCHESTRATOR_URL" \
@@ -225,7 +225,7 @@ start_adaptive_loop() {
 
 start_forwarder() {
   echo "Starting Cowrie log forwarder..."
-  "$PYTHON_BIN" "$ROOT_DIR/scripts/forward_cowrie_json.py" \
+  "$PYTHON_BIN" "$ROOT_DIR/scripts/forwarders/cowrie_json.py" \
     --from-start \
     --log-file "$LOG_FILE" \
     --adapter-url "$ADAPTER_URL" \
@@ -289,7 +289,7 @@ main() {
   echo "  data/runtime/adaptive_loop_state.json"
   echo
   echo "After the run, generate a report with:"
-  echo "  .venv/bin/python scripts/summarize_adaptive_demo.py --write-report data/runtime/adaptive_demo_report.json"
+  echo "  .venv/bin/python scripts/reports/adaptive_demo.py --write-report data/runtime/adaptive_demo_report.json"
   echo
   echo "Type 'exit' inside Cowrie to stop and clean up this demo."
   echo

@@ -4,8 +4,8 @@ import json
 
 import pytest
 
-from scripts import summarize_adaptive_demo
-from scripts.summarize_adaptive_demo import summarize_demo, write_report
+from scripts.reports import adaptive_demo as summarize_adaptive_demo
+from scripts.reports.adaptive_demo import summarize_demo, write_report
 
 
 pytestmark = pytest.mark.unit

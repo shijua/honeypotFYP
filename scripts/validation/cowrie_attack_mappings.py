@@ -6,7 +6,7 @@ patterns must be syntactically valid, source references must be present, and
 every ATT&CK technique id must exist in the MITRE STIX bundle.
 
 Example:
-    .venv/bin/python scripts/validate_cowrie_attack_mappings.py
+    .venv/bin/python scripts/validation/cowrie_attack_mappings.py
 
 What this proves:
     The JSON rule schema is well-formed and technique ids are real ATT&CK ids.

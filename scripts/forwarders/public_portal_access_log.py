@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Iterable, Iterator
 from urllib.parse import urlsplit
 
-from scripts.forwarder_common import follow_file, forward_events, post_json_event
+from scripts.forwarders.common import follow_file, forward_events, post_json_event
 
 
 _COMBINED_LOG_RE = re.compile(

@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from scripts import adaptive_controller_loop
+from scripts.runtime import adaptive_controller_loop
 
 
 pytestmark = pytest.mark.unit

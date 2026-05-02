@@ -15,8 +15,8 @@ import sys
 from pathlib import Path
 from typing import Iterable, Iterator
 
-from scripts.forwarder_common import follow_file, forward_events, post_json_event
-from scripts.forwarder_common import refresh_log_handle as _refresh_log_handle
+from scripts.forwarders.common import follow_file, forward_events, post_json_event
+from scripts.forwarders.common import refresh_log_handle as _refresh_log_handle
 
 
 def iter_json_events(lines: Iterable[str]) -> Iterator[dict[str, object]]:

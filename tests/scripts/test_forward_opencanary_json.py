@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from scripts import forward_opencanary_json as forwarder
-from scripts.forward_opencanary_json import (
+from scripts.forwarders import opencanary_json as forwarder
+from scripts.forwarders.opencanary_json import (
     attribute_asset_gateway_source,
     build_adapter_payload,
     follow_log_file,

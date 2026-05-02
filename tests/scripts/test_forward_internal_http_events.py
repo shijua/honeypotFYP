@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from scripts import forward_internal_http_events as forwarder
+from scripts.forwarders import internal_http_events as forwarder
 
 
 def test_forward_internal_http_events_posts_jsonl_payload(

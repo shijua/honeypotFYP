@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts import validate_asset_telemetry
+from scripts.validation import asset_telemetry as validate_asset_telemetry
 
 
 pytestmark = pytest.mark.unit

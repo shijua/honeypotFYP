@@ -79,7 +79,7 @@ Only change the compose port binding to `0.0.0.0:2222:2222` after the lab firewa
 Open a second terminal:
 
 ```bash
-/home/wh1322/honeypot/.venv/bin/python scripts/forward_cowrie_json.py \
+/home/wh1322/honeypot/.venv/bin/python scripts/forwarders/cowrie_json.py \
   --log-file deploy/cowrie/var/log/cowrie/cowrie.json \
   --adapter-url http://127.0.0.1:8081/v1/cowrie/events
 ```

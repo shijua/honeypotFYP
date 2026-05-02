@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.validate_cowrie_attack_mappings import (
+from scripts.validation.cowrie_attack_mappings import (
     load_attack_techniques,
     validate_command_mapping_rules,
 )

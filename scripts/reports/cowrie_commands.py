@@ -7,7 +7,7 @@ counts `cowrie.command.input` commands, and reports whether each command
 currently matches `data/cowrie/command_mapping_rules.json`.
 
 Example:
-    .venv/bin/python scripts/summarize_cowrie_commands.py \
+    .venv/bin/python scripts/reports/cowrie_commands.py \
       --write-report data/runtime/cowrie_command_coverage.json
 """
 

@@ -8,7 +8,7 @@ apply those actions. In the local demo this is what turns a Cowrie command such
 as `id` into newly exposed Docker-backed asset ports.
 
 Example:
-    python scripts/adaptive_controller_loop.py --once
+    python scripts/runtime/adaptive_controller_loop.py --once
 """
 
 from __future__ import annotations

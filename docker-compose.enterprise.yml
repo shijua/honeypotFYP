@@ -18,7 +18,7 @@ services:
     image: python:3.10-slim
     working_dir: /app
     command: >
-      bash -lc "python scripts/forward_public_portal_access_log.py
+      bash -lc "python scripts/forwarders/public_portal_access_log.py
       --log-file /public-portal-logs/access.log
       --observer-url http://entrypoint-observer:8010/v1/entrypoint/events
       --poll-seconds 0.5"
@@ -71,7 +71,7 @@ services:
     image: python:3.10-slim
     working_dir: /app
     command: >
-      bash -lc "python scripts/forward_internal_http_events.py
+      bash -lc "python scripts/forwarders/internal_http_events.py
       --events-file data/runtime/internal_http_events.jsonl
       --observer-url http://entrypoint-observer:8010/v1/entrypoint/events
       --poll-seconds 0.5"
@@ -140,7 +140,7 @@ services:
     image: python:3.10-slim
     working_dir: /app
     command: >
-      bash -lc "python scripts/forward_opencanary_json.py
+      bash -lc "python scripts/forwarders/opencanary_json.py
       --log-file /opencanary-var/opencanary.log
       --adapter-url http://opencanary-adapter:8012/v1/opencanary/events
       --asset-routes-file data/runtime/asset_gateway_routes.json
@@ -199,7 +199,7 @@ services:
     image: python:3.10-slim
     working_dir: /app
     command: >
-      bash -lc "python scripts/forward_cowrie_json.py
+      bash -lc "python scripts/forwarders/cowrie_json.py
       --log-file /cowrie-var/log/cowrie/cowrie.json
       --adapter-url http://cowrie-adapter:8011/v1/cowrie/events
       --poll-seconds 0.5"

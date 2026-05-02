@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from scripts.summarize_cowrie_commands import (
+from scripts.reports.cowrie_commands import (
     load_observations,
     summarize_commands,
     write_report,

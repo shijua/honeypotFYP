@@ -222,7 +222,7 @@ Additional repositories now exist for:
 - Cowrie profiler evidence is stored separately in `data/runtime/evidence.json`; observations are intake/audit records, while evidence affects profiles and controller decisions.
 - Entrypoint observations are stored in `data/runtime/entrypoint_observations.json`.
 - Falco should later run outside honeypot containers as node/runtime telemetry, while Cowrie logs capture SSH attacker interaction telemetry.
-- Local Cowrie lab configuration lives in `deploy/cowrie/`; the log forwarder `scripts/forward_cowrie_json.py` bridges `cowrie.json` into the Cowrie API.
+- Local Cowrie lab configuration lives in `deploy/cowrie/`; the log forwarder `scripts/forwarders/cowrie_json.py` bridges `cowrie.json` into the Cowrie API.
 - Orchestration records `AssetRuntimeRecord` entries and can start selected Docker-backed runtimes, but it does not manage Kubernetes pods/namespaces yet.
 - The controller now loads its asset catalog from `data/assets/catalog.json`. The catalog contains MVP template metadata such as protocol, port, family, default settings, source references, and selected Docker runtime specs. These are still MVP runtime specs, not full Docker Compose/Kubernetes manifests.
 - Current real-demo status:

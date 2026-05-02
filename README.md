@@ -47,7 +47,7 @@ Repository data layout:
 One-line fetch command:
 
 ```bash
-python scripts/fetch_mitre_attack_stix.py
+python scripts/data/fetch_mitre_attack_stix.py
 ```
 
 ## Test gates
@@ -109,9 +109,11 @@ Useful helper scripts are kept in `scripts/` and covered by tests:
 ```bash
 ./scripts/test_enterprise_compose.sh
 ./scripts/run_enterprise_actor_simulation.sh
-python scripts/validate_asset_telemetry.py --asset-id internal-portal
-.venv/bin/python scripts/summarize_adaptive_demo.py --write-report data/runtime/adaptive_demo_report.json
+python scripts/validation/asset_telemetry.py --asset-id internal-portal
+.venv/bin/python scripts/reports/adaptive_demo.py --write-report data/runtime/adaptive_demo_report.json
 ```
+
+The top-level shell scripts in `scripts/` are the commands you normally run by hand. Python helpers are grouped by role: `scripts/forwarders/` tails service logs into adapters, `scripts/validation/` checks asset telemetry and mappings, `scripts/reports/` builds demo summaries, `scripts/runtime/` holds long-running control loops, and `scripts/data/` stores data-fetch utilities.
 
 Use the manual flow in `ATTACK_TESTING_GUIDE.md` when you want to drive the attacker actions yourself.
 
@@ -163,7 +165,7 @@ Current service roles:
 
 Adaptive internal Docker assets no longer publish host ports themselves. The orchestrator starts one backend container per binding on `net_internal`, writes `data/runtime/asset_gateway_routes.json`, and the `asset-gateway` container owns the fixed external ports. For the MVP, the data-plane gateway treats the same source IP as the same attacker and routes strictly by `attacker_key + public_port`; if the source IP has not unlocked that asset, the gateway closes the connection instead of falling back to another attacker route. For static internal HTTP assets, the gateway also extracts the first HTTP request path and appends it to `data/runtime/internal_http_events.jsonl`, marked as `surface=internal`. The separate `internal-http-forwarder` container reads that file from `net_control` and posts it into the profiler path, so the public/internal data-plane gateway does not need direct control-plane network access.
 
-OpenCanary is no longer an always-on attacker-facing entrypoint. OpenCanary telemetry is collected through `scripts/forward_opencanary_json.py`, which tails `deploy/opencanary/var/opencanary.log` and posts events into `services/opencanary`. Adaptive internal OpenCanary assets mount that shared log directory, so their Git/MySQL/Redis/HTTP/FTP/SSH/Telnet events flow into the dashboard after the controller unlocks them.
+OpenCanary is no longer an always-on attacker-facing entrypoint. OpenCanary telemetry is collected through `scripts/forwarders/opencanary_json.py`, which tails `deploy/opencanary/var/opencanary.log` and posts events into `services/opencanary`. Adaptive internal OpenCanary assets mount that shared log directory, so their Git/MySQL/Redis/HTTP/FTP/SSH/Telnet events flow into the dashboard after the controller unlocks them.
 
 The adaptive internal catalog includes standalone OpenCanary assets for Git, MySQL, Redis, FTP, SSH, and Telnet, plus lightweight static Docker assets for finance-share, ICS panel, VPN appliance, and malware-drop-sink services. The static assets include backup/config/archive breadcrumbs such as `.bak`, `.cfg`, `.ovpn`, and package-download paths. They are not enabled by changing one shared OpenCanary configuration; the orchestrator starts a separate container per asset when the controller unlocks it. Default host ports can be overridden in `.env`:
 
@@ -217,8 +219,8 @@ The manual Vulhub helper remains available for isolated experiments that should 
 Validate runtime/gateway/dashboard data after opening assets:
 
 ```bash
-python scripts/validate_asset_telemetry.py --require-observed
-python scripts/validate_asset_telemetry.py --asset-id log4shell-app
+python scripts/validation/asset_telemetry.py --require-observed
+python scripts/validation/asset_telemetry.py --asset-id log4shell-app
 ```
 
 Live monitoring dashboard:

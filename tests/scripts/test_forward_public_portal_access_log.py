@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from scripts import forward_public_portal_access_log as forwarder
-from scripts.forward_public_portal_access_log import (
+from scripts.forwarders import public_portal_access_log as forwarder
+from scripts.forwarders.public_portal_access_log import (
     follow_log_file,
     iter_access_events,
     parse_access_line,

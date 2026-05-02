@@ -187,7 +187,7 @@ echo "Starting Cowrie container on $COWRIE_SSH_HOST:$COWRIE_SSH_PORT..."
 wait_for_cowrie_ready "Cowrie"
 
 echo "Starting Cowrie log forwarder..."
-"$PYTHON_BIN" "$ROOT_DIR/scripts/forward_cowrie_json.py" \
+"$PYTHON_BIN" "$ROOT_DIR/scripts/forwarders/cowrie_json.py" \
   --from-start \
   --log-file "$LOG_FILE" \
   --adapter-url "$ADAPTER_URL" \

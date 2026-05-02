@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from scripts.forward_cowrie_json import (
+from scripts.forwarders.cowrie_json import (
     build_adapter_payload,
     follow_log_file,
     iter_json_events,
