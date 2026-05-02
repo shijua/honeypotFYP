@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
-import json
 from collections import Counter
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import subprocess
 from typing import Any
+
+from libs.common.clock import parse_iso_datetime
+from libs.common.config import RuntimeConfig
+from libs.common.iterables import dedupe_preserve
+from libs.common.json_utils import read_json_object
 
 
 @dataclass(frozen=True)
@@ -16,14 +21,6 @@ class DockerStatusProbe:
 
     statuses: dict[str, str]
     error: str | None = None
-
-
-def read_json(path: Path, default: dict[str, Any]) -> dict[str, Any]:
-    """Read a JSON object from disk, returning default when the file is absent."""
-    if not path.exists():
-        return default
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    return payload if isinstance(payload, dict) else default
 
 
 def summarize_demo(state_dir: Path) -> dict[str, Any]:
@@ -49,7 +46,7 @@ def summarize_demo(state_dir: Path) -> dict[str, Any]:
     runtime_records = _list_from_file(state_dir / "asset_runtime.json", "records")
     decision_trace = _list_from_file(state_dir / "decision_trace.json", "records")
     evidence_records = _evidence_records(state_dir / "evidence.json")
-    profiles_payload = read_json(state_dir / "profiles.json", {"profiles": {}})
+    profiles_payload = read_json_object(state_dir / "profiles.json", {"profiles": {}})
     profiles = profiles_payload.get("profiles", {})
     profiles = profiles if isinstance(profiles, dict) else {}
     docker_probe = current_docker_status()
@@ -119,7 +116,7 @@ def current_docker_status() -> DockerStatusProbe:
 
 
 def _list_from_file(path: Path, key: str) -> list[dict[str, Any]]:
-    payload = read_json(path, {key: []})
+    payload = read_json_object(path, {key: []})
     items = payload.get(key, [])
     if not isinstance(items, list):
         return []
@@ -127,7 +124,7 @@ def _list_from_file(path: Path, key: str) -> list[dict[str, Any]]:
 
 
 def _evidence_records(path: Path) -> list[dict[str, Any]]:
-    payload = read_json(path, {"records": {}})
+    payload = read_json_object(path, {"records": {}})
     records = payload.get("records", {})
     if not isinstance(records, dict):
         return []
@@ -170,6 +167,7 @@ def _attacker_report(
     attacker_evidence = [
         item for item in evidence_records if item.get("attacker_key") == attacker_key
     ]
+    config = RuntimeConfig()
 
     historical_assets = [
         _runtime_summary(item, docker_probe)
@@ -191,8 +189,18 @@ def _attacker_report(
             sorted(Counter(_eventids(attacker_observations)).items())
         ),
         "commands": _commands(attacker_observations),
-        "public_http_evidence": _http_evidence(attacker_evidence, "public_http"),
-        "internal_http_evidence": _http_evidence(attacker_evidence, "internal_http"),
+        "public_http_evidence": _recent_http_evidence(
+            attacker_evidence,
+            "public_http",
+            profile,
+            config.chain_window_seconds,
+        ),
+        "internal_http_evidence": _recent_http_evidence(
+            attacker_evidence,
+            "internal_http",
+            profile,
+            config.chain_window_seconds,
+        ),
         "recent_tactics": profile.get("recent_tactics", []),
         "recent_techniques": profile.get("recent_techniques", []),
         # These fields explain why catalog-gated internal assets became
@@ -246,7 +254,7 @@ def _commands(observations: list[dict[str, Any]]) -> list[str]:
         and isinstance(item.get("command"), str)
         and str(item.get("command")).strip()
     ]
-    return list(dict.fromkeys(commands))
+    return dedupe_preserve(commands)
 
 
 def _http_evidence(evidences: list[dict[str, Any]], source: str) -> list[str]:
@@ -282,7 +290,43 @@ def _http_evidence(evidences: list[dict[str, Any]], source: str) -> list[str]:
             evidence.append(f"path:{target}")
         if isinstance(http_user_agent, str) and http_user_agent.strip():
             evidence.append(f"ua:{http_user_agent.strip()}")
-    return list(dict.fromkeys(evidence))
+    return dedupe_preserve(evidence)
+
+
+def _recent_http_evidence(
+    evidences: list[dict[str, Any]],
+    source: str,
+    profile: dict[str, Any],
+    window_seconds: int,
+) -> list[str]:
+    """Return time-sorted HTTP evidence inside the profile's recent window."""
+    source_evidences = [
+        item
+        for item in evidences
+        if isinstance(item.get("source_ref"), dict)
+        and item["source_ref"].get("source") == source
+    ]
+    if not source_evidences:
+        return []
+
+    updated_at = parse_iso_datetime(profile.get("updated_at"))
+    if updated_at is None:
+        updated_at = max(
+            (parse_iso_datetime(item.get("ts")) for item in source_evidences),
+            default=None,
+        )
+    if updated_at is None:
+        return _http_evidence(source_evidences, source)
+
+    cutoff = updated_at - timedelta(seconds=window_seconds)
+    recent = [
+        item
+        for item in source_evidences
+        if (ts := parse_iso_datetime(item.get("ts"))) is not None and ts >= cutoff
+    ]
+    minimum_ts = datetime.min.replace(tzinfo=timezone.utc)
+    recent.sort(key=lambda item: parse_iso_datetime(item.get("ts")) or minimum_ts)
+    return _http_evidence(recent, source)
 
 
 def _runtime_summary(

@@ -26,6 +26,7 @@ from typing import Protocol
 from uuid import uuid4
 
 from libs.common.clock import utcnow
+from libs.common.iterables import dedupe_preserve
 from libs.common.json_store import JsonFileStore
 from libs.contracts.models import AssetDefinition, AssetRuntimeRecord, FalcoEvent
 
@@ -689,7 +690,7 @@ class HybridTemplateRuntime:
             asset_ids.extend(self._compose_runtime.list_accessible_asset_ids(binding_id))
         asset_ids.extend(self._docker_runtime.list_accessible_asset_ids(binding_id))
         asset_ids.extend(self._mock_runtime.list_accessible_asset_ids(binding_id))
-        return list(dict.fromkeys(asset_ids))
+        return dedupe_preserve(asset_ids)
 
     def list_failed_asset_ids(self, binding_id: str) -> list[str]:
         """Return the union of failed Docker and mock assets."""
@@ -698,7 +699,7 @@ class HybridTemplateRuntime:
             asset_ids.extend(self._compose_runtime.list_failed_asset_ids(binding_id))
         asset_ids.extend(self._docker_runtime.list_failed_asset_ids(binding_id))
         asset_ids.extend(self._mock_runtime.list_failed_asset_ids(binding_id))
-        return list(dict.fromkeys(asset_ids))
+        return dedupe_preserve(asset_ids)
 
 
 def _runtime_record_from_asset(

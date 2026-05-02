@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 import subprocess
 from datetime import datetime, timezone
@@ -14,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 
 from libs.common.config import RuntimeConfig
+from libs.common.json_utils import read_json_object
 from services.dashboard.health import build_chain_health
 from services.dashboard.summary import summarize_demo
 
@@ -195,22 +195,8 @@ def _recent_items(
     return list(reversed(records[-limit:]))
 
 
-def _read_json(path: Path, default: dict[str, Any]) -> dict[str, Any]:
-    if not path.exists():
-        return default
-    try:
-        payload = path.read_text(encoding="utf-8")
-    except OSError:
-        return default
-    try:
-        decoded = json.loads(payload)
-    except Exception:
-        return default
-    return decoded if isinstance(decoded, dict) else default
-
-
 def _read_items(path: Path, key: str) -> list[dict[str, Any]]:
-    payload = _read_json(path, {key: []})
+    payload = read_json_object(path, {key: []})
     items = payload.get(key, [])
     if not isinstance(items, list):
         return []

@@ -28,6 +28,9 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+from libs.common.iterables import dedupe_preserve
+from libs.common.json_utils import read_json_object
+
 
 @dataclass(frozen=True)
 class AssetRoute:
@@ -66,10 +69,7 @@ def load_routes(path: Path) -> list[AssetRoute]:
     asset for an attacker. Loading on each connection keeps the gateway simple:
     no restart is needed when a new route is added.
     """
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return []
+    payload = read_json_object(path, {"routes": []})
     routes = payload.get("routes", []) if isinstance(payload, dict) else []
     if not isinstance(routes, list):
         return []
@@ -347,7 +347,7 @@ def _parse_ports(value: str) -> list[int]:
         if not 1 <= port <= 65535:
             raise ValueError(f"invalid port: {port}")
         ports.append(port)
-    return list(dict.fromkeys(ports))
+    return dedupe_preserve(ports)
 
 
 def main() -> None:

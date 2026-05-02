@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from libs.common.json_utils import read_json_value
 from services.dashboard.summary import summarize_demo
 
 
@@ -37,7 +38,7 @@ def build_report(
     state_dir: Path,
     asset_ids: set[str],
 ) -> dict[str, Any]:
-    catalog = _read_json(catalog_path, [])
+    catalog = read_json_value(catalog_path, [])
     assets = [
         item for item in catalog
         if isinstance(item, dict)
@@ -129,22 +130,13 @@ def _telemetry_expectations(asset: dict[str, Any]) -> list[str]:
 
 
 def _records(path: Path, key: str) -> list[dict[str, Any]]:
-    payload = _read_json(path, {key: []})
+    payload = read_json_value(path, {key: []})
     if not isinstance(payload, dict):
         return []
     records = payload.get(key, [])
     if not isinstance(records, list):
         return []
     return [item for item in records if isinstance(item, dict)]
-
-
-def _read_json(path: Path, default: Any) -> Any:
-    if not path.exists():
-        return default
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return default
 
 
 if __name__ == "__main__":

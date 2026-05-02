@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 from typing import Iterable, Iterator
 
+from libs.common.json_utils import read_json_object
 from scripts.forwarders.common import follow_file, forward_events, post_json_event
 from scripts.forwarders.common import refresh_log_handle as _refresh_log_handle
 
@@ -63,10 +64,7 @@ def load_asset_gateway_routes(route_file: Path | None) -> list[dict[str, object]
     """Load routes used to attribute proxied OpenCanary events to attackers."""
     if route_file is None:
         return []
-    try:
-        payload = json.loads(route_file.read_text(encoding="utf-8"))
-    except Exception:
-        return []
+    payload = read_json_object(route_file, {"routes": []})
     routes = payload.get("routes", []) if isinstance(payload, dict) else []
     if not isinstance(routes, list):
         return []

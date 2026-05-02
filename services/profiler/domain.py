@@ -10,10 +10,12 @@ import math
 import re
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from uuid import uuid4
 
+from libs.common.clock import utc_aware
 from libs.common.config import RuntimeConfig
+from libs.common.iterables import dedupe_preserve
 from libs.contracts.models import (
     EvidenceIngestRequest,
     EvidenceIngestResponse,
@@ -97,7 +99,7 @@ class ProfilerService:
         return [
             TechniqueEvidence(
                 evidence_id=str(uuid4()),
-                ts=_utc_aware(event.ts),
+                ts=utc_aware(event.ts),
                 attacker_key=attacker_key,
                 binding_id=binding_id,
                 tech_id=mapping.tech_id,
@@ -121,7 +123,7 @@ class ProfilerService:
         # Rebuild from stored evidence to keep aggregation deterministic.
         evidences = sorted(
             self._evidence_repository.list_by_attacker(attacker_key),
-            key=lambda evidence: _utc_aware(evidence.ts),
+            key=lambda evidence: utc_aware(evidence.ts),
         )
         if not evidences:
             snapshot = ProfileSnapshot(attacker_key=attacker_key)
@@ -142,13 +144,13 @@ class ProfilerService:
             key_fn=lambda evidence: evidence.tech_id,
         )
 
-        latest_ts = _utc_aware(evidences[-1].ts)
+        latest_ts = utc_aware(evidences[-1].ts)
         recent_cutoff = latest_ts - timedelta(
             seconds=self._config.chain_window_seconds
         )
         # Keep recent history bounded for controller input.
         recent_evidences = [
-            evidence for evidence in evidences if _utc_aware(evidence.ts) >= recent_cutoff
+            evidence for evidence in evidences if utc_aware(evidence.ts) >= recent_cutoff
         ]
 
         snapshot = ProfileSnapshot(
@@ -157,12 +159,12 @@ class ProfilerService:
             conf_by_technique=conf_by_technique,
             level_by_tactic=level_by_tactic,
             level_by_technique=level_by_technique,
-            recent_tactics=self._dedupe_preserve(
+            recent_tactics=dedupe_preserve(
                 evidence.group
                 for evidence in recent_evidences
                 if evidence.group is not None
             ),
-            recent_techniques=self._dedupe_preserve(
+            recent_techniques=dedupe_preserve(
                 evidence.tech_id
                 for evidence in recent_evidences
                 if evidence.tech_id is not None
@@ -348,14 +350,6 @@ class ProfilerService:
             return 2
         return 1
 
-    def _dedupe_preserve(self, values) -> list[str]:
-        # Preserve order while dropping duplicates.
-        ordered: list[str] = []
-        for value in values:
-            if value not in ordered:
-                ordered.append(value)
-        return ordered
-
     def _public_http_values(
         self,
         evidences: list[TechniqueEvidence],
@@ -378,7 +372,7 @@ class ProfilerService:
                 values.extend(item for item in value if isinstance(item, str))
             elif isinstance(value, str) and value:
                 values.append(value)
-        return self._dedupe_preserve(values)
+        return dedupe_preserve(values)
 
     def _internal_http_values(
         self,
@@ -396,11 +390,4 @@ class ProfilerService:
                 values.extend(item for item in value if isinstance(item, str))
             elif isinstance(value, str) and value:
                 values.append(value)
-        return self._dedupe_preserve(values)
-
-
-def _utc_aware(value: datetime) -> datetime:
-    """Normalize naive and aware datetimes to comparable UTC-aware values."""
-    if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
+        return dedupe_preserve(values)

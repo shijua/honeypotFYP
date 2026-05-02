@@ -23,16 +23,8 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-
-def read_json(path: Path, default: dict[str, Any]) -> dict[str, Any]:
-    """Read a JSON object, returning `default` when runtime state is absent."""
-    if not path.exists():
-        return default
-    with path.open("r", encoding="utf-8") as handle:
-        payload = json.load(handle)
-    if not isinstance(payload, dict):
-        return default
-    return payload
+from libs.common.iterables import dedupe_preserve
+from libs.common.json_utils import read_json_object
 
 
 def post_json(
@@ -57,7 +49,7 @@ def post_json(
 
 def load_bindings_by_attacker(state_dir: Path) -> dict[str, dict[str, Any]]:
     """Return latest binding records keyed by attacker_key."""
-    payload = read_json(state_dir / "bindings.json", {"records": []})
+    payload = read_json_object(state_dir / "bindings.json", {"records": []})
     records = payload.get("records", [])
     if not isinstance(records, list):
         return {}
@@ -70,14 +62,14 @@ def load_bindings_by_attacker(state_dir: Path) -> dict[str, dict[str, Any]]:
 
 def load_profiles(state_dir: Path) -> dict[str, dict[str, Any]]:
     """Return latest profile snapshots keyed by attacker_key."""
-    payload = read_json(state_dir / "profiles.json", {"profiles": {}})
+    payload = read_json_object(state_dir / "profiles.json", {"profiles": {}})
     profiles = payload.get("profiles", {})
     return profiles if isinstance(profiles, dict) else {}
 
 
 def load_loop_state(path: Path) -> dict[str, Any]:
     """Load loop progress so the same evidence does not reopen more assets."""
-    return read_json(path, {"processed_evidence_ids_by_attacker": {}})
+    return read_json_object(path, {"processed_evidence_ids_by_attacker": {}})
 
 
 def save_loop_state(path: Path, state: dict[str, Any]) -> None:
@@ -230,7 +222,7 @@ def _mark_evidence_processed(
     processed = _processed_evidence_map(state)
     previous = processed.get(attacker_key, [])
     previous_ids = [item for item in previous if isinstance(item, str)]
-    processed[attacker_key] = list(dict.fromkeys([*previous_ids, *recent_evidence_ids]))
+    processed[attacker_key] = dedupe_preserve([*previous_ids, *recent_evidence_ids])
 
 
 def _limit_unlock_actions(
@@ -305,7 +297,7 @@ def append_trace_record(path: Path, record: dict[str, Any]) -> None:
     File shape:
         {"records": [{...one adaptive decision trace...}]}
     """
-    payload = read_json(path, {"records": []})
+    payload = read_json_object(path, {"records": []})
     records = payload.get("records", [])
     if not isinstance(records, list):
         records = []

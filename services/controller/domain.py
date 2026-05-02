@@ -10,6 +10,7 @@ import random
 from dataclasses import dataclass
 
 from libs.common.config import RuntimeConfig
+from libs.common.iterables import dedupe_preserve
 from libs.contracts.models import (
     ActionType,
     AssetDefinition,
@@ -242,17 +243,9 @@ class ControllerService:
         candidates: list[CandidateScore],
     ) -> list[str]:
         """Return candidate IDs once, preserving the order they became eligible."""
-        return self._dedupe_preserve(
+        return dedupe_preserve(
             [candidate.asset.asset_id for candidate in candidates]
         )
-
-    def _dedupe_preserve(self, values: list[str]) -> list[str]:
-        """Drop duplicates without changing dashboard/debug ordering."""
-        ordered: list[str] = []
-        for value in values:
-            if value not in ordered:
-                ordered.append(value)
-        return ordered
 
     def _pick_best(
         self,

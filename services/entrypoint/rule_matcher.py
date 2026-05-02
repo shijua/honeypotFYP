@@ -13,6 +13,8 @@ import json
 from pathlib import Path
 from typing import Any, Protocol
 
+from libs.common.iterables import dedupe_preserve
+
 
 DEFAULT_PUBLIC_HTTP_RULES_PATH = Path("data/detections/public_http_rules.json")
 
@@ -136,7 +138,7 @@ class FilePublicHttpRuleMatcher:
                 PublicHttpRuleMatch(
                     rule_name=rule.name,
                     tags=rule.tags,
-                    indicators=tuple(dict.fromkeys(indicators)),
+                    indicators=tuple(dedupe_preserve(indicators)),
                     evidence_label=rule.evidence_label,
                 )
             )

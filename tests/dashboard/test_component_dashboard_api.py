@@ -50,7 +50,11 @@ def test_dashboard_summary_endpoint_returns_live_snapshot(
                     "recent_public_http_paths": ["/.env"],
                     "recent_public_http_rules": ["public_http_credential_discovery"],
                     "recent_public_http_indicators": ["combined:.env"],
+                    "recent_internal_http_paths": ["/finance/archive/report.zip"],
+                    "recent_internal_http_rules": ["internal_http_artifact_access"],
+                    "recent_internal_http_indicators": ["path:.zip"],
                     "conf_by_tactic": {"Credential Access": 0.7},
+                    "updated_at": "2026-01-01T00:00:03Z",
                 }
             }
         },
@@ -60,6 +64,41 @@ def test_dashboard_summary_endpoint_returns_live_snapshot(
         {
             "records": {
                 "198.51.100.10": [
+                    {
+                        "evidence_id": "e-public-http-2",
+                        "ts": "2026-01-01T00:00:02Z",
+                        "attacker_key": "198.51.100.10",
+                        "binding_id": "binding-1",
+                        "tech_id": "T1046",
+                        "group": "Discovery",
+                        "weight": 1.5,
+                        "success": True,
+                        "reason": "HTTP honeypot request",
+                        "source_ref": {
+                            "source": "public_http",
+                            "http_path": "/admin",
+                            "http_user_agent": "scanner/1.0",
+                            "http_evidence_labels": ["public-http scanner"],
+                            "http_indicators": ["path:/admin"],
+                        },
+                    },
+                    {
+                        "evidence_id": "e-public-http-old",
+                        "ts": "2025-12-31T23:00:00Z",
+                        "attacker_key": "198.51.100.10",
+                        "binding_id": "binding-1",
+                        "tech_id": "T1552.001",
+                        "group": "Credential Access",
+                        "weight": 1.5,
+                        "success": True,
+                        "reason": "Old HTTP honeypot request",
+                        "source_ref": {
+                            "source": "public_http",
+                            "http_path": "/old.env",
+                            "http_evidence_labels": ["old public-http credential"],
+                            "http_indicators": ["combined:old"],
+                        },
+                    },
                     {
                         "evidence_id": "e-public-http-1",
                         "ts": "2026-01-01T00:00:01Z",
@@ -78,6 +117,41 @@ def test_dashboard_summary_endpoint_returns_live_snapshot(
                                 "public-http credential or backup discovery"
                             ],
                             "http_indicators": ["combined:.env"],
+                        },
+                    },
+                    {
+                        "evidence_id": "e-internal-http-old",
+                        "ts": "2025-12-31T23:00:00Z",
+                        "attacker_key": "198.51.100.10",
+                        "binding_id": "binding-1",
+                        "tech_id": "T1005",
+                        "group": "Collection",
+                        "weight": 1.5,
+                        "success": True,
+                        "reason": "Old internal HTTP request",
+                        "source_ref": {
+                            "source": "internal_http",
+                            "http_path": "/old.zip",
+                            "http_evidence_labels": ["old internal artifact"],
+                            "http_indicators": ["path:old"],
+                        },
+                    },
+                    {
+                        "evidence_id": "e-internal-http-1",
+                        "ts": "2026-01-01T00:00:03Z",
+                        "attacker_key": "198.51.100.10",
+                        "binding_id": "binding-1",
+                        "tech_id": "T1005",
+                        "group": "Collection",
+                        "weight": 1.5,
+                        "success": True,
+                        "reason": "Internal HTTP asset request",
+                        "source_ref": {
+                            "source": "internal_http",
+                            "http_path": "/finance/archive/report.zip",
+                            "http_user_agent": "curl/8.0",
+                            "http_evidence_labels": ["internal-http artifact access"],
+                            "http_indicators": ["path:.zip"],
                         },
                     }
                 ]
@@ -330,7 +404,18 @@ def test_dashboard_summary_endpoint_returns_live_snapshot(
         "combined:.env",
         "path:/.env",
         "ua:curl/8.0",
+        "rule:public-http scanner",
+        "path:/admin",
+        "ua:scanner/1.0",
     ]
+    assert "path:/old.env" not in payload["attackers"][0]["public_http_evidence"]
+    assert payload["attackers"][0]["internal_http_evidence"] == [
+        "rule:internal-http artifact access",
+        "path:.zip",
+        "path:/finance/archive/report.zip",
+        "ua:curl/8.0",
+    ]
+    assert "path:/old.zip" not in payload["attackers"][0]["internal_http_evidence"]
     assert payload["attackers"][0]["recent_public_http_paths"] == ["/.env"]
     assert payload["attackers"][0]["recent_public_http_rules"] == [
         "public_http_credential_discovery"
