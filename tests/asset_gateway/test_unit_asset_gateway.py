@@ -8,6 +8,7 @@ import pytest
 from services.asset_gateway.app import (
     AssetRoute,
     _parse_http_request,
+    _parse_smtp_commands,
     load_routes,
     select_route,
 )
@@ -100,3 +101,11 @@ def test_parse_http_request_extracts_path_query_and_headers() -> None:
     assert request.path == "/finance/archive/payroll.zip"
     assert request.query_string == "download=1"
     assert request.headers["user-agent"] == "curl/8.0"
+
+
+def test_parse_smtp_commands_extracts_command_verbs_only() -> None:
+    commands = _parse_smtp_commands(
+        b"HELO tester\r\nMAIL FROM:<admin@example.test>\r\nRCPT TO:<root@example.test>\r\n"
+    )
+
+    assert commands == ["HELO", "MAIL", "RCPT"]

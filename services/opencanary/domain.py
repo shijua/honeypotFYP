@@ -6,6 +6,7 @@ from typing import Any
 from uuid import uuid4
 
 from libs.common.clock import utcnow
+from libs.common.iterables import dedupe_preserve
 from libs.contracts.models import (
     EvidenceIngestRequest,
     FalcoEvent,
@@ -33,11 +34,19 @@ _PORT_SERVICE_HINTS = {
     21: "ftp",
     22: "ssh",
     23: "telnet",
+    25: "smtp",
     80: "http",
     443: "https",
     3306: "mysql",
     6379: "redis",
     9418: "git",
+}
+_SERVICE_CONTEXT_TAGS = {
+    "ftp": ["mitre_lateral_movement", "T1021"],
+    "git": ["mitre_collection", "T1213"],
+    "smtp": ["mitre_discovery", "T1046"],
+    "ssh": ["mitre_lateral_movement", "T1021"],
+    "telnet": ["mitre_lateral_movement", "T1021"],
 }
 
 
@@ -139,9 +148,14 @@ def _profile_tags(
     username: str | None,
 ) -> list[str]:
     base_tags = ["opencanary", f"opencanary_{service}"]
+    behavior_tags: list[str]
     if password_seen or username:
-        return ["mitre_credential_access", "T1110", *base_tags]
-    return ["mitre_discovery", "T1046", *base_tags]
+        behavior_tags = ["mitre_credential_access", "T1110"]
+    else:
+        behavior_tags = ["mitre_discovery", "T1046"]
+    return dedupe_preserve(
+        [*behavior_tags, *_SERVICE_CONTEXT_TAGS.get(service, []), *base_tags]
+    )
 
 
 def _format_output(

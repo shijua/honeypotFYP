@@ -67,6 +67,7 @@ ENTERPRISE_SERVICES=(
   public-portal-forwarder
   asset-gateway
   internal-http-forwarder
+  internal-protocol-forwarder
   cowrie
   opencanary-adapter
   opencanary-forwarder
@@ -105,6 +106,8 @@ print_debug() {
   "${COMPOSE[@]}" -p "$PROJECT_NAME" -f "$ENTERPRISE_FILE" logs --tail=40 public-portal-forwarder || true
   echo "Recent internal HTTP forwarder logs:"
   "${COMPOSE[@]}" -p "$PROJECT_NAME" -f "$ENTERPRISE_FILE" logs --tail=40 internal-http-forwarder || true
+  echo "Recent internal protocol forwarder logs:"
+  "${COMPOSE[@]}" -p "$PROJECT_NAME" -f "$ENTERPRISE_FILE" logs --tail=40 internal-protocol-forwarder || true
   echo "Recent public portal logs:"
   "${COMPOSE[@]}" -p "$PROJECT_NAME" -f "$ENTERPRISE_FILE" logs --tail=40 public-portal || true
 }

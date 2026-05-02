@@ -45,6 +45,7 @@ services:
       PYTHONPATH: /app
       HONEYPOT_STATE_DIR: data/runtime
       HONEYPOT_INTERNAL_HTTP_EVENTS_FILE: data/runtime/internal_http_events.jsonl
+      HONEYPOT_INTERNAL_PROTOCOL_EVENTS_FILE: data/runtime/internal_protocol_events.jsonl
       HONEYPOT_ASSET_GATEWAY_HTTP_PORTS: "${ASSET_GATEWAY_HTTP_PORTS:-18080,18081,18082,18084,18443,18085}"
     volumes:
       - .:/app
@@ -83,6 +84,24 @@ services:
       - net_control
     depends_on:
       - entrypoint-observer
+    restart: unless-stopped
+
+  internal-protocol-forwarder:
+    image: python:3.10-slim
+    working_dir: /app
+    command: >
+      bash -lc "python scripts/forwarders/opencanary_json.py
+      --log-file data/runtime/internal_protocol_events.jsonl
+      --adapter-url http://opencanary-adapter:8012/v1/opencanary/events
+      --poll-seconds 0.5"
+    environment:
+      PYTHONPATH: /app
+    volumes:
+      - .:/app
+    networks:
+      - net_control
+    depends_on:
+      - opencanary-adapter
     restart: unless-stopped
 
   cowrie:

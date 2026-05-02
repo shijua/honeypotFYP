@@ -82,5 +82,57 @@ def test_login_probe_maps_to_credential_access_without_storing_password() -> Non
     assert observation.password_seen is True
     assert observation.logdata["PASSWORD"] == "[redacted]"
     assert "letmein" not in str(observation.model_dump())
-    assert response.profile.recent_tactics == ["Credential Access"]
-    assert response.profile.recent_techniques == ["T1110"]
+    assert response.profile.recent_tactics == ["Credential Access", "Lateral Movement"]
+    assert response.profile.recent_techniques == ["T1110", "T1021"]
+
+
+def test_smtp_probe_maps_to_smtp_discovery() -> None:
+    service, repository = _service()
+
+    response = service.ingest(
+        OpenCanaryIngestRequest(
+            event=OpenCanaryLogEvent(
+                src_host="198.51.100.32",
+                dst_port=25,
+                utc_time=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                logdata={
+                    "SERVICE": "smtp",
+                    "COMMANDS": ["HELO", "QUIT"],
+                },
+            ),
+            protocol="smtp",
+        )
+    )
+
+    observation = tuple(repository.list_recent())[0]
+    assert observation.service == "smtp"
+    assert observation.tags == [
+        "mitre_discovery",
+        "T1046",
+        "opencanary",
+        "opencanary_smtp",
+    ]
+    assert response.profile.recent_tactics == ["Discovery"]
+    assert response.profile.recent_techniques == ["T1046"]
+
+
+def test_git_probe_adds_collection_context() -> None:
+    service, _repository = _service()
+
+    response = service.ingest(
+        OpenCanaryIngestRequest(
+            event=OpenCanaryLogEvent(
+                src_host="198.51.100.33",
+                dst_port=9418,
+                utc_time=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                logdata={
+                    "SERVICE": "git",
+                    "REPO": "infra-deploy.git",
+                },
+            ),
+            protocol="git",
+        )
+    )
+
+    assert response.profile.recent_tactics == ["Discovery", "Collection"]
+    assert response.profile.recent_techniques == ["T1046", "T1213"]

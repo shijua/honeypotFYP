@@ -70,6 +70,7 @@ ENTERPRISE_SERVICES=(
   public-portal-forwarder
   asset-gateway
   internal-http-forwarder
+  internal-protocol-forwarder
   cowrie
   opencanary-adapter
   opencanary-forwarder

@@ -15,6 +15,9 @@ The gateway is intentionally still a generic TCP proxy for backend traffic. For
 configured HTTP asset ports only, it also peeks at the first client request so
 internal file/config exploration can become profiler evidence before the bytes
 are forwarded to the backend.
+
+For SMTP, the server speaks first, so the gateway observes client commands while
+they pass through the normal proxy pipe instead of peeking before connection.
 """
 
 from __future__ import annotations
@@ -24,10 +27,12 @@ import asyncio
 import json
 import os
 from dataclasses import dataclass
+from datetime import timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import urlsplit
 
+from libs.common.clock import utcnow
 from libs.common.iterables import dedupe_preserve
 from libs.common.json_utils import read_json_object
 
@@ -161,7 +166,11 @@ async def _handle_connection(
         await backend_writer.drain()
 
     await asyncio.gather(
-        _pipe(client_reader, backend_writer),
+        _pipe(
+            client_reader,
+            backend_writer,
+            observe_data=_protocol_observer(route, client_ip),
+        ),
         _pipe(backend_reader, client_writer),
     )
 
@@ -169,6 +178,8 @@ async def _handle_connection(
 async def _pipe(
     reader: asyncio.StreamReader,
     writer: asyncio.StreamWriter,
+    *,
+    observe_data: Callable[[bytes], None] | None = None,
 ) -> None:
     """Copy bytes in one direction until either side closes the connection."""
     try:
@@ -176,6 +187,8 @@ async def _pipe(
             data = await reader.read(65536)
             if not data:
                 break
+            if observe_data is not None:
+                observe_data(data)
             writer.write(data)
             await writer.drain()
     except (ConnectionError, OSError):
@@ -264,6 +277,84 @@ def _internal_http_events_path() -> Path:
         return Path(raw_path)
     state_dir = Path(os.environ.get("HONEYPOT_STATE_DIR", "data/runtime"))
     return state_dir / "internal_http_events.jsonl"
+
+
+def _internal_protocol_events_path() -> Path:
+    raw_path = os.environ.get("HONEYPOT_INTERNAL_PROTOCOL_EVENTS_FILE", "").strip()
+    if raw_path:
+        return Path(raw_path)
+    state_dir = Path(os.environ.get("HONEYPOT_STATE_DIR", "data/runtime"))
+    return state_dir / "internal_protocol_events.jsonl"
+
+
+def _protocol_observer(
+    route: AssetRoute,
+    client_ip: str,
+) -> Callable[[bytes], None] | None:
+    """Return a client-to-backend observer for protocols the gateway can parse."""
+    if route.asset_id == "mail-relay" or route.public_port == 2525:
+        return lambda data: _report_smtp_commands(data, route=route, client_ip=client_ip)
+    return None
+
+
+def _report_smtp_commands(
+    data: bytes,
+    *,
+    route: AssetRoute,
+    client_ip: str,
+) -> None:
+    """Write SMTP client commands as OpenCanary-shaped protocol events."""
+    commands = _parse_smtp_commands(data)
+    if not commands:
+        return
+    logdata: dict[str, object] = {
+        "SERVICE": "smtp",
+        "ASSET_ID": route.asset_id,
+        "COMMANDS": commands,
+        "ASSET_GATEWAY_PUBLIC_PORT": route.public_port,
+        "ASSET_GATEWAY_BACKEND_HOST": route.backend_host,
+    }
+    if "AUTH" in commands:
+        # The adapter only needs to know that credential material was attempted.
+        logdata["PASSWORD"] = "[redacted]"
+
+    event = {
+        "src_host": client_ip,
+        "dst_host": route.backend_host,
+        "dst_port": route.backend_port,
+        "utc_time": utcnow().astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "logtype": 25001,
+        "node_id": f"asset-gateway-{route.asset_id}",
+        "logdata": logdata,
+    }
+    _append_jsonl(_internal_protocol_events_path(), event)
+
+
+def _parse_smtp_commands(data: bytes) -> list[str]:
+    """Extract SMTP command verbs from client data without storing arguments."""
+    text = data.decode("iso-8859-1", errors="ignore")
+    commands: list[str] = []
+    valid_commands = {
+        "AUTH",
+        "DATA",
+        "EHLO",
+        "EXPN",
+        "HELO",
+        "MAIL",
+        "NOOP",
+        "QUIT",
+        "RCPT",
+        "RSET",
+        "VRFY",
+    }
+    for raw_line in text.replace("\r", "\n").split("\n"):
+        parts = raw_line.strip().split()
+        if not parts:
+            continue
+        command = parts[0].upper()
+        if command in valid_commands:
+            commands.append(command)
+    return dedupe_preserve(commands)
 
 
 def _parse_http_request(data: bytes) -> ParsedHttpRequest | None:

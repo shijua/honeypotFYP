@@ -129,6 +129,46 @@ async def test_asset_gateway_reports_internal_http_request_before_proxying(
     assert backend_writer.written[0].startswith(b"GET /finance/archive")
 
 
+@pytest.mark.asyncio
+async def test_asset_gateway_reports_smtp_commands_while_proxying(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    route_path = _write_route_table(
+        tmp_path,
+        attacker_key="127.0.0.1",
+        public_port=2525,
+        backend_port=25,
+        asset_id="mail-relay",
+    )
+    client_reader = _FakeReader([b"HELO tester\r\nQUIT\r\n", b""])
+    client_writer = _FakeWriter()
+    backend_reader = _FakeReader([b"220 mailrelay.local ESMTP\r\n", b""])
+    backend_writer = _FakeWriter()
+    events_file = tmp_path / "internal_protocol_events.jsonl"
+
+    async def fake_open_connection(host: str, port: int) -> tuple[_FakeReader, _FakeWriter]:
+        return backend_reader, backend_writer
+
+    monkeypatch.setenv("HONEYPOT_INTERNAL_PROTOCOL_EVENTS_FILE", str(events_file))
+    monkeypatch.setattr(asset_gateway_app, "_peer_ip", lambda _writer: "127.0.0.1")
+    monkeypatch.setattr(asset_gateway_app.asyncio, "open_connection", fake_open_connection)
+
+    await asset_gateway_app._handle_connection(
+        client_reader,
+        client_writer,
+        public_port=2525,
+        route_path=route_path,
+    )
+
+    payload = json.loads(events_file.read_text(encoding="utf-8").strip())
+    assert payload["src_host"] == "127.0.0.1"
+    assert payload["dst_port"] == 25
+    assert payload["logdata"]["SERVICE"] == "smtp"
+    assert payload["logdata"]["COMMANDS"] == ["HELO", "QUIT"]
+    assert backend_writer.written == [b"HELO tester\r\nQUIT\r\n"]
+
+
 def _write_route_table(
     tmp_path: Path,
     *,
