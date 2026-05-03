@@ -179,12 +179,13 @@ services:
     image: python:3.10-slim
     working_dir: /app
     command: >
-      bash -lc "pip install -q fastapi uvicorn pydantic &&
+      bash -lc "pip install -q fastapi uvicorn pydantic PyYAML &&
       python -m uvicorn services.entrypoint.app:app --host 0.0.0.0 --port 8010"
     ports:
       - "${HOST_BIND_ADDRESS:-127.0.0.1}:${ENTRYPOINT_OBSERVER_PORT:-8083}:8010"
     environment:
       PYTHONPATH: /app
+      HONEYPOT_ENTRYPOINT_HTTP_SIGMA_RULES_PATH: "${HONEYPOT_ENTRYPOINT_HTTP_SIGMA_RULES_PATH:-data/detections/http_sigma}"
     volumes:
       - .:/app
     expose:

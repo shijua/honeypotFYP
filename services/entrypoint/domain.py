@@ -23,10 +23,10 @@ from libs.contracts.models import (
 from services.binding_service.domain import BindingService
 from services.entrypoint.repository import EntrypointObservationRepository
 from services.entrypoint.rule_matcher import (
-    FilePublicHttpRuleMatcher,
     PublicHttpRuleMatcher,
     PublicHttpRuleMatch,
 )
+from services.entrypoint.sigma_mapping import FilePublicHttpSigmaRuleMatcher
 from services.profiler.domain import ProfilerService
 
 
@@ -62,7 +62,7 @@ class EntrypointService:
         self._observation_repository = observation_repository
         self._profiler_service = profiler_service
         self._public_http_rule_matcher = (
-            public_http_rule_matcher or FilePublicHttpRuleMatcher()
+            public_http_rule_matcher or FilePublicHttpSigmaRuleMatcher()
         )
 
     def capture_http_request(

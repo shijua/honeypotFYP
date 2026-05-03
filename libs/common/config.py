@@ -30,6 +30,7 @@ class RuntimeConfig:
     cowrie_command_mapping_mode: str = "sigma"
     cowrie_command_mapping_path: str = "data/cowrie/command_mapping_rules.json"
     cowrie_sigma_rules_path: str = "vendor/sigma/rules/linux"
+    entrypoint_http_sigma_rules_path: str = "data/detections/http_sigma"
     entrypoint_body_preview_bytes: int = 2048
     mitre_attack_stix_path: str = "data/mitre/enterprise-attack.json"
     mitre_attack_stix_url: str = (
@@ -53,5 +54,9 @@ class RuntimeConfig:
         config.cowrie_sigma_rules_path = os.getenv(
             "HONEYPOT_COWRIE_SIGMA_RULES_PATH",
             config.cowrie_sigma_rules_path,
+        )
+        config.entrypoint_http_sigma_rules_path = os.getenv(
+            "HONEYPOT_ENTRYPOINT_HTTP_SIGMA_RULES_PATH",
+            config.entrypoint_http_sigma_rules_path,
         )
         return config

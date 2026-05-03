@@ -1,0 +1,37 @@
+title: Internal HTTP Artifact Access
+id: honeynet-internal-http-artifact-access
+status: experimental
+logsource:
+  product: honeynet
+  category: web
+honeynet.rule_name: internal_http_artifact_access
+honeynet.evidence_label: internal-http artifact access
+detection:
+  surface:
+    honeynet.surface: internal
+  selection_path:
+    url.path|contains:
+      - /archive/
+      - /backup/
+      - /config/
+      - /download
+      - /downloads/
+      - /exports/
+      - /finance/
+      - /logs/
+      - /maps/
+      - /upload/
+  selection_suffix:
+    url.path|endswith:
+      - .bak
+      - .bin
+      - .cfg
+      - .csv
+      - .ovpn
+      - .sql
+      - .xlsx
+      - .zip
+  condition: surface and 1 of selection_*
+tags:
+  - attack.collection
+  - attack.t1005

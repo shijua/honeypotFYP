@@ -1,0 +1,21 @@
+title: Internal HTTP Package Transfer
+id: honeynet-internal-http-package-transfer
+status: experimental
+logsource:
+  product: honeynet
+  category: web
+honeynet.rule_name: internal_http_package_transfer
+honeynet.evidence_label: internal-http package transfer path
+detection:
+  surface:
+    honeynet.surface: internal
+  asset:
+    honeynet.asset_id: malware-sink
+  selection:
+    url.path|contains:
+      - /downloads/
+      - /upload/
+  condition: surface and asset and selection
+tags:
+  - attack.command_and_control
+  - attack.t1105

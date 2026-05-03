@@ -6,11 +6,12 @@ from libs.common.config import RuntimeConfig
 from services.binding_service.runtime import get_runtime_service as get_binding_service
 from services.entrypoint.domain import EntrypointService
 from services.entrypoint.repository import FileEntrypointObservationRepository
+from services.entrypoint.sigma_mapping import FilePublicHttpSigmaRuleMatcher
 from services.profiler.attack_catalog import MitreAttackCatalog
 from services.profiler.domain import ProfilerService
 from services.profiler.repository import FileEvidenceRepository, FileProfileRepository
 
-_config = RuntimeConfig()
+_config = RuntimeConfig.from_env()
 _repository = FileEntrypointObservationRepository(
     f"{_config.state_dir}/entrypoint_observations.json"
 )
@@ -24,6 +25,9 @@ _service = EntrypointService(
     get_binding_service(),
     _repository,
     profiler_service=_profiler_service,
+    public_http_rule_matcher=FilePublicHttpSigmaRuleMatcher(
+        _config.entrypoint_http_sigma_rules_path
+    ),
 )
 
 

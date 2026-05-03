@@ -1,0 +1,28 @@
+title: Public HTTP Injection Probe
+id: honeynet-public-http-injection-probe
+status: experimental
+logsource:
+  product: honeynet
+  category: web
+honeynet.rule_name: public_http_injection_probe
+honeynet.evidence_label: public-http injection probe
+detection:
+  surface:
+    honeynet.surface: public
+  selection:
+    url.original|contains:
+      - union select
+      - union%20select
+      - union+select
+      - information_schema
+      - "' or '1'='1"
+      - "\" or \"1\"=\"1"
+      - sleep(
+      - benchmark(
+      - extractvalue(
+      - updatexml(
+      - select+
+  condition: surface and selection
+tags:
+  - attack.initial_access
+  - attack.t1190

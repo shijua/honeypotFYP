@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from services.entrypoint.rule_matcher import FilePublicHttpRuleMatcher
+from services.entrypoint.sigma_mapping import FilePublicHttpSigmaRuleMatcher
 
 
 pytestmark = pytest.mark.unit
@@ -46,8 +47,59 @@ def test_public_http_rule_matcher_maps_secret_and_scanner_probes() -> None:
     assert injection_matches[0].tags == ("mitre_initial_access", "T1190")
 
 
+def test_public_http_sigma_matcher_maps_secret_and_scanner_probes() -> None:
+    matcher = FilePublicHttpSigmaRuleMatcher("data/detections/http_sigma")
+
+    assert matcher.tags_for(method="GET", path="/.env.old") == [
+        "mitre_credential_access",
+        "T1552.001",
+    ]
+    matches = matcher.matches_for(
+        method="GET",
+        path="/assets/app.js.map",
+        user_agent="sqlmap/1.8",
+    )
+    assert [match.rule_name for match in matches] == ["public_http_web_discovery"]
+    assert matches[0].evidence_label == "public-http scanner or web discovery probe"
+    assert "user_agent:sqlmap" in matches[0].indicators
+    assert "path:.map" in matches[0].indicators
+    injection_matches = matcher.matches_for(
+        method="GET",
+        path="/api/search",
+        query_string="q=1%20union%20select%201",
+        user_agent="sqlmap/1.8",
+    )
+    assert [match.rule_name for match in injection_matches] == [
+        "public_http_injection_probe",
+        "public_http_web_discovery",
+    ]
+    assert "combined:union%20select" in injection_matches[0].indicators
+    assert injection_matches[0].tags == ("mitre_initial_access", "T1190")
+
+
 def test_public_http_rule_matcher_maps_internal_artifact_access() -> None:
     matcher = FilePublicHttpRuleMatcher("data/detections/public_http_rules.json")
+
+    matches = matcher.matches_for(
+        method="GET",
+        path="/downloads/agent-update.bin",
+        surface="internal",
+        asset_id="malware-sink",
+    )
+
+    assert [match.rule_name for match in matches] == [
+        "internal_http_artifact_access",
+        "internal_http_package_transfer",
+    ]
+    assert matches[0].tags == ("mitre_collection", "T1005")
+    assert "surface:internal" in matches[0].indicators
+    assert "path:/downloads/" in matches[0].indicators
+    assert "path:.bin" in matches[0].indicators
+    assert matches[1].tags == ("mitre_command_and_control", "T1105")
+
+
+def test_public_http_sigma_matcher_maps_internal_artifact_access() -> None:
+    matcher = FilePublicHttpSigmaRuleMatcher("data/detections/http_sigma")
 
     matches = matcher.matches_for(
         method="GET",
@@ -84,6 +136,52 @@ def test_public_http_rule_matcher_maps_internal_portal_token_reuse() -> None:
     ]
     assert matches[0].tags == ("mitre_credential_access", "T1110")
     assert matches[1].tags == ("mitre_lateral_movement", "T1021")
+
+
+def test_public_http_sigma_matcher_maps_internal_portal_token_reuse() -> None:
+    matcher = FilePublicHttpSigmaRuleMatcher("data/detections/http_sigma")
+
+    matches = matcher.matches_for(
+        method="POST",
+        path="/session",
+        body_preview="username=portal.reader&token=[redacted]&auth_result=success",
+        surface="internal",
+        asset_id="internal-portal",
+    )
+
+    assert [match.rule_name for match in matches] == [
+        "internal_http_login_attempt",
+        "internal_http_valid_token_reuse",
+    ]
+    assert matches[0].tags == ("mitre_credential_access", "T1110")
+    assert matches[1].tags == ("mitre_lateral_movement", "T1021")
+
+
+def test_public_http_sigma_matcher_supports_simple_filters(tmp_path: Path) -> None:
+    sigma_file = tmp_path / "filtered_admin.yml"
+    sigma_file.write_text(
+        """
+title: Filtered Admin Probe
+honeynet.rule_name: filtered_admin_probe
+honeynet.evidence_label: filtered admin probe
+detection:
+  selection:
+    url.path|contains: /admin
+  filter_healthcheck:
+    http.user_agent|contains: healthcheck
+  condition: selection and not filter_healthcheck
+tags:
+  - attack.discovery
+  - attack.t1046
+""",
+        encoding="utf-8",
+    )
+    matcher = FilePublicHttpSigmaRuleMatcher(tmp_path)
+
+    assert [match.rule_name for match in matcher.matches_for(method="GET", path="/admin")] == [
+        "filtered_admin_probe"
+    ]
+    assert matcher.matches_for(method="GET", path="/admin", user_agent="healthcheck") == []
 
 
 def test_public_http_rule_matcher_supports_json_rule_files(tmp_path: Path) -> None:

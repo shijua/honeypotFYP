@@ -6,7 +6,7 @@ The same service has two roles:
 
 Captured requests are persisted as observation context and answered with a
 plain 404 when the service is reached directly. Suspicious public HTTP requests
-also create profiler evidence through the local JSON rule matcher.
+also create profiler evidence through the HTTP Sigma matcher.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from services.entrypoint.domain import EntrypointService
 from services.entrypoint.runtime import get_runtime_service
 
 app = FastAPI(title="entrypoint", version="0.1.0")
-_config = RuntimeConfig()
+_config = RuntimeConfig.from_env()
 
 
 def get_service() -> EntrypointService:

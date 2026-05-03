@@ -100,6 +100,7 @@ benign-surface signals provide baseline context
   - capture arbitrary HTTP paths
   - resolve a sticky binding for the source attacker
   - persist a redacted observation
+  - match suspicious public and internal HTTP probes with Sigma YAML rules from `data/detections/http_sigma`
   - forward a normalized `FalcoEvent` into the profiler
   - return a plain `404 Not Found` response
 

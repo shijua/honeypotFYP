@@ -1,0 +1,20 @@
+title: Internal HTTP Valid Token Reuse
+id: honeynet-internal-http-valid-token-reuse
+status: experimental
+logsource:
+  product: honeynet
+  category: web
+honeynet.rule_name: internal_http_valid_token_reuse
+honeynet.evidence_label: internal-http valid token reuse
+detection:
+  surface:
+    honeynet.surface: internal
+  asset:
+    honeynet.asset_id: internal-portal
+  selection:
+    http.request.body.content|contains:
+      - auth_result=success
+  condition: surface and asset and selection
+tags:
+  - attack.lateral_movement
+  - attack.t1021

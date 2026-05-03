@@ -1,0 +1,28 @@
+title: Public HTTP Login Attempt
+id: honeynet-public-http-login-attempt
+status: experimental
+logsource:
+  product: honeynet
+  category: web
+honeynet.rule_name: public_http_login_attempt
+honeynet.evidence_label: public-http login or password attempt
+detection:
+  surface:
+    honeynet.surface: public
+  selection_path:
+    url.path|contains:
+      - login
+      - signin
+      - wp-login.php
+  selection_body:
+    http.request.method: POST
+    http.request.body.content|contains:
+      - password
+      - passwd
+      - pwd=
+      - username
+      - login
+  condition: surface and 1 of selection_*
+tags:
+  - attack.credential_access
+  - attack.t1110

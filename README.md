@@ -100,7 +100,7 @@ The default local runtime now persists state under `data/runtime/`:
 - `gateway_routes.json`
 - `asset_gateway_routes.json`
 
-The controller asset catalog is now externalized at `data/assets/catalog.json`. Public HTTP profiling uses JSON-backed rules in `data/detections/public_http_rules.json`; only matching suspicious public-web requests create profiler evidence. Cowrie event mappings are externalized at `data/cowrie/event_mappings.json`. The profiler resolves tactic/technique relationships from the official MITRE ATT&CK `attack-stix-data` bundle at `data/mitre/enterprise-attack.json`.
+The controller asset catalog is now externalized at `data/assets/catalog.json`. Public HTTP profiling uses Sigma YAML rules in `data/detections/http_sigma`; only matching suspicious public-web requests create profiler evidence. Cowrie event mappings are externalized at `data/cowrie/event_mappings.json`. The profiler resolves tactic/technique relationships from the official MITRE ATT&CK `attack-stix-data` bundle at `data/mitre/enterprise-attack.json`.
 
 ## Cowrie Command Detection
 
@@ -168,7 +168,7 @@ Start the runnable stack without generating attacker traffic:
 ./scripts/start_enterprise_stack.sh
 ```
 
-The enterprise slice includes `public-portal`, a public-portal access-log forwarder, Cowrie, the public website HTTP backend, OpenCanary telemetry plumbing, and adaptive internal assets. The public portal implements the proposalv2 benign-surface breadcrumbs: login/support/status/API pages, `/robots.txt`, legacy backup files, `.env.old`, `phpinfo.php`, and frontend source-map credential breadcrumbs. Public portal nginx access logs are forwarded into the HTTP backend; suspicious requests are classified by `data/detections/public_http_rules.json` and sent to the profiler.
+The enterprise slice includes `public-portal`, a public-portal access-log forwarder, Cowrie, the public website HTTP backend, OpenCanary telemetry plumbing, and adaptive internal assets. The public portal implements the proposalv2 benign-surface breadcrumbs: login/support/status/API pages, `/robots.txt`, legacy backup files, `.env.old`, `phpinfo.php`, and frontend source-map credential breadcrumbs. Public portal nginx access logs are forwarded into the HTTP backend; suspicious requests are classified by `data/detections/http_sigma` and sent to the profiler.
 
 Useful public breadcrumb probes after the stack starts:
 

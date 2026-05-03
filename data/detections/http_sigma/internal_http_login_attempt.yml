@@ -1,0 +1,24 @@
+title: Internal HTTP Login Attempt
+id: honeynet-internal-http-login-attempt
+status: experimental
+logsource:
+  product: honeynet
+  category: web
+honeynet.rule_name: internal_http_login_attempt
+honeynet.evidence_label: internal-http login or token attempt
+detection:
+  surface:
+    honeynet.surface: internal
+  selection_path:
+    url.path|contains:
+      - /session
+      - /login
+  selection_body:
+    http.request.body.content|contains:
+      - username=
+      - password=
+      - token=
+  condition: surface and 1 of selection_*
+tags:
+  - attack.credential_access
+  - attack.t1110

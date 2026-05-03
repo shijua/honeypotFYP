@@ -225,10 +225,10 @@ class ProfileSnapshot(VersionedModel):
     - recent_techniques: de-duplicated recent technique chain within the short time window
     - recent_evidence_ids: the most recent evidence ids used to explain decisions
     - recent_public_http_paths: suspicious public web paths observed in the short window
-    - recent_public_http_rules: local public HTTP rule names that matched those paths
+    - recent_public_http_rules: public HTTP Sigma rule names that matched those paths
     - recent_public_http_indicators: concrete matched tokens such as path:.bak or combined:.env
     - recent_internal_http_paths: suspicious internal asset paths observed after unlock
-    - recent_internal_http_rules: local internal HTTP rule names that matched those paths
+    - recent_internal_http_rules: internal HTTP Sigma rule names that matched those paths
     - recent_internal_http_indicators: concrete matched internal asset tokens
     - updated_at: timestamp of the newest evidence included in this snapshot
 

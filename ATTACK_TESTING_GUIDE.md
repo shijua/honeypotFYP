@@ -68,6 +68,8 @@ Expected:
 
 ## 3. Generate Public Attacker Signals
 
+These requests should be classified by HTTP Sigma rules from `data/detections/http_sigma`.
+
 ```bash
 curl -i "http://146.169.44.23:8080/.env.old"
 curl -i "http://146.169.44.23:8080/backup/db_backup_2024.sql.bak"

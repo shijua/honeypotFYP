@@ -1,0 +1,62 @@
+title: Public HTTP Web Discovery
+id: honeynet-public-http-web-discovery
+status: experimental
+logsource:
+  product: honeynet
+  category: web
+honeynet.rule_name: public_http_web_discovery
+honeynet.evidence_label: public-http scanner or web discovery probe
+detection:
+  surface:
+    honeynet.surface: public
+  selection_user_agent:
+    http.user_agent|contains:
+      - acunetix
+      - arachni
+      - burp
+      - dirbuster
+      - dirsearch
+      - feroxbuster
+      - ffuf
+      - gobuster
+      - httpx
+      - masscan
+      - nessus
+      - nikto
+      - nmap
+      - nuclei
+      - openvas
+      - sqlmap
+      - whatweb
+      - wpscan
+      - zgrab
+      - zmap
+  selection_path:
+    url.path|contains:
+      - .git
+      - .svn
+      - .hg
+      - .ds_store
+      - /actuator
+      - /admin
+      - /api
+      - /dashboard
+      - /graphql
+      - /internal-api
+      - /jenkins
+      - /manager/html
+      - /openapi.json
+      - /phpmyadmin
+      - /server-status
+      - /swagger
+      - /swagger-ui
+      - /v2/api-docs
+      - /wp-admin
+      - phpinfo.php
+  selection_map:
+    url.path|endswith:
+      - .map
+  condition: surface and 1 of selection_*
+tags:
+  - attack.discovery
+  - attack.t1046
