@@ -102,6 +102,36 @@ The default local runtime now persists state under `data/runtime/`:
 
 The controller asset catalog is now externalized at `data/assets/catalog.json`. Public HTTP profiling uses JSON-backed rules in `data/detections/public_http_rules.json`; only matching suspicious public-web requests create profiler evidence. Cowrie event mappings are externalized at `data/cowrie/event_mappings.json`. The profiler resolves tactic/technique relationships from the official MITRE ATT&CK `attack-stix-data` bundle at `data/mitre/enterprise-attack.json`.
 
+## Cowrie Command Detection
+
+Cowrie command profiling has three runtime modes:
+
+| Mode | Runtime catalog | Purpose |
+| --- | --- | --- |
+| `local` | `data/cowrie/command_mapping_rules.json` | Project-owned command mappings for known honeypot behaviors |
+| `sigma` | `vendor/sigma/rules/linux` | Sigma-only experiment using externally sourced Linux rules that can be expressed from Cowrie commands |
+| `hybrid` | local catalog, then runtime Sigma catalog | Practical mode that keeps project-specific coverage while adding Sigma coverage |
+
+Fetch SigmaHQ rules before using `sigma` or `hybrid` mode:
+
+```bash
+mkdir -p vendor
+test -d vendor/sigma || git clone --depth 1 https://github.com/SigmaHQ/sigma.git vendor/sigma
+```
+
+Run the stack with the desired mode:
+
+```bash
+# default Sigma command detection
+./scripts/start_enterprise_stack.sh
+HONEYPOT_COWRIE_COMMAND_MAPPING_MODE=sigma ./scripts/start_enterprise_stack.sh
+HONEYPOT_COWRIE_COMMAND_MAPPING_MODE=hybrid ./scripts/start_enterprise_stack.sh
+```
+
+The Cowrie adapter reads the configured Sigma YAML folder directly at runtime and imports rule conditions it can express from one Cowrie command: process/image fields, command-line fields, auditd `EXECVE` arguments, and simple keyword lists. The supported condition subset includes standalone selections, `selection_a and selection_b`, `all of selection_*`, `1 of selection_*`, and `selection and not filter_*`. Selections with unsupported fields are skipped instead of weakened. Override the Sigma rule directory with `HONEYPOT_COWRIE_SIGMA_RULES_PATH` when testing a different Sigma checkout.
+
+Use `ATTACK_TESTING_GUIDE.md` only to test whether live Cowrie commands produce observations and profiler evidence. Rule-source details belong here and in `ARCHITECTURE.md`, not in the testing guide.
+
 ## Simulation Helpers
 
 Useful helper scripts are kept in `scripts/` and covered by tests:
@@ -124,7 +154,7 @@ The enterprise-network deployment uses two compose files:
 - `docker-compose.control.yml` runs the control plane.
 - `docker-compose.enterprise.yml` runs the benign surface, attacker entrypoints, and currently real enterprise assets.
 
-Copy `.env.example` to `.env` if local ports or bind addresses need to change. Keep `HOST_BIND_ADDRESS=127.0.0.1` for SSH-tunnel/local-only testing; use `HOST_BIND_ADDRESS=0.0.0.0` or a specific private IP if you want browser/terminal access from your LAN/VPN.
+Set environment variables inline when local ports or bind addresses need to change. Keep `HOST_BIND_ADDRESS=127.0.0.1` for SSH-tunnel/local-only testing; use `HOST_BIND_ADDRESS=0.0.0.0` or a specific private IP if you want browser/terminal access from your LAN/VPN.
 
 Reset old containers and runtime state before a fresh run:
 
@@ -167,7 +197,7 @@ Adaptive internal Docker assets no longer publish host ports themselves. The orc
 
 OpenCanary is no longer an always-on attacker-facing entrypoint. OpenCanary telemetry is collected through `scripts/forwarders/opencanary_json.py`, which tails `deploy/opencanary/var/opencanary.log` and posts events into `services/opencanary`. Adaptive internal OpenCanary assets mount that shared log directory, so their Git/MySQL/Redis/HTTP/FTP/SSH/Telnet events flow into the dashboard after the controller unlocks them.
 
-The adaptive internal catalog includes standalone OpenCanary assets for Git, MySQL, Redis, FTP, SSH, and Telnet, plus lightweight static Docker assets for finance-share, ICS panel, VPN appliance, and malware-drop-sink services. The static assets include backup/config/archive breadcrumbs such as `.bak`, `.cfg`, `.ovpn`, and package-download paths. They are not enabled by changing one shared OpenCanary configuration; the orchestrator starts a separate container per asset when the controller unlocks it. Default host ports can be overridden in `.env`:
+The adaptive internal catalog includes standalone OpenCanary assets for Git, MySQL, Redis, FTP, SSH, and Telnet, plus lightweight static Docker assets for finance-share, ICS panel, VPN appliance, and malware-drop-sink services. The static assets include backup/config/archive breadcrumbs such as `.bak`, `.cfg`, `.ovpn`, and package-download paths. They are not enabled by changing one shared OpenCanary configuration; the orchestrator starts a separate container per asset when the controller unlocks it. Default host ports can be overridden with shell environment variables:
 
 The controller now treats public-file exploration as part of the dependency model. For example, probing `/.env.old`, `/backup/db_backup_2024.sql.bak`, `/backup/passwords_internal.txt`, `/assets/app.js.map`, `/admin`, or SQL-injection-looking API requests creates public HTTP evidence in the profile. Catalog assets can declare `default_settings.unlock_signals` so they only become eligible after the matching public path, rule, or indicator has been seen.
 

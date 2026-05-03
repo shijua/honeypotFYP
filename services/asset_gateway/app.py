@@ -26,11 +26,11 @@ import argparse
 import asyncio
 import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import timezone
 from pathlib import Path
 from typing import Any, Callable
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from libs.common.clock import utcnow
 from libs.common.iterables import dedupe_preserve
@@ -143,13 +143,31 @@ async def _handle_connection(
         return
 
     initial_client_data = b""
+    parsed_http_request: ParsedHttpRequest | None = None
     if _should_observe_http(public_port):
         initial_client_data = await _read_initial_client_data(client_reader)
+        parsed_http_request = _parse_http_request(initial_client_data)
+        session_result = _internal_portal_session_result(
+            parsed_http_request,
+            route=route,
+        )
+        if session_result is not None:
+            parsed_http_request = _with_auth_result(
+                parsed_http_request,
+                session_result.auth_result,
+            )
         await _report_internal_http_request(
-            initial_client_data,
+            parsed_http_request,
             route=route,
             client_ip=client_ip,
         )
+        if session_result is not None:
+            await _write_http_response(
+                client_writer,
+                status_code=session_result.status_code,
+                body=session_result.body,
+            )
+            return
 
     try:
         backend_reader, backend_writer = await asyncio.open_connection(
@@ -238,13 +256,12 @@ async def _read_initial_client_data(
 
 
 async def _report_internal_http_request(
-    initial_data: bytes,
+    parsed: ParsedHttpRequest | None,
     *,
     route: AssetRoute,
     client_ip: str,
 ) -> None:
     """Write an observed internal HTTP request for the control-plane forwarder."""
-    parsed = _parse_http_request(initial_data)
     if parsed is None:
         return
     events_file = _internal_http_events_path()
@@ -261,6 +278,128 @@ async def _report_internal_http_request(
         "asset_id": route.asset_id,
     }
     _append_jsonl(events_file, payload)
+
+
+@dataclass(frozen=True)
+class InternalPortalSessionResult:
+    """Synthetic but real HTTP login response for the internal portal gate."""
+
+    auth_result: str
+    status_code: int
+    body: dict[str, object]
+
+
+def _internal_portal_session_result(
+    parsed: ParsedHttpRequest | None,
+    *,
+    route: AssetRoute,
+) -> InternalPortalSessionResult | None:
+    """Handle the internal portal credential gate before proxying to nginx.
+
+    The static portal page asks the gateway to validate the reader credential
+    leaked on the public surface. Returning a real 200/401 response gives the
+    attacker an actual credential-reuse step while keeping the backend static.
+    """
+    if parsed is None or route.asset_id != "internal-portal":
+        return None
+    if parsed.method != "POST" or parsed.path not in {"/session", "/api/session"}:
+        return None
+
+    form = _http_form_values(parsed)
+    username = _first_form_value(form, "username", "user", "portal-user")
+    token = _first_form_value(form, "token", "password", "portal-token")
+    token = token or _bearer_token(parsed.headers.get("authorization"))
+    is_valid = username == "portal.reader" and token == "nbp_reader_2026_04_window"
+    if is_valid:
+        return InternalPortalSessionResult(
+            auth_result="success",
+            status_code=200,
+            body={
+                "status": "ok",
+                "user": "portal.reader",
+                "role": "directory-readonly",
+            },
+        )
+    return InternalPortalSessionResult(
+        auth_result="failure",
+        status_code=401,
+        body={
+            "status": "denied",
+            "reason": "invalid recovery credential",
+        },
+    )
+
+
+def _with_auth_result(
+    parsed: ParsedHttpRequest,
+    auth_result: str,
+) -> ParsedHttpRequest:
+    """Annotate the observed form body so detection rules can see login result."""
+    body = parsed.body_preview or ""
+    separator = "&" if body else ""
+    return replace(parsed, body_preview=f"{body}{separator}auth_result={auth_result}")
+
+
+async def _write_http_response(
+    writer: asyncio.StreamWriter,
+    *,
+    status_code: int,
+    body: dict[str, object],
+) -> None:
+    """Write a small JSON response for gateway-handled internal HTTP actions."""
+    reason = "OK" if status_code == 200 else "Unauthorized"
+    body_bytes = (json.dumps(body, sort_keys=True) + "\n").encode("utf-8")
+    headers = (
+        f"HTTP/1.1 {status_code} {reason}\r\n"
+        "Content-Type: application/json\r\n"
+        f"Content-Length: {len(body_bytes)}\r\n"
+        "Cache-Control: no-store\r\n"
+        "Connection: close\r\n"
+        "\r\n"
+    ).encode("ascii")
+    writer.write(headers + body_bytes)
+    await writer.drain()
+    writer.close()
+    try:
+        await writer.wait_closed()
+    except (ConnectionError, OSError):
+        pass
+
+
+def _http_form_values(parsed: ParsedHttpRequest) -> dict[str, list[str]]:
+    """Parse URL-encoded or JSON login material from a captured HTTP body."""
+    body = parsed.body_preview or ""
+    content_type = parsed.headers.get("content-type", "")
+    if "json" in content_type:
+        try:
+            payload = json.loads(body)
+        except json.JSONDecodeError:
+            return {}
+        if not isinstance(payload, dict):
+            return {}
+        return {
+            str(key): [str(value)]
+            for key, value in payload.items()
+            if isinstance(key, str) and value is not None
+        }
+    return parse_qs(body, keep_blank_values=True)
+
+
+def _first_form_value(form: dict[str, list[str]], *names: str) -> str | None:
+    for name in names:
+        values = form.get(name)
+        if values:
+            return values[0]
+    return None
+
+
+def _bearer_token(value: str | None) -> str | None:
+    if not value:
+        return None
+    prefix = "bearer "
+    if value.lower().startswith(prefix):
+        return value[len(prefix):].strip()
+    return None
 
 
 def _append_jsonl(path: Path, payload: dict[str, object]) -> None:

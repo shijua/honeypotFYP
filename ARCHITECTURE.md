@@ -111,9 +111,21 @@ benign-surface signals provide baseline context
   - resolve a sticky binding by `src_ip`
   - persist a sanitized Cowrie observation
   - load Cowrie event mappings from `data/cowrie/event_mappings.json`
+  - map `cowrie.command.input` values through the configured command mapping catalog
   - only emit ATT&CK tags for clear behavior; keep metadata/ambiguous events as `cowrie_*` descriptive tags
   - forward a normalized `FalcoEvent` into the profiler only when the event mapping has `profile=true`
   - keep `cowrie.command.failed` as observation-only to avoid double-counting a command already seen as `cowrie.command.input`
+
+#### Cowrie command mapping modes
+Cowrie command detection is intentionally separated from the live SSH intake path. The runtime loads the selected catalog lazily on first command input, then matches attacker-entered shell text against in-memory rules.
+
+Supported modes:
+
+- `local`: load `data/cowrie/command_mapping_rules.json` only
+- `sigma`: read compatible Sigma YAML rules directly from `vendor/sigma/rules/linux`
+- `hybrid`: load local first, then runtime Sigma, with duplicate `name + technique_id` mappings deduplicated
+
+The mode is selected by `HONEYPOT_COWRIE_COMMAND_MAPPING_MODE` and loaded through `RuntimeConfig.from_env()`. `sigma` and `hybrid` require a SigmaHQ checkout under `vendor/sigma` unless `HONEYPOT_COWRIE_SIGMA_RULES_PATH` points somewhere else. Runtime Sigma support treats the configured folder as the scope and imports rule conditions it can express from one Cowrie command: process/image fields, command-line fields, auditd `EXECVE` arguments, and simple keyword lists. The supported condition subset includes standalone selections, `selection_a and selection_b`, `all of selection_*`, `1 of selection_*`, and `selection and not filter_*`. Unsupported fields are skipped rather than weakened into noisy matches. Matching remains real-time after the first lazy load. Sigma correlation or multi-event sequence rules still require a separate stateful correlation layer because Cowrie emits one command event at a time.
 
 ### 6) Controller service
 - Path: `services/controller/*`

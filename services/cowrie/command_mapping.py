@@ -2,7 +2,8 @@
 
 Cowrie only gives us the attacker-entered command line, not full endpoint
 telemetry. This module normalizes that command into a small process-like event
-and applies reviewed rules from `data/cowrie/command_mapping_rules.json`.
+and applies the selected command mapping catalog. A catalog can be a local JSON
+file, a runtime Sigma catalog, or a combination of both.
 
 Example:
     "cat /etc/passwd" -> process_name="cat" -> rule "local_account_file_discovery"
@@ -14,9 +15,12 @@ from __future__ import annotations
 import json
 import re
 import shlex
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
+
+from libs.common.iterables import dedupe_preserve_by
 
 
 @dataclass(frozen=True)
@@ -65,7 +69,8 @@ class CowrieCommandRule:
     """Reviewed command-level mapping from Cowrie command input to ATT&CK.
 
     A rule is intentionally small and auditable: one ATT&CK technique, one
-    confidence label, one set of match conditions, and one or more references.
+    confidence label, one positive match, optional exclusions, and one or more
+    references. Exclusions are used by Sigma `and not filter_*` conditions.
 
     Example:
         CowrieCommandRule(
@@ -82,6 +87,7 @@ class CowrieCommandRule:
     confidence: str
     match: CommandMatch
     source_refs: tuple[SourceRef, ...]
+    exclude_match: CommandMatch | None = None
 
 
 @dataclass(frozen=True)
@@ -124,6 +130,25 @@ class EmptyCowrieCommandRuleCatalog:
         return ()
 
 
+class CompositeCowrieCommandRuleCatalog:
+    """Query several catalogs and return a deduplicated combined match list.
+
+    The `hybrid` runtime mode uses this to keep project-specific mappings while
+    also reading external Sigma rules directly.
+    """
+
+    def __init__(self, catalogs: Sequence[CowrieCommandRuleCatalog]) -> None:
+        self._catalogs = tuple(catalogs)
+
+    def match(self, command: str) -> tuple[CowrieCommandRule, ...]:
+        rules: list[CowrieCommandRule] = []
+        for catalog in self._catalogs:
+            rules.extend(catalog.match(command))
+        return tuple(
+            dedupe_preserve_by(rules, lambda rule: (rule.name, rule.technique_id))
+        )
+
+
 class FileCowrieCommandRuleCatalog:
     """JSON-backed command mapping catalog.
 
@@ -131,8 +156,8 @@ class FileCowrieCommandRuleCatalog:
     cheap and makes tests simpler because the file is only read when needed.
     """
 
-    def __init__(self, path: str | Path) -> None:
-        self._path = Path(path)
+    def __init__(self, path: str | Path | Sequence[str | Path]) -> None:
+        self._paths = _paths_from(path)
         self._loaded = False
         self._rules: tuple[CowrieCommandRule, ...] = ()
 
@@ -154,11 +179,16 @@ class FileCowrieCommandRuleCatalog:
         if self._loaded:
             return
 
-        payload = json.loads(self._path.read_text(encoding="utf-8"))
+        rules: list[CowrieCommandRule] = []
+        for path in self._paths:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            rules.extend(
+                _rule_from_payload(item)
+                for item in payload.get("rules", [])
+                if isinstance(item, dict)
+            )
         self._rules = tuple(
-            _rule_from_payload(item)
-            for item in payload.get("rules", [])
-            if isinstance(item, dict)
+            dedupe_preserve_by(rules, lambda rule: (rule.name, rule.technique_id))
         )
         self._loaded = True
 
@@ -207,21 +237,30 @@ def command_matches_rule(command: NormalizedCommand, rule: CowrieCommandRule) ->
     If a rule specifies multiple condition groups, every group must pass.
     A rule with no conditions is treated as invalid and never matches.
     """
+    if not _command_matches(command, rule.match):
+        return False
+    if rule.exclude_match is not None and _command_matches(command, rule.exclude_match):
+        return False
+    return True
+
+
+def _command_matches(command: NormalizedCommand, match: CommandMatch) -> bool:
+    """Return True when all specified match condition groups pass."""
     has_condition = False
 
-    if rule.match.process_names:
+    if match.process_names:
         has_condition = True
-        if command.process_name not in rule.match.process_names:
+        if command.process_name not in match.process_names:
             return False
 
-    if rule.match.command_line_contains_any:
+    if match.command_line_contains_any:
         has_condition = True
-        if not any(token in command.command_line for token in rule.match.command_line_contains_any):
+        if not any(token in command.command_line for token in match.command_line_contains_any):
             return False
 
-    if rule.match.command_line_regex_any:
+    if match.command_line_regex_any:
         has_condition = True
-        if not any(re.search(pattern, command.command_line) for pattern in rule.match.command_line_regex_any):
+        if not any(re.search(pattern, command.command_line) for pattern in match.command_line_regex_any):
             return False
 
     return has_condition
@@ -239,6 +278,7 @@ def _rule_from_payload(payload: dict[str, object]) -> CowrieCommandRule:
             for item in payload.get("source_refs", [])
             if isinstance(item, dict)
         ),
+        exclude_match=_optional_match_from_payload(payload.get("exclude_match")),
     )
 
 
@@ -257,6 +297,13 @@ def _match_from_payload(payload: object) -> CommandMatch:
     )
 
 
+def _optional_match_from_payload(payload: object) -> CommandMatch | None:
+    """Return an exclude match only when the JSON section is present."""
+    if payload is None:
+        return None
+    return _match_from_payload(payload)
+
+
 def _source_ref_from_payload(payload: dict[str, object]) -> SourceRef:
     """Convert one JSON source reference into a SourceRef."""
     url = payload.get("url")
@@ -265,6 +312,13 @@ def _source_ref_from_payload(payload: dict[str, object]) -> SourceRef:
         name=str(payload.get("name", "")),
         url=str(url) if url is not None else None,
     )
+
+
+def _paths_from(path: str | Path | Sequence[str | Path]) -> tuple[Path, ...]:
+    """Normalize one mapping file or several mapping files into Path objects."""
+    if isinstance(path, (str, Path)):
+        return (Path(path),)
+    return tuple(Path(item) for item in path)
 
 
 def _lower_strings(value: object) -> list[str]:

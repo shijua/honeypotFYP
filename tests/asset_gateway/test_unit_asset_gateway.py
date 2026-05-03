@@ -7,8 +7,10 @@ import pytest
 
 from services.asset_gateway.app import (
     AssetRoute,
+    _internal_portal_session_result,
     _parse_http_request,
     _parse_smtp_commands,
+    _with_auth_result,
     load_routes,
     select_route,
 )
@@ -101,6 +103,58 @@ def test_parse_http_request_extracts_path_query_and_headers() -> None:
     assert request.path == "/finance/archive/payroll.zip"
     assert request.query_string == "download=1"
     assert request.headers["user-agent"] == "curl/8.0"
+
+
+def test_internal_portal_session_accepts_leaked_reader_token() -> None:
+    request = _parse_http_request(
+        b"POST /session HTTP/1.1\r\n"
+        b"Host: intranet.internal\r\n"
+        b"Content-Type: application/x-www-form-urlencoded\r\n"
+        b"\r\n"
+        b"username=portal.reader&token=nbp_reader_2026_04_window"
+    )
+    route = AssetRoute(
+        attacker_key="198.51.100.10",
+        binding_id="binding-a",
+        asset_id="internal-portal",
+        public_port=18080,
+        backend_host="honeynet-a-internal-portal",
+        backend_port=80,
+    )
+
+    result = _internal_portal_session_result(request, route=route)
+
+    assert result is not None
+    assert result.status_code == 200
+    assert result.auth_result == "success"
+    assert result.body["role"] == "directory-readonly"
+    assert _with_auth_result(request, result.auth_result).body_preview.endswith(
+        "auth_result=success"
+    )
+
+
+def test_internal_portal_session_rejects_wrong_token() -> None:
+    request = _parse_http_request(
+        b"POST /session HTTP/1.1\r\n"
+        b"Host: intranet.internal\r\n"
+        b"Content-Type: application/x-www-form-urlencoded\r\n"
+        b"\r\n"
+        b"username=portal.reader&token=wrong"
+    )
+    route = AssetRoute(
+        attacker_key="198.51.100.10",
+        binding_id="binding-a",
+        asset_id="internal-portal",
+        public_port=18080,
+        backend_host="honeynet-a-internal-portal",
+        backend_port=80,
+    )
+
+    result = _internal_portal_session_result(request, route=route)
+
+    assert result is not None
+    assert result.status_code == 401
+    assert result.auth_result == "failure"
 
 
 def test_parse_smtp_commands_extracts_command_verbs_only() -> None:

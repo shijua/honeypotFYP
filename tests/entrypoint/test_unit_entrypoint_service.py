@@ -144,3 +144,40 @@ def test_capture_http_request_profiles_internal_artifact_access() -> None:
     assert observations[0].surface == "internal"
     assert observations[0].asset_id == "finance-share"
     assert observations[0].matched_rules == ["internal_http_artifact_access"]
+
+
+def test_capture_http_request_profiles_internal_token_reuse() -> None:
+    observation_repository = InMemoryEntrypointObservationRepository()
+    service = EntrypointService(
+        BindingService(InMemoryBindingRepository()),
+        observation_repository,
+        profiler_service=ProfilerService(
+            InMemoryEvidenceRepository(),
+            InMemoryProfileRepository(),
+            build_test_attack_catalog(),
+        ),
+    )
+
+    response = service.capture_http_request(
+        EntrypointCaptureRequest(
+            attacker_key="198.51.100.204",
+            method="POST",
+            path="/session",
+            headers={"user-agent": "curl/8.0"},
+            body_preview="username=portal.reader&token=nbp_reader_2026_04_window&auth_result=success",
+            surface="internal",
+            asset_id="internal-portal",
+        )
+    )
+
+    assert response.profile.recent_tactics == [
+        "Credential Access",
+        "Lateral Movement",
+    ]
+    assert response.profile.recent_techniques == ["T1110", "T1021"]
+    observations = tuple(observation_repository.list_recent())
+    assert observations[0].body_preview == "username=portal.reader&token=[redacted]&auth_result=success"
+    assert observations[0].matched_rules == [
+        "internal_http_login_attempt",
+        "internal_http_valid_token_reuse",
+    ]

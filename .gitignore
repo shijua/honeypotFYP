@@ -7,6 +7,8 @@ __pycache__/
 .env
 .local_archive/
 vendor/vulhub/
+vendor/sigma/
+data/cowrie/command_mapping_rules.sigma.json
 data/runtime/
 data/mitre/enterprise-attack.json
 deploy/cowrie/var/

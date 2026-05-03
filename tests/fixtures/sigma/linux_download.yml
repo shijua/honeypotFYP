@@ -1,0 +1,21 @@
+title: Suspicious Linux File Download
+id: 4c251b4c-7a9a-49c8-a282-cowrie-test-0001
+status: test
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    Image|endswith:
+      - /curl
+      - /wget
+    CommandLine|contains:
+      - http://
+      - https://
+  condition: selection
+tags:
+  - attack.command-and-control
+  - attack.t1105
+level: high
+references:
+  - https://sigmahq.io/

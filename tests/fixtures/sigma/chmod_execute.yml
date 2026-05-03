@@ -1,0 +1,18 @@
+title: Downloaded File Made Executable
+id: 4c251b4c-7a9a-49c8-a282-cowrie-test-0002
+status: test
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    CommandLine|contains|all:
+      - chmod
+      - +x
+  condition: selection
+tags:
+  - attack.execution
+  - attack.t1059
+level: medium
+references:
+  - https://sigmahq.io/

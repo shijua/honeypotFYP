@@ -7,6 +7,7 @@ share the same defaults.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 
 
 @dataclass
@@ -26,10 +27,31 @@ class RuntimeConfig:
     state_dir: str = "data/runtime"
     asset_catalog_path: str = "data/assets/catalog.json"
     cowrie_event_mapping_path: str = "data/cowrie/event_mappings.json"
+    cowrie_command_mapping_mode: str = "sigma"
     cowrie_command_mapping_path: str = "data/cowrie/command_mapping_rules.json"
+    cowrie_sigma_rules_path: str = "vendor/sigma/rules/linux"
     entrypoint_body_preview_bytes: int = 2048
     mitre_attack_stix_path: str = "data/mitre/enterprise-attack.json"
     mitre_attack_stix_url: str = (
         "https://raw.githubusercontent.com/mitre-attack/attack-stix-data/master/"
         "enterprise-attack/enterprise-attack.json"
     )
+
+    @classmethod
+    def from_env(cls) -> "RuntimeConfig":
+        """Build config from repo defaults plus supported environment overrides."""
+        config = cls()
+        config.state_dir = os.getenv("HONEYPOT_STATE_DIR", config.state_dir)
+        config.cowrie_command_mapping_mode = os.getenv(
+            "HONEYPOT_COWRIE_COMMAND_MAPPING_MODE",
+            config.cowrie_command_mapping_mode,
+        )
+        config.cowrie_command_mapping_path = os.getenv(
+            "HONEYPOT_COWRIE_COMMAND_MAPPING_PATH",
+            config.cowrie_command_mapping_path,
+        )
+        config.cowrie_sigma_rules_path = os.getenv(
+            "HONEYPOT_COWRIE_SIGMA_RULES_PATH",
+            config.cowrie_sigma_rules_path,
+        )
+        return config

@@ -254,6 +254,94 @@
           "url": "https://attack.mitre.org/techniques/T1005/"
         }
       ]
+    },
+    {
+      "name": "internal_http_login_attempt",
+      "evidence_label": "internal-http login or token attempt",
+      "tags": ["mitre_credential_access", "T1110"],
+      "match": {
+        "all": [
+          {
+            "field": "surface",
+            "equals_any": ["internal"]
+          },
+          {
+            "any": [
+              {
+                "field": "path",
+                "contains_any": ["/session", "/login"]
+              },
+              {
+                "field": "body_preview",
+                "contains_any": ["username=", "password=", "token="]
+              }
+            ]
+          }
+        ]
+      },
+      "source_refs": [
+        {
+          "type": "mitre_attack_technique",
+          "name": "Brute Force",
+          "url": "https://attack.mitre.org/techniques/T1110/"
+        }
+      ]
+    },
+    {
+      "name": "internal_http_valid_token_reuse",
+      "evidence_label": "internal-http valid token reuse",
+      "tags": ["mitre_lateral_movement", "T1021"],
+      "match": {
+        "all": [
+          {
+            "field": "surface",
+            "equals_any": ["internal"]
+          },
+          {
+            "field": "asset_id",
+            "equals_any": ["internal-portal"]
+          },
+          {
+            "field": "body_preview",
+            "contains_any": ["auth_result=success"]
+          }
+        ]
+      },
+      "source_refs": [
+        {
+          "type": "mitre_attack_technique",
+          "name": "Remote Services",
+          "url": "https://attack.mitre.org/techniques/T1021/"
+        }
+      ]
+    },
+    {
+      "name": "internal_http_package_transfer",
+      "evidence_label": "internal-http package transfer path",
+      "tags": ["mitre_command_and_control", "T1105"],
+      "match": {
+        "all": [
+          {
+            "field": "surface",
+            "equals_any": ["internal"]
+          },
+          {
+            "field": "asset_id",
+            "equals_any": ["malware-sink"]
+          },
+          {
+            "field": "path",
+            "contains_any": ["/downloads/", "/upload/"]
+          }
+        ]
+      },
+      "source_refs": [
+        {
+          "type": "mitre_attack_technique",
+          "name": "Ingress Tool Transfer",
+          "url": "https://attack.mitre.org/techniques/T1105/"
+        }
+      ]
     }
   ]
 }

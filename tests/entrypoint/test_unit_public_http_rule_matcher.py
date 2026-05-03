@@ -57,12 +57,33 @@ def test_public_http_rule_matcher_maps_internal_artifact_access() -> None:
     )
 
     assert [match.rule_name for match in matches] == [
-        "internal_http_artifact_access"
+        "internal_http_artifact_access",
+        "internal_http_package_transfer",
     ]
     assert matches[0].tags == ("mitre_collection", "T1005")
     assert "surface:internal" in matches[0].indicators
     assert "path:/downloads/" in matches[0].indicators
     assert "path:.bin" in matches[0].indicators
+    assert matches[1].tags == ("mitre_command_and_control", "T1105")
+
+
+def test_public_http_rule_matcher_maps_internal_portal_token_reuse() -> None:
+    matcher = FilePublicHttpRuleMatcher("data/detections/public_http_rules.json")
+
+    matches = matcher.matches_for(
+        method="POST",
+        path="/session",
+        body_preview="username=portal.reader&token=[redacted]&auth_result=success",
+        surface="internal",
+        asset_id="internal-portal",
+    )
+
+    assert [match.rule_name for match in matches] == [
+        "internal_http_login_attempt",
+        "internal_http_valid_token_reuse",
+    ]
+    assert matches[0].tags == ("mitre_credential_access", "T1110")
+    assert matches[1].tags == ("mitre_lateral_movement", "T1021")
 
 
 def test_public_http_rule_matcher_supports_json_rule_files(tmp_path: Path) -> None:

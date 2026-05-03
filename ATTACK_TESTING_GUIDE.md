@@ -97,7 +97,18 @@ Expected:
 - adaptive loop may unlock `internal-portal` first
 - the added `/internal-api/status`, traversal, `ldap://`, actuator, and JNDI-style probes satisfy the current `ics-plc`, `malware-sink`, and exploit-probe unlock requirements
 
-## 4. Test Cowrie SSH
+## 4. Test Cowrie SSH Detection
+
+Use this section to check whether commands typed inside Cowrie become profile evidence. Do not edit rules during this test.
+
+Start the stack in the mode you want to test. For Sigma modes, make sure `vendor/sigma` exists using the README setup command.
+
+```bash
+# default Sigma command detection
+./scripts/start_enterprise_stack.sh
+```
+
+Connect to Cowrie:
 
 ```bash
 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2222 root@146.169.44.23
@@ -110,15 +121,42 @@ whoami
 id
 uname -a
 cat /etc/passwd
-ls -la
+curl http://146.169.44.23:18085/downloads/agent-update.bin -o /tmp/agent-update.bin
+chmod +x /tmp/agent-update.bin
+history -c
 exit
 ```
+
+Expected Sigma command mapping for the current `vendor/sigma/rules/linux` path. The dashboard may show extra techniques if the upstream Sigma checkout adds broader matches, but these should appear at minimum:
+
+| Command | Expected technique |
+| --- | --- |
+| `whoami` | `T1033` |
+| `id` | `T1033`, `T1087.001` |
+| `uname -a` | `T1033`, `T1082` |
+| `cat /etc/passwd` | `T1087.001` |
+| `curl http://146.169.44.23:18085/downloads/agent-update.bin -o /tmp/agent-update.bin` | `T1105` |
+| `chmod +x /tmp/agent-update.bin` | `T1222.002` |
+| `history -c` | `T1070.003` |
 
 Check:
 
 ```bash
-curl -s "http://146.169.44.23:8090/api/summary" | jq '.recent_cowrie_observations, .attackers'
+sleep 2
+curl -s "http://146.169.44.23:8090/api/summary" | jq '
+{
+  cowrie: [.recent_cowrie_observations[] | {eventid, attacker_key, command, profiler_evidence_ids}],
+  attackers: [.attackers[] | {attacker_key, commands, recent_tactics, recent_techniques, unlocked_assets}]
+}'
 ```
+
+Expected:
+
+- `cowrie.command.input` events appear under `cowrie`
+- mapped commands have non-empty `profiler_evidence_ids`
+- `attackers[].commands` includes the commands typed in Cowrie
+- `recent_tactics` and `recent_techniques` update when detection succeeds
+- in Sigma-only mode, coverage depends on compatible Sigma YAML selections under `vendor/sigma/rules/linux`
 
 ## 5. Strict Gateway Test
 
@@ -191,6 +229,8 @@ done
 
 # internal-portal
 curl -i "http://146.169.44.23:18080/" || true
+curl -i -X POST "http://146.169.44.23:18080/session" -d "username=portal.reader&token=WrongToken" || true
+curl -i -X POST "http://146.169.44.23:18080/session" -d "username=portal.reader&token=nbp_reader_2026_04_window" || true
 
 # git-internal: current runtime records Git probes.
 timeout 8s git ls-remote git://146.169.44.23:19418/infra-deploy.git || true
@@ -244,8 +284,6 @@ curl -i "http://146.169.44.23:18082/finance/archive/2024/budget-q4-review.xlsx" 
 curl -i "http://146.169.44.23:18082/finance/archive/2024/payroll-archive.zip" || true
 curl -i "http://146.169.44.23:18082/finance/archive/2024/vendor-bank-change.csv" || true
 curl -i "http://146.169.44.23:18082/exports/db_backup_2024.sql.bak" || true
-curl -I "http://146.169.44.23:18082/finance/archive/2024/budget-q4-review.xlsx" || true
-curl -I "http://146.169.44.23:18082/finance/archive/2024/payroll-archive.zip" || true
 
 # ics-plc: `18084` is the internal plant PLC status asset. It exposes an engineering panel, PLC config backup, and Modbus map.
 curl -i "http://146.169.44.23:18084/" || true
@@ -258,13 +296,11 @@ curl -i "http://146.169.44.23:18443/backup/ra-config-2026-04.bak" || true
 curl -i -u "contractor.ops:RemoteAccess-0426" "http://146.169.44.23:18443/backup/ra-config-2026-04.bak" || true
 curl -i -u "contractor.ops:RemoteAccess-0426" "http://146.169.44.23:18443/logs/vpn-auth.log" || true
 curl -i -u "contractor.ops:RemoteAccess-0426" "http://146.169.44.23:18443/download/contractor-profile.ovpn" || true
-curl -I -u "contractor.ops:RemoteAccess-0426" "http://146.169.44.23:18443/download/contractor-profile.ovpn" || true
 
 # malware-sink: `18085` is the internal package drop-zone asset. It exposes upload notes and a downloadable agent update artifact.
 curl -i "http://146.169.44.23:18085/" || true
 curl -i "http://146.169.44.23:18085/downloads/agent-update.bin" || true
 curl -i "http://146.169.44.23:18085/upload/README.txt" || true
-curl -I "http://146.169.44.23:18085/downloads/agent-update.bin" || true
 ```
 
 Check result:
@@ -280,6 +316,7 @@ Notes:
 - `mail-relay` uses Mailoney, so SMTP commands are observed by `asset-gateway` and forwarded through `internal-protocol-forwarder` into OpenCanary-style observations.
 - MySQL and Telnet need protocol-shaped interaction to produce useful OpenCanary records; raw `nc` is mostly a route check.
 - Git, SSH, Redis, and FTP should appear under `recent_opencanary_observations` after a short delay.
+- The internal portal `/session` POST is a real gateway-validated credential step. Wrong token returns `401`; the leaked `portal.reader` token returns `200` and should create internal login/token-reuse evidence.
 - Static internal HTTP assets are observed by `asset-gateway`, written to `data/runtime/internal_http_events.jsonl`, then forwarded by `internal-http-forwarder`, so artifact paths such as `.zip`, `.bak`, `.cfg`, `.ovpn`, and `.bin` should appear as internal HTTP evidence.
 
 ## 8. Useful Debug Commands

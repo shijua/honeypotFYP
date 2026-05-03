@@ -130,6 +130,53 @@ async def test_asset_gateway_reports_internal_http_request_before_proxying(
 
 
 @pytest.mark.asyncio
+async def test_asset_gateway_handles_internal_portal_session_without_backend(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    route_path = _write_route_table(
+        tmp_path,
+        attacker_key="127.0.0.1",
+        public_port=18080,
+        backend_port=80,
+        asset_id="internal-portal",
+    )
+    client_reader = _FakeReader(
+        [
+            b"POST /session HTTP/1.1\r\n"
+            b"Host: intranet.internal\r\n"
+            b"Content-Type: application/x-www-form-urlencoded\r\n"
+            b"\r\n"
+            b"username=portal.reader&token=nbp_reader_2026_04_window",
+            b"",
+        ]
+    )
+    client_writer = _FakeWriter()
+    events_file = tmp_path / "internal_http_events.jsonl"
+
+    async def fake_open_connection(_host: str, _port: int) -> tuple[_FakeReader, _FakeWriter]:
+        raise AssertionError("gateway-handled portal session must not proxy to nginx")
+
+    monkeypatch.setenv("HONEYPOT_INTERNAL_HTTP_EVENTS_FILE", str(events_file))
+    monkeypatch.setattr(asset_gateway_app, "_peer_ip", lambda _writer: "127.0.0.1")
+    monkeypatch.setattr(asset_gateway_app.asyncio, "open_connection", fake_open_connection)
+
+    await asset_gateway_app._handle_connection(
+        client_reader,
+        client_writer,
+        public_port=18080,
+        route_path=route_path,
+    )
+
+    payload = json.loads(events_file.read_text(encoding="utf-8").strip())
+    assert payload["path"] == "/session"
+    assert payload["asset_id"] == "internal-portal"
+    assert "auth_result=success" in payload["body_preview"]
+    assert client_writer.written[0].startswith(b"HTTP/1.1 200 OK")
+    assert b"directory-readonly" in client_writer.written[0]
+
+
+@pytest.mark.asyncio
 async def test_asset_gateway_reports_smtp_commands_while_proxying(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -376,11 +376,16 @@
     const authError = document.getElementById("auth-error");
     const host = window.location.hostname || "127.0.0.1";
 
-    portalAuth.addEventListener("submit", (event) => {
+    portalAuth.addEventListener("submit", async (event) => {
       event.preventDefault();
       const username = document.getElementById("portal-user").value.trim();
       const token = document.getElementById("portal-token").value.trim();
-      if (username === "portal.reader" && token === "nbp_reader_2026_04_window") {
+      const response = await fetch("/session", {
+        method: "POST",
+        headers: {"Content-Type": "application/x-www-form-urlencoded"},
+        body: new URLSearchParams({username, token})
+      });
+      if (response.ok) {
         portalRoot.className = "unlocked";
         authError.style.display = "none";
       } else {
