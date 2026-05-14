@@ -190,7 +190,6 @@ class DockerTemplateRuntime:
         container_name = _container_name(binding_id, asset.asset_id)
         asset_gateway_managed = _asset_gateway_managed(asset, runtime)
 
-        self._cleanup_stale_container(container_name)
         docker_args, runtime_settings = self._docker_args_for_runtime(
             binding_id,
             asset,
@@ -199,6 +198,23 @@ class DockerTemplateRuntime:
             image,
             asset_gateway_managed=asset_gateway_managed,
         )
+        existing_container_status = _container_status(container_name)
+        if existing_container_status.startswith("Up"):
+            self._verify_started_container(
+                container_name=container_name,
+                runtime=runtime,
+                runtime_settings=runtime_settings,
+            )
+            return self._record_running_container(
+                binding_id=binding_id,
+                asset=asset,
+                runtime_settings=runtime_settings,
+                asset_gateway_managed=asset_gateway_managed,
+                attacker_key=attacker_key,
+                container_name=container_name,
+            )
+        if existing_container_status != "missing":
+            self._cleanup_failed_container(container_name)
 
         try:
             subprocess.run(
@@ -216,25 +232,14 @@ class DockerTemplateRuntime:
             runtime=runtime,
             runtime_settings=runtime_settings,
         )
-        if asset_gateway_managed:
-            backend_ip = _container_network_ip(
-                container_name,
-                str(runtime_settings.get("network", "")),
-            )
-            if backend_ip:
-                runtime_settings["backend_ip"] = backend_ip
-
-        settings = dict(asset.default_settings)
-        settings.update(runtime_settings)
-        record = _runtime_record_from_asset(binding_id, asset, settings=settings)
-        if asset_gateway_managed and attacker_key:
-            _upsert_asset_gateway_routes(
-                binding_id=binding_id,
-                attacker_key=attacker_key,
-                asset=asset,
-                runtime_settings=runtime_settings,
-            )
-        return self._repository.upsert(record)
+        return self._record_running_container(
+            binding_id=binding_id,
+            asset=asset,
+            runtime_settings=runtime_settings,
+            asset_gateway_managed=asset_gateway_managed,
+            attacker_key=attacker_key,
+            container_name=container_name,
+        )
 
     def monitoring_event_for(self, record: AssetRuntimeRecord) -> FalcoEvent:
         """Convert a Docker runtime record into a Falco-style lifecycle event."""
@@ -495,12 +500,36 @@ class DockerTemplateRuntime:
             text=True,
         )
 
-    def _cleanup_stale_container(self, container_name: str) -> None:
-        """Remove a stopped container with the same deterministic runtime name."""
-        status = _container_status(container_name)
-        if status == "missing" or status.startswith("Up"):
-            return
-        self._cleanup_failed_container(container_name)
+    def _record_running_container(
+        self,
+        *,
+        binding_id: str,
+        asset: AssetDefinition,
+        runtime_settings: dict[str, object],
+        asset_gateway_managed: bool,
+        attacker_key: str | None,
+        container_name: str,
+    ) -> AssetRuntimeRecord:
+        """Persist metadata for a container that is already confirmed running."""
+        if asset_gateway_managed:
+            backend_ip = _container_network_ip(
+                container_name,
+                str(runtime_settings.get("network", "")),
+            )
+            if backend_ip:
+                runtime_settings["backend_ip"] = backend_ip
+
+        settings = dict(asset.default_settings)
+        settings.update(runtime_settings)
+        record = _runtime_record_from_asset(binding_id, asset, settings=settings)
+        if asset_gateway_managed and attacker_key:
+            _upsert_asset_gateway_routes(
+                binding_id=binding_id,
+                attacker_key=attacker_key,
+                asset=asset,
+                runtime_settings=runtime_settings,
+            )
+        return self._repository.upsert(record)
 
 
 class ComposeTemplateRuntime:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+from pathlib import Path
 
 import pytest
 
@@ -252,3 +253,49 @@ def test_tick_can_use_internal_http_signal_for_later_asset() -> None:
     )
 
     assert [action.asset_id for action in response.actions] == ["backup-store"]
+
+
+def test_tick_skips_compose_asset_when_compose_file_is_missing(tmp_path: Path) -> None:
+    missing_compose_file = tmp_path / "vendor" / "vulhub" / "docker-compose.yml"
+    assets = [
+        AssetDefinition(
+            asset_id="log4shell-app",
+            asset_name="Legacy Java App",
+            exposure_type="internal",
+            interaction_level="high",
+            covers_tactics=["Initial Access"],
+            dependencies=["internal-portal"],
+            default_settings={
+                "runtime": {
+                    "backend": "compose",
+                    "compose_file": str(missing_compose_file),
+                },
+                "unlock_signals": {
+                    "any_http_rules": ["public_http_exploit_probe"],
+                },
+            },
+        )
+    ]
+    service = ControllerService(
+        InMemoryAssetRepository(assets),
+        StaticTransitionRepository(),
+        config=RuntimeConfig(epsilon=0.0),
+        rng=random.Random(0),
+    )
+
+    response = service.tick(
+        ControllerTickRequest(
+            attacker_key="198.51.100.43",
+            binding_id="binding-7",
+            profile=ProfileSnapshot(
+                attacker_key="198.51.100.43",
+                conf_by_tactic={"Initial Access": 0.9},
+                recent_tactics=["Initial Access"],
+                recent_public_http_rules=["public_http_exploit_probe"],
+            ),
+            unlocked_asset_ids=["internal-portal"],
+        )
+    )
+
+    assert response.actions[0].action_type == "noop"
+    assert response.candidate_asset_ids == []

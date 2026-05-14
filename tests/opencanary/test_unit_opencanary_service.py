@@ -17,24 +17,30 @@ from tests.support.attack_catalog import build_test_attack_catalog
 pytestmark = pytest.mark.unit
 
 
-def _service() -> tuple[OpenCanaryService, InMemoryOpenCanaryObservationRepository]:
+def _service() -> tuple[
+    OpenCanaryService,
+    InMemoryOpenCanaryObservationRepository,
+    InMemoryEvidenceRepository,
+]:
     repository = InMemoryOpenCanaryObservationRepository()
+    evidence_repository = InMemoryEvidenceRepository()
     return (
         OpenCanaryService(
             BindingService(InMemoryBindingRepository()),
             ProfilerService(
-                InMemoryEvidenceRepository(),
+                evidence_repository,
                 InMemoryProfileRepository(),
                 build_test_attack_catalog(),
             ),
             repository,
         ),
         repository,
+        evidence_repository,
     )
 
 
 def test_redis_probe_maps_to_network_service_discovery() -> None:
-    service, repository = _service()
+    service, repository, _evidence_repository = _service()
 
     response = service.ingest(
         OpenCanaryIngestRequest(
@@ -58,8 +64,32 @@ def test_redis_probe_maps_to_network_service_discovery() -> None:
     assert response.profile.recent_techniques == ["T1046"]
 
 
+def test_redis_key_lookup_adds_collection_context() -> None:
+    service, _repository, evidence_repository = _service()
+
+    response = service.ingest(
+        OpenCanaryIngestRequest(
+            event=OpenCanaryLogEvent(
+                src_host="198.51.100.30",
+                src_port=53000,
+                dst_host="146.169.44.23",
+                dst_port=6379,
+                utc_time=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                logtype=17001,
+                node_id="opencanary-internal-redis",
+                logdata={"SERVICE": "redis", "COMMAND": "KEYS"},
+            )
+        )
+    )
+
+    assert response.profile.recent_tactics == ["Discovery", "Collection"]
+    assert response.profile.recent_techniques == ["T1046", "T1213"]
+    evidences = evidence_repository.list_by_attacker("198.51.100.30")
+    assert evidences[1].source_ref["opencanary_command"] == "KEYS"
+
+
 def test_login_probe_maps_to_credential_access_without_storing_password() -> None:
-    service, repository = _service()
+    service, repository, _evidence_repository = _service()
 
     response = service.ingest(
         OpenCanaryIngestRequest(
@@ -86,8 +116,68 @@ def test_login_probe_maps_to_credential_access_without_storing_password() -> Non
     assert response.profile.recent_techniques == ["T1110", "T1021"]
 
 
+@pytest.mark.parametrize(
+    ("service_name", "dst_port", "logtype"),
+    [
+        ("ftp", 21, 2000),
+        ("telnet", 23, 6001),
+    ],
+)
+def test_interactive_login_probe_maps_to_credential_and_lateral_context(
+    service_name: str,
+    dst_port: int,
+    logtype: int,
+) -> None:
+    service, _repository, _evidence_repository = _service()
+
+    response = service.ingest(
+        OpenCanaryIngestRequest(
+            event=OpenCanaryLogEvent(
+                src_host="198.51.100.34",
+                dst_port=dst_port,
+                utc_time=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                logtype=logtype,
+                logdata={
+                    "SERVICE": service_name,
+                    "USERNAME": "operator",
+                    "PASSWORD": "WrongPassword",
+                },
+            ),
+        )
+    )
+
+    assert response.profile.recent_tactics == ["Credential Access", "Lateral Movement"]
+    assert response.profile.recent_techniques == ["T1110", "T1021"]
+
+
+def test_mysql_login_probe_maps_to_credential_access() -> None:
+    service, _repository, evidence_repository = _service()
+
+    response = service.ingest(
+        OpenCanaryIngestRequest(
+            event=OpenCanaryLogEvent(
+                src_host="198.51.100.35",
+                dst_port=3306,
+                utc_time=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                logtype=8001,
+                logdata={
+                    "SERVICE": "mysql",
+                    "USERNAME": "backup_reader",
+                    "PASSWORD": "WrongPassword",
+                },
+            ),
+            protocol="mysql",
+        )
+    )
+
+    assert response.profile.recent_tactics == ["Credential Access"]
+    assert response.profile.recent_techniques == ["T1110"]
+    evidences = evidence_repository.list_by_attacker("198.51.100.35")
+    assert evidences[0].source_ref["opencanary_service"] == "mysql"
+
+
 def test_smtp_probe_maps_to_smtp_discovery() -> None:
-    service, repository = _service()
+    service, repository, _evidence_repository = _service()
 
     response = service.ingest(
         OpenCanaryIngestRequest(
@@ -116,8 +206,36 @@ def test_smtp_probe_maps_to_smtp_discovery() -> None:
     assert response.profile.recent_techniques == ["T1046"]
 
 
+def test_smtp_auth_probe_maps_to_credential_access() -> None:
+    service, repository, evidence_repository = _service()
+
+    response = service.ingest(
+        OpenCanaryIngestRequest(
+            event=OpenCanaryLogEvent(
+                src_host="198.51.100.36",
+                dst_port=25,
+                utc_time=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                logdata={
+                    "SERVICE": "smtp",
+                    "COMMANDS": ["EHLO", "AUTH", "QUIT"],
+                    "PASSWORD": "[redacted]",
+                },
+            ),
+            protocol="smtp",
+        )
+    )
+
+    observation = tuple(repository.list_recent())[0]
+    assert observation.password_seen is True
+    assert observation.logdata["PASSWORD"] == "[redacted]"
+    assert response.profile.recent_tactics == ["Credential Access"]
+    assert response.profile.recent_techniques == ["T1110"]
+    evidences = evidence_repository.list_by_attacker("198.51.100.36")
+    assert evidences[0].source_ref["opencanary_commands"] == ["EHLO", "AUTH", "QUIT"]
+
+
 def test_git_probe_adds_collection_context() -> None:
-    service, _repository = _service()
+    service, _repository, evidence_repository = _service()
 
     response = service.ingest(
         OpenCanaryIngestRequest(
@@ -136,3 +254,5 @@ def test_git_probe_adds_collection_context() -> None:
 
     assert response.profile.recent_tactics == ["Discovery", "Collection"]
     assert response.profile.recent_techniques == ["T1046", "T1213"]
+    evidences = evidence_repository.list_by_attacker("198.51.100.33")
+    assert evidences[1].source_ref["opencanary_repo"] == "infra-deploy.git"

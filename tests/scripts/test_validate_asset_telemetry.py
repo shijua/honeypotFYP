@@ -27,6 +27,7 @@ def test_validate_asset_telemetry_reports_observed_docker_asset(
         [
             {
                 "asset_id": "internal-portal",
+                "telemetry_source": "asset_runtime",
                 "default_settings": {
                     "runtime": {
                         "backend": "docker",
@@ -78,6 +79,24 @@ def test_validate_asset_telemetry_reports_observed_docker_asset(
             ]
         },
     )
+    _write_json(
+        state_dir / "asset_gateway_routes.json",
+        {
+            "routes": [
+                {
+                    "binding_id": "binding-1",
+                    "attacker_key": "198.51.100.10",
+                    "asset_id": "internal-portal",
+                    "public_port": 18080,
+                }
+            ]
+        },
+    )
+    (state_dir / "internal_http_events.jsonl").write_text(
+        '{"asset_id":"internal-portal","path":"/","attacker_key":"198.51.100.10"}\n',
+        encoding="utf-8",
+    )
+    _write_json(state_dir / "opencanary_observations.json", {"observations": []})
     _write_json(state_dir / "profiles.json", {"profiles": {}})
     _write_json(state_dir / "cowrie_observations.json", {"observations": []})
     _write_json(state_dir / "decision_trace.json", {"records": []})
@@ -103,6 +122,7 @@ def test_validate_asset_telemetry_reports_observed_docker_asset(
     assert report["ok"] is True
     assert report["assets"][0]["asset_id"] == "internal-portal"
     assert report["assets"][0]["runtime_backend"] == "docker"
+    assert report["assets"][0]["telemetry"]["kind"] == "internal_http"
 
 
 def test_validate_asset_telemetry_filters_requested_asset(
@@ -128,4 +148,88 @@ def test_validate_asset_telemetry_filters_requested_asset(
     )
 
     assert [item["asset_id"] for item in report["assets"]] == ["log4shell-app"]
-    assert report["ok"] is False
+    assert report["assets"][0]["status"] == "later"
+    assert report["ok"] is True
+
+
+def test_validate_asset_telemetry_accepts_opencanary_asset_with_route_and_observation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    catalog_path = tmp_path / "catalog.json"
+    state_dir = tmp_path / "runtime"
+    state_dir.mkdir()
+    _write_json(
+        catalog_path,
+        [
+            {
+                "asset_id": "redis-cache",
+                "telemetry_source": "opencanary",
+                "default_settings": {
+                    "runtime": {
+                        "backend": "docker",
+                    }
+                },
+            }
+        ],
+    )
+    _write_json(
+        state_dir / "asset_runtime.json",
+        {
+            "records": [
+                {
+                    "binding_id": "binding-1",
+                    "asset_id": "redis-cache",
+                    "asset_name": "Redis Cache",
+                    "status": "running",
+                    "settings": {"runtime_backend": "docker"},
+                }
+            ]
+        },
+    )
+    _write_json(
+        state_dir / "asset_gateway_routes.json",
+        {
+            "routes": [
+                {
+                    "binding_id": "binding-1",
+                    "attacker_key": "198.51.100.10",
+                    "asset_id": "redis-cache",
+                    "public_port": 16379,
+                }
+            ]
+        },
+    )
+    _write_json(
+        state_dir / "opencanary_observations.json",
+        {
+            "observations": [
+                {
+                    "attacker_key": "198.51.100.10",
+                    "binding_id": "binding-1",
+                    "service": "redis",
+                }
+            ]
+        },
+    )
+    monkeypatch.setattr(
+        validate_asset_telemetry,
+        "summarize_demo",
+        lambda _state_dir: {
+            "attackers": [
+                {
+                    "current_running_assets": [{"asset_id": "redis-cache"}],
+                    "failed_assets": [],
+                }
+            ]
+        },
+    )
+
+    report = validate_asset_telemetry.build_report(
+        catalog_path=catalog_path,
+        state_dir=state_dir,
+        asset_ids=set(),
+    )
+
+    assert report["ok"] is True
+    assert report["assets"][0]["telemetry"]["service"] == "redis"

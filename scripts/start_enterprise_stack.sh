@@ -11,6 +11,7 @@ if [[ -f .env ]]; then
 fi
 
 PROJECT_NAME="${PROJECT_NAME:-honeynet}"
+export COMPOSE_HTTP_TIMEOUT="${COMPOSE_HTTP_TIMEOUT:-180}"
 if [[ -z "${HOST_PROJECT_ROOT:-}" || "${HOST_PROJECT_ROOT:-}" == "." ]]; then
   HOST_PROJECT_ROOT="$PWD"
 elif [[ "$HOST_PROJECT_ROOT" != /* ]]; then

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass
+from pathlib import Path
 
 from libs.common.config import RuntimeConfig
 from libs.common.iterables import dedupe_preserve
@@ -191,7 +192,26 @@ class ControllerService:
             return False
         if not set(asset.dependencies).issubset(unlocked_asset_ids):
             return False
+        if not self._runtime_is_available(asset):
+            return False
         return self._matches_unlock_signals(asset, request)
+
+    def _runtime_is_available(self, asset: AssetDefinition) -> bool:
+        """Return whether the catalog runtime can be started on this host.
+
+        Example:
+            A Vulhub-backed compose asset stays in the catalog for later work,
+            but is not selected until its `compose_file` exists locally.
+        """
+        runtime = asset.default_settings.get("runtime")
+        if not isinstance(runtime, dict):
+            return True
+        if runtime.get("backend") != "compose":
+            return True
+        compose_file = runtime.get("compose_file")
+        if not isinstance(compose_file, str) or not compose_file:
+            return False
+        return Path(compose_file).exists()
 
     def _matches_unlock_signals(
         self,

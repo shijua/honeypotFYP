@@ -337,6 +337,14 @@ class ProfilerService:
             "http_rule_names",
             "http_indicators",
             "http_evidence_labels",
+            "opencanary_service",
+            "opencanary_logtype",
+            "opencanary_command",
+            "opencanary_commands",
+            "opencanary_repo",
+            "username",
+            "password_seen",
+            "node_id",
         ):
             if key in event.output_fields:
                 source_ref[key] = event.output_fields[key]

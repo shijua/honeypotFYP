@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 
 import services.orchestrator.template_runtime as template_runtime_module
 import pytest
@@ -29,6 +30,18 @@ from services.orchestrator.template_runtime import (
 
 
 pytestmark = pytest.mark.unit
+
+
+def _missing_then_up_status() -> Callable[[str], str]:
+    calls = {"count": 0}
+
+    def fake_container_status(name: str) -> str:
+        calls["count"] += 1
+        if calls["count"] == 1:
+            return "missing"
+        return "Up 3 seconds"
+
+    return fake_container_status
 
 
 def test_apply_unlock_updates_binding_assets_and_route_updates() -> None:
@@ -259,7 +272,7 @@ def test_docker_template_runtime_starts_catalog_driven_cowrie_asset(
     monkeypatch.setattr(template_runtime_module.shutil, "which", lambda name: "/usr/bin/docker")
     monkeypatch.setattr(template_runtime_module, "_port_is_free", lambda port: True)
     monkeypatch.setattr(template_runtime_module.subprocess, "run", fake_run)
-    monkeypatch.setattr(template_runtime_module, "_container_status", lambda name: "Up 3 seconds")
+    monkeypatch.setattr(template_runtime_module, "_container_status", _missing_then_up_status())
     monkeypatch.setattr(template_runtime_module, "_healthcheck_ready", lambda runtime, settings: True)
 
     repository = InMemoryTemplateRuntimeRepository()
@@ -329,7 +342,7 @@ def test_docker_template_runtime_uses_stable_internal_portal_runtime(
     monkeypatch.setattr(template_runtime_module.shutil, "which", lambda name: "/usr/bin/docker")
     monkeypatch.setattr(template_runtime_module, "_port_is_free", lambda port: True)
     monkeypatch.setattr(template_runtime_module.subprocess, "run", fake_run)
-    monkeypatch.setattr(template_runtime_module, "_container_status", lambda name: "Up 3 seconds")
+    monkeypatch.setattr(template_runtime_module, "_container_status", _missing_then_up_status())
     monkeypatch.setattr(template_runtime_module, "_healthcheck_ready", lambda runtime, settings: True)
 
     runtime = DockerTemplateRuntime(InMemoryTemplateRuntimeRepository())
@@ -405,7 +418,7 @@ def test_docker_template_runtime_writes_asset_gateway_route(
     monkeypatch.setattr(template_runtime_module.shutil, "which", lambda name: "/usr/bin/docker")
     monkeypatch.setattr(template_runtime_module, "_port_is_free", lambda port: True)
     monkeypatch.setattr(template_runtime_module.subprocess, "run", fake_run)
-    monkeypatch.setattr(template_runtime_module, "_container_status", lambda name: "Up 3 seconds")
+    monkeypatch.setattr(template_runtime_module, "_container_status", _missing_then_up_status())
     monkeypatch.setattr(template_runtime_module, "_healthcheck_ready", lambda runtime, settings: True)
     monkeypatch.setenv(
         "HONEYPOT_ASSET_GATEWAY_ROUTES_PATH",
@@ -472,7 +485,7 @@ def test_docker_template_runtime_does_not_gateway_manage_external_entrypoint(
     monkeypatch.setattr(template_runtime_module.shutil, "which", lambda name: "/usr/bin/docker")
     monkeypatch.setattr(template_runtime_module, "_port_is_free", lambda port: True)
     monkeypatch.setattr(template_runtime_module.subprocess, "run", fake_run)
-    monkeypatch.setattr(template_runtime_module, "_container_status", lambda name: "Up 3 seconds")
+    monkeypatch.setattr(template_runtime_module, "_container_status", _missing_then_up_status())
     monkeypatch.setattr(template_runtime_module, "_healthcheck_ready", lambda runtime, settings: True)
 
     runtime = DockerTemplateRuntime(InMemoryTemplateRuntimeRepository())
@@ -525,7 +538,7 @@ def test_docker_template_runtime_starts_internal_opencanary_asset(
     monkeypatch.setattr(template_runtime_module.shutil, "which", lambda name: "/usr/bin/docker")
     monkeypatch.setattr(template_runtime_module, "_port_is_free", lambda port: True)
     monkeypatch.setattr(template_runtime_module.subprocess, "run", fake_run)
-    monkeypatch.setattr(template_runtime_module, "_container_status", lambda name: "Up 3 seconds")
+    monkeypatch.setattr(template_runtime_module, "_container_status", _missing_then_up_status())
     monkeypatch.setattr(template_runtime_module, "_healthcheck_ready", lambda runtime, settings: True)
     monkeypatch.setenv("HONEYPOT_PROJECT_NAME", "honeynet")
     monkeypatch.setenv("HONEYPOT_HOST_PROJECT_ROOT", "/srv/honeypot")
@@ -715,6 +728,55 @@ def test_docker_template_runtime_raises_when_container_exits_immediately(
         runtime.start_asset("binding-redis", asset)
 
     assert any(command[:3] == ["docker", "rm", "-f"] for command in commands)
+
+
+def test_docker_template_runtime_reuses_running_container(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    commands: list[list[str]] = []
+
+    def fake_run(args, **kwargs):
+        commands.append(list(args))
+        raise AssertionError(f"unexpected subprocess call: {args}")
+
+    monkeypatch.setattr(template_runtime_module.shutil, "which", lambda name: "/usr/bin/docker")
+    monkeypatch.setattr(template_runtime_module, "_port_is_free", lambda port: True)
+    monkeypatch.setattr(template_runtime_module, "_container_status", lambda name: "Up 2 seconds")
+    monkeypatch.setattr(template_runtime_module, "_healthcheck_ready", lambda runtime, settings: True)
+    monkeypatch.setattr(template_runtime_module, "_container_network_ip", lambda name, network: "172.25.0.9")
+    monkeypatch.setattr(template_runtime_module.subprocess, "run", fake_run)
+
+    runtime = DockerTemplateRuntime(InMemoryTemplateRuntimeRepository())
+    asset = AssetDefinition(
+        asset_id="internal-portal",
+        asset_name="Internal Portal",
+        exposure_type="internal",
+        interaction_level="medium",
+        template_family="web-honeypot",
+        protocols=["http"],
+        ports=[80],
+        default_settings={
+            "runtime": {
+                "backend": "docker",
+                "image": "nginx:alpine",
+                "port_mappings": [
+                    {
+                        "host": "127.0.0.1",
+                        "requested_host_port": 18080,
+                        "container_port": 80,
+                    }
+                ],
+            }
+        },
+        covers_tactics=["Discovery"],
+    )
+
+    record = runtime.start_asset("binding-portal", asset)
+
+    assert record.status == "running"
+    assert record.settings["container_name"] == "honeynet-binding--internal-portal"
+    assert record.settings["backend_ip"] == "172.25.0.9"
+    assert commands == []
 
 
 def test_orchestrator_gateway_excludes_exited_docker_assets(

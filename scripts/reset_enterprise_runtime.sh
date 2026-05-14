@@ -12,6 +12,7 @@ if [[ -f .env ]]; then
 fi
 
 PROJECT_NAME="${PROJECT_NAME:-honeynet}"
+export COMPOSE_HTTP_TIMEOUT="${COMPOSE_HTTP_TIMEOUT:-180}"
 KEEP_STATE=0
 QUIET=0
 
@@ -124,11 +125,9 @@ remove_runtime_containers() {
   fi
 }
 
-remove_runtime_containers
-
-log "Stopping enterprise containers for project $PROJECT_NAME..."
-compose_down "$ENTERPRISE_FILE" "enterprise"
+log "Stopping control and enterprise containers for project $PROJECT_NAME..."
 compose_down "$CONTROL_FILE" "control"
+compose_down "$ENTERPRISE_FILE" "enterprise"
 remove_runtime_containers
 
 if [[ "$KEEP_STATE" == "1" ]]; then
