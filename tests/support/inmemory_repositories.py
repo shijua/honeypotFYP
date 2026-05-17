@@ -157,6 +157,16 @@ class InMemoryAssetRepository:
                 interaction_level="medium",
                 covers_tactics=["Discovery"],
                 dependencies=[],
+                default_settings={
+                    "selection_profile": {
+                        "asset_group": "portal",
+                        "covered_techniques": ["T1046", "T1083"],
+                        "telemetry_value": 0.6,
+                        "tactic_difficulties": {"Discovery": 1},
+                        "reveal_outputs": ["service directory"],
+                        "selection_notes": "Bootstrap internal discovery surface.",
+                    }
+                },
             ),
             AssetDefinition(
                 asset_id="finance-share",
@@ -169,7 +179,15 @@ class InMemoryAssetRepository:
                     "unlock_signals": {
                         "any_http_paths": ["/backup/db_backup_2024.sql.bak"],
                         "any_http_indicators": ["path:.bak"],
-                    }
+                    },
+                    "selection_profile": {
+                        "asset_group": "data-share",
+                        "covered_techniques": ["T1005", "T1552.001"],
+                        "telemetry_value": 0.85,
+                        "tactic_difficulties": {"Credential Access": 2, "Collection": 2},
+                        "reveal_outputs": ["finance backup files"],
+                        "selection_notes": "Data and credential breadcrumb follow-up.",
+                    },
                 },
             ),
             AssetDefinition(
@@ -183,7 +201,15 @@ class InMemoryAssetRepository:
                     "unlock_signals": {
                         "any_http_paths": ["/.env.old", "/assets/app.js.map"],
                         "any_http_indicators": ["combined:.env", "path:.map"],
-                    }
+                    },
+                    "selection_profile": {
+                        "asset_group": "developer",
+                        "covered_techniques": ["T1213", "T1552.001", "T1083"],
+                        "telemetry_value": 0.9,
+                        "tactic_difficulties": {"Credential Access": 3, "Discovery": 2},
+                        "reveal_outputs": ["repository names"],
+                        "selection_notes": "Developer artifact follow-up.",
+                    },
                 },
             ),
             AssetDefinition(
@@ -193,6 +219,16 @@ class InMemoryAssetRepository:
                 interaction_level="medium",
                 covers_tactics=["Credential Access", "Collection"],
                 dependencies=["git-internal"],
+                default_settings={
+                    "selection_profile": {
+                        "asset_group": "database",
+                        "covered_techniques": ["T1005", "T1110"],
+                        "telemetry_value": 0.85,
+                        "tactic_difficulties": {"Credential Access": 3, "Collection": 4},
+                        "reveal_outputs": ["database login prompt"],
+                        "selection_notes": "Database credential follow-up.",
+                    }
+                },
             ),
             AssetDefinition(
                 asset_id="admin-jumpbox",
@@ -201,11 +237,99 @@ class InMemoryAssetRepository:
                 interaction_level="high",
                 covers_tactics=["Lateral Movement", "Privilege Escalation"],
                 dependencies=["git-internal"],
+                default_settings={
+                    "selection_profile": {
+                        "asset_group": "admin-access",
+                        "covered_techniques": ["T1021", "T1059"],
+                        "telemetry_value": 0.9,
+                        "tactic_difficulties": {"Lateral Movement": 4, "Privilege Escalation": 5},
+                        "reveal_outputs": ["interactive command telemetry"],
+                        "selection_notes": "High-interaction path.",
+                    }
+                },
             ),
         ]
 
     def list_all(self) -> Iterable[AssetDefinition]:
         return tuple(self._assets)
+
+
+class InMemoryTechniqueTransitionRepository:
+    """Small test repository for deterministic technique transitions."""
+
+    def __init__(
+        self,
+        transitions: dict[str, dict[str, float]] | None = None,
+    ) -> None:
+        self._transitions = transitions or {}
+
+    @property
+    def degraded_reason(self) -> str | None:
+        return None
+
+    def score_transition(self, current_technique: str, candidate_technique: str) -> float:
+        return float(self._transitions.get(current_technique, {}).get(candidate_technique, 0.0))
+
+    def next_scores(self, recent_techniques: list[str], top_k: int) -> dict[str, float]:
+        scores: dict[str, float] = {}
+        for distance, technique in enumerate(reversed(recent_techniques[-top_k:]), start=1):
+            weight = 1.0 / distance
+            for candidate, probability in self._transitions.get(technique, {}).items():
+                scores[candidate] = max(scores.get(candidate, 0.0), probability * weight)
+        return dict(sorted(scores.items(), key=lambda item: (-item[1], item[0]))[:top_k])
+
+
+class InMemoryRevealFeedbackRepository:
+    """Small feedback repository for controller unit tests."""
+
+    def __init__(self, gaps: dict[tuple[str, str], float] | None = None) -> None:
+        self._gaps = gaps or {}
+        self.reveals: list[dict[str, str]] = []
+        self.outcomes: list[dict[str, str]] = []
+
+    def coverage_gap(self, context_key: str, asset_group: str) -> float:
+        return self._gaps.get((context_key, asset_group), 1.0)
+
+    def preference(self, context_key: str, asset_group: str) -> float:
+        return 0.5
+
+    def record_reveal(
+        self,
+        *,
+        context_key: str,
+        asset_group: str,
+        binding_id: str,
+        attacker_key: str,
+        asset_id: str,
+        available_assets: list[str] | None = None,
+        revealed_assets: list[str] | None = None,
+    ) -> None:
+        self.reveals.append(
+            {
+                "context_key": context_key,
+                "asset_group": asset_group,
+                "binding_id": binding_id,
+                "attacker_key": attacker_key,
+                "asset_id": asset_id,
+                "available_assets": ",".join(available_assets or []),
+                "revealed_assets": ",".join(revealed_assets or [asset_id]),
+            }
+        )
+
+    def record_outcome(
+        self,
+        *,
+        context_key: str,
+        asset_group: str,
+        outcome: str,
+    ) -> None:
+        self.outcomes.append(
+            {
+                "context_key": context_key,
+                "asset_group": asset_group,
+                "outcome": outcome,
+            }
+        )
 
 
 class InMemoryTemplateRuntimeRepository:

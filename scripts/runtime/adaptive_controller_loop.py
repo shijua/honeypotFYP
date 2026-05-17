@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from datetime import datetime, timezone
@@ -23,8 +24,12 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from libs.common.clock import parse_iso_datetime
 from libs.common.iterables import dedupe_preserve
+from libs.common.iterables import string_items
+from libs.common.json_utils import mutable_nested_dict
 from libs.common.json_utils import read_json_object
+from services.controller.repository import FileRevealFeedbackRepository
 
 
 def post_json(
@@ -87,11 +92,19 @@ def tick_once(
     timeout_seconds: float,
     trace_file: Path | None = None,
     loop_state_file: Path | None = None,
+    feedback_file: Path | None = None,
+    feedback_window_seconds: int = 300,
     max_actions_per_trigger: int = 1,
 ) -> int:
     """Run one adaptive control pass and return number of unlock actions sent."""
     bindings_by_attacker = load_bindings_by_attacker(state_dir)
     profiles = load_profiles(state_dir)
+    if feedback_file is not None:
+        update_reveal_feedback_from_evidence(
+            feedback_file=feedback_file,
+            evidence_file=state_dir / "evidence.json",
+            feedback_window_seconds=feedback_window_seconds,
+        )
     loop_state = (
         load_loop_state(loop_state_file)
         if loop_state_file is not None
@@ -102,7 +115,7 @@ def tick_once(
     for attacker_key, profile in profiles.items():
         if not isinstance(profile, dict):
             continue
-        recent_evidence_ids = _string_list(profile.get("recent_evidence_ids", []))
+        recent_evidence_ids = string_items(profile.get("recent_evidence_ids", []))
         if loop_state_file is not None and not _has_new_evidence(
             loop_state,
             attacker_key,
@@ -160,6 +173,14 @@ def tick_once(
             },
             timeout_seconds=timeout_seconds,
         )
+        if feedback_file is not None:
+            record_reveal_feedback(
+                feedback_file=feedback_file,
+                attacker_key=attacker_key,
+                binding_id=binding_id,
+                controller_response=controller_response,
+                applied_actions=applied_unlock_actions,
+            )
         applied_unlocks += len(applied_unlock_actions)
         _mark_evidence_processed(loop_state, attacker_key, recent_evidence_ids)
         if loop_state_file is not None:
@@ -184,11 +205,157 @@ def tick_once(
     return applied_unlocks
 
 
-def _string_list(value: object) -> list[str]:
-    """Normalize profile fields into a list of strings."""
-    if not isinstance(value, list):
+def record_reveal_feedback(
+    *,
+    feedback_file: Path,
+    attacker_key: str,
+    binding_id: str,
+    controller_response: dict[str, Any],
+    applied_actions: list[dict[str, Any]],
+) -> None:
+    """Persist which applied reveals were available for later usefulness checks.
+
+    Example:
+        applied action git-internal with decision details asset_group=developer increments the developer reveal bucket.
+    """
+    applied_asset_ids = {
+        action.get("asset_id")
+        for action in applied_actions
+        if isinstance(action.get("asset_id"), str)
+    }
+    if not applied_asset_ids:
+        return
+    repository = FileRevealFeedbackRepository(feedback_file)
+    available_assets = string_items(controller_response.get("candidate_asset_ids", []))
+    revealed_assets = [
+        str(action.get("asset_id"))
+        for action in applied_actions
+        if isinstance(action.get("asset_id"), str)
+    ]
+    for decision in controller_response.get("decision_events", []):
+        if not isinstance(decision, dict):
+            continue
+        asset_id = decision.get("asset_added")
+        if asset_id not in applied_asset_ids:
+            continue
+        details = decision.get("details", {})
+        if not isinstance(details, dict):
+            continue
+        context_key = details.get("feedback_context_key")
+        asset_group = details.get("asset_group")
+        if not isinstance(context_key, str) or not isinstance(asset_group, str):
+            continue
+        repository.record_reveal(
+            context_key=context_key,
+            asset_group=asset_group,
+            binding_id=binding_id,
+            attacker_key=attacker_key,
+            asset_id=str(asset_id),
+            available_assets=available_assets,
+            revealed_assets=revealed_assets,
+        )
+
+
+def update_reveal_feedback_from_evidence(
+    *,
+    feedback_file: Path,
+    evidence_file: Path,
+    feedback_window_seconds: int,
+) -> None:
+    """Mark pending reveals useful when later evidence touches their asset.
+
+    Example:
+        pending finance-share + later internal_http evidence source_ref.asset_id=finance-share -> useful.
+    """
+    payload = read_json_object(feedback_file, {"schema_version": "v1", "contexts": {}, "pending": []})
+    pending = payload.get("pending", [])
+    if not isinstance(pending, list) or not pending:
+        return
+    evidence_records = _evidence_records(evidence_file)
+    now = datetime.now(timezone.utc)
+    changed = False
+
+    for item in pending:
+        if not isinstance(item, dict) or item.get("status") != "pending":
+            continue
+        touch_outcome = _pending_reveal_outcome(item, evidence_records)
+        expired = _pending_reveal_expired(item, now, feedback_window_seconds)
+        if touch_outcome is None and not expired:
+            continue
+        outcome = touch_outcome or "ignored"
+        context_key = item.get("context_key")
+        asset_group = item.get("asset_group")
+        if isinstance(context_key, str) and isinstance(asset_group, str):
+            group = _feedback_group(payload, context_key, asset_group)
+            group[outcome] = int(group.get(outcome, 0) or 0) + 1
+        item["status"] = outcome
+        item["resolved_at"] = now.isoformat().replace("+00:00", "Z")
+        changed = True
+
+    if changed:
+        with feedback_file.open("w", encoding="utf-8") as handle:
+            json.dump(payload, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+
+
+def _evidence_records(path: Path) -> list[dict[str, Any]]:
+    """Return flattened profiler evidence records from data/runtime/evidence.json."""
+    payload = read_json_object(path, {"records": {}})
+    records = payload.get("records", {})
+    if not isinstance(records, dict):
         return []
-    return [item for item in value if isinstance(item, str)]
+    flattened: list[dict[str, Any]] = []
+    for bucket in records.values():
+        if not isinstance(bucket, list):
+            continue
+        flattened.extend(item for item in bucket if isinstance(item, dict))
+    return flattened
+
+
+def _feedback_group(
+    payload: dict[str, Any],
+    context_key: str,
+    asset_group: str,
+) -> dict[str, Any]:
+    """Return the mutable feedback counter bucket for context/asset_group."""
+    return mutable_nested_dict(payload, ("contexts", context_key, "asset_groups", asset_group))
+
+
+def _pending_reveal_outcome(
+    pending: dict[str, Any],
+    evidence_records: list[dict[str, Any]],
+) -> str | None:
+    """Return useful/shallow if later evidence explicitly references the pending asset.
+
+    Example:
+        source_ref.asset_id=finance-share plus technique T1005 -> "useful"; same asset with no technique/tactic -> "shallow".
+    """
+    asset_id = pending.get("asset_id")
+    attacker_key = pending.get("attacker_key")
+    pending_ts = parse_iso_datetime(pending.get("ts"))
+    if not isinstance(asset_id, str) or not isinstance(attacker_key, str):
+        return None
+    for evidence in evidence_records:
+        if evidence.get("attacker_key") != attacker_key:
+            continue
+        evidence_ts = parse_iso_datetime(evidence.get("ts"))
+        if pending_ts is not None and evidence_ts is not None and evidence_ts < pending_ts:
+            continue
+        source_ref = evidence.get("source_ref", {})
+        if isinstance(source_ref, dict) and source_ref.get("asset_id") == asset_id:
+            return "useful" if evidence.get("tech_id") or evidence.get("group") else "shallow"
+    return None
+
+
+def _pending_reveal_expired(
+    pending: dict[str, Any],
+    now: datetime,
+    feedback_window_seconds: int,
+) -> bool:
+    ts = parse_iso_datetime(pending.get("ts"))
+    if ts is None:
+        return False
+    return (now - ts).total_seconds() > feedback_window_seconds
 
 
 def _processed_evidence_map(state: dict[str, Any]) -> dict[str, list[str]]:
@@ -421,6 +588,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Progress file used to avoid reprocessing the same evidence ids.",
     )
     parser.add_argument(
+        "--feedback-file",
+        type=Path,
+        default=Path("data/runtime/reveal_feedback.json"),
+        help="Reveal feedback JSON file used for exploration coverage gaps.",
+    )
+    parser.add_argument(
+        "--feedback-window-seconds",
+        type=int,
+        default=int(os.getenv("HONEYPOT_FEEDBACK_WINDOW_SECONDS", "300")),
+        help="Seconds before a pending reveal is counted as ignored.",
+    )
+    parser.add_argument(
         "--max-actions-per-trigger",
         type=int,
         default=1,
@@ -445,6 +624,8 @@ def main(argv: list[str] | None = None) -> int:
                 timeout_seconds=args.timeout_seconds,
                 trace_file=args.trace_file,
                 loop_state_file=args.loop_state_file,
+                feedback_file=args.feedback_file,
+                feedback_window_seconds=args.feedback_window_seconds,
                 max_actions_per_trigger=args.max_actions_per_trigger,
             )
         except (HTTPError, URLError, TimeoutError, RuntimeError, json.JSONDecodeError) as exc:

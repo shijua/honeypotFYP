@@ -12,12 +12,14 @@ def test_controller_tick_returns_unlock_action(controller_client) -> None:
         json={
             "attacker_key": "198.51.100.40",
             "binding_id": "binding-4",
-            "profile": {
-                "attacker_key": "198.51.100.40",
-                "conf_by_tactic": {"Credential Access": 0.9},
-                "recent_tactics": ["Credential Access"],
-                "recent_evidence_ids": ["e-3"],
-            },
+                "profile": {
+                    "attacker_key": "198.51.100.40",
+                    "conf_by_tactic": {"Credential Access": 0.9},
+                    "conf_by_technique": {"T1552.001": 0.9},
+                    "recent_tactics": ["Credential Access"],
+                    "recent_techniques": ["T1552.001"],
+                    "recent_evidence_ids": ["e-3"],
+                },
             "unlocked_asset_ids": [],
             "assets": [
                 {
@@ -27,6 +29,13 @@ def test_controller_tick_returns_unlock_action(controller_client) -> None:
                     "interaction_level": "medium",
                     "covers_tactics": ["Credential Access"],
                     "dependencies": [],
+                    "default_settings": {
+                        "selection_profile": {
+                            "asset_group": "credential-store",
+                            "covered_techniques": ["T1552.001"],
+                            "telemetry_value": 0.8,
+                        }
+                    },
                 }
             ],
         },

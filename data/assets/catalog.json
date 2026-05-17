@@ -6,9 +6,15 @@
     "interaction_level": "medium",
     "description": "A stable static web service used as the first internal foothold after public entrypoint interaction.",
     "template_family": "web-service",
-    "protocols": ["http"],
-    "ports": [80],
-    "source_refs": ["mvp:internal-portal-nginx"],
+    "protocols": [
+      "http"
+    ],
+    "ports": [
+      80
+    ],
+    "source_refs": [
+      "mvp:internal-portal-nginx"
+    ],
     "telemetry_source": "asset_runtime",
     "default_settings": {
       "runtime": {
@@ -16,7 +22,9 @@
         "image": "nginx:alpine",
         "network": "{project_name}_net_internal",
         "memory_limit": "128m",
-        "volumes": ["{host_project_root}/deploy/internal-assets/internal-portal/html:/usr/share/nginx/html:ro"],
+        "volumes": [
+          "{host_project_root}/deploy/internal-assets/internal-portal/html:/usr/share/nginx/html:ro"
+        ],
         "port_mappings": [
           {
             "host": "127.0.0.1",
@@ -31,18 +39,42 @@
         },
         "source": "mvp/internal-portal-nginx"
       },
-      "image_references": ["nginx:alpine"],
+      "image_references": [
+        "nginx:alpine"
+      ],
       "credential_hints": false,
       "log_profile_events": true,
       "selection_profile": {
         "tactic_difficulties": {
           "Discovery": 1
         },
-        "reveal_outputs": ["service directory", "selected internal hostnames", "credential-gated links"],
-        "selection_notes": "Best first internal asset after public-surface discovery or leaked portal references."
+        "reveal_outputs": [
+          "service directory",
+          "selected internal hostnames",
+          "credential-gated links"
+        ],
+        "selection_notes": "Best first internal asset after public-surface discovery or leaked portal references.",
+        "asset_group": "portal",
+        "covered_techniques": [
+          "T1046",
+          "T1083"
+        ],
+        "optional_dependency_signals": {
+          "any_techniques": [
+            "T1046",
+            "T1083"
+          ],
+          "any_http_paths": [
+            "/robots.txt",
+            "/internal-api/status"
+          ]
+        },
+        "telemetry_value": 0.6
       }
     },
-    "covers_tactics": ["Discovery"],
+    "covers_tactics": [
+      "Discovery"
+    ],
     "dependencies": []
   },
   {
@@ -52,9 +84,16 @@
     "interaction_level": "medium",
     "description": "An internal finance file-share portal with believable document names and credential-looking breadcrumbs.",
     "template_family": "file-share-service",
-    "protocols": ["http"],
-    "ports": [80],
-    "source_refs": ["mvp:static-finance-share", "planned:tpotce/dionaea"],
+    "protocols": [
+      "http"
+    ],
+    "ports": [
+      80
+    ],
+    "source_refs": [
+      "mvp:static-finance-share",
+      "planned:tpotce/dionaea"
+    ],
     "telemetry_source": "asset_runtime",
     "default_settings": {
       "runtime": {
@@ -62,7 +101,9 @@
         "image": "nginx:alpine",
         "network": "{project_name}_net_internal",
         "memory_limit": "128m",
-        "volumes": ["{host_project_root}/deploy/internal-assets/finance-share/html:/usr/share/nginx/html:ro"],
+        "volumes": [
+          "{host_project_root}/deploy/internal-assets/finance-share/html:/usr/share/nginx/html:ro"
+        ],
         "port_mappings": [
           {
             "host": "127.0.0.1",
@@ -78,25 +119,68 @@
         "source": "mvp/static-finance-share-nginx"
       },
       "share_name": "FINANCE",
-      "seed_documents": ["budget.xlsx", "payroll-archive.zip"],
+      "seed_documents": [
+        "budget.xlsx",
+        "payroll-archive.zip"
+      ],
       "credential_hints": true,
       "read_only": true,
-      "image_references": ["nginx:alpine"],
+      "image_references": [
+        "nginx:alpine"
+      ],
       "unlock_signals": {
-        "any_http_paths": ["/backup/db_backup_2024.sql.bak", "/backup/passwords_internal.txt"],
-        "any_http_indicators": ["combined:backup", "combined:password", "path:.bak"]
+        "any_http_paths": [
+          "/backup/db_backup_2024.sql.bak",
+          "/backup/passwords_internal.txt"
+        ],
+        "any_http_indicators": [
+          "combined:backup",
+          "combined:password",
+          "path:.bak"
+        ]
       },
       "selection_profile": {
         "tactic_difficulties": {
           "Credential Access": 2,
           "Collection": 2
         },
-        "reveal_outputs": ["finance exports", "SQL backup references", "archive filenames"],
-        "selection_notes": "Use after backup, finance, password, or data-collection breadcrumbs."
+        "reveal_outputs": [
+          "finance exports",
+          "SQL backup references",
+          "archive filenames"
+        ],
+        "selection_notes": "Use after backup, finance, password, or data-collection breadcrumbs.",
+        "asset_group": "data-share",
+        "covered_techniques": [
+          "T1005",
+          "T1552.001",
+          "T1213"
+        ],
+        "optional_dependency_signals": {
+          "any_http_paths": [
+            "/backup/db_backup_2024.sql.bak",
+            "/backup/passwords_internal.txt"
+          ],
+          "any_http_indicators": [
+            "combined:backup",
+            "combined:password",
+            "path:.bak"
+          ],
+          "any_techniques": [
+            "T1005",
+            "T1552.001"
+          ]
+        },
+        "telemetry_value": 0.85
       }
     },
-    "covers_tactics": ["Credential Access", "Collection"],
-    "dependencies": ["internal-portal"]
+    "covers_tactics": [
+      "Credential Access",
+      "Collection"
+    ],
+    "dependencies": [
+      "internal-portal"
+    ]
   },
   {
     "asset_id": "git-internal",
@@ -105,9 +189,15 @@
     "interaction_level": "medium",
     "description": "An OpenCanary-backed Git service exposed as a standalone internal canary asset.",
     "template_family": "developer-service",
-    "protocols": ["git"],
-    "ports": [9418],
-    "source_refs": ["opencanary:git"],
+    "protocols": [
+      "git"
+    ],
+    "ports": [
+      9418
+    ],
+    "source_refs": [
+      "opencanary:git"
+    ],
     "telemetry_source": "opencanary",
     "default_settings": {
       "runtime": {
@@ -115,7 +205,9 @@
         "image": "thinkst/opencanary",
         "network": "{project_name}_net_internal",
         "memory_limit": "256m",
-        "tmpfs": ["/run"],
+        "tmpfs": [
+          "/run"
+        ],
         "volumes": [
           "{host_project_root}/deploy/opencanary/internal/git.conf:/root/.opencanary.conf:ro",
           "{host_project_root}/deploy/opencanary/var:/var/tmp"
@@ -134,14 +226,25 @@
         },
         "source": "opencanary/git"
       },
-      "repo_names": ["infra-deploy", "customer-portal"],
+      "repo_names": [
+        "infra-deploy",
+        "customer-portal"
+      ],
       "expose_seeded_credentials": true,
       "allow_clone": false,
       "route_path": "/git",
-      "image_references": ["thinkst/opencanary"],
+      "image_references": [
+        "thinkst/opencanary"
+      ],
       "unlock_signals": {
-        "any_http_paths": ["/.env.old", "/assets/app.js.map"],
-        "any_http_indicators": ["combined:.env", "path:.map"]
+        "any_http_paths": [
+          "/.env.old",
+          "/assets/app.js.map"
+        ],
+        "any_http_indicators": [
+          "combined:.env",
+          "path:.map"
+        ]
       },
       "selection_profile": {
         "tactic_difficulties": {
@@ -149,14 +252,50 @@
           "Discovery": 2,
           "Collection": 3
         },
-        "reveal_outputs": ["clone URLs", "repository names", "CI configuration", "deployment hostnames"],
-        "selection_notes": "Use after source-map access, Git token references, developer API paths, or .git probing."
+        "reveal_outputs": [
+          "clone URLs",
+          "repository names",
+          "CI configuration",
+          "deployment hostnames"
+        ],
+        "selection_notes": "Use after source-map access, Git token references, developer API paths, or .git probing.",
+        "asset_group": "developer",
+        "covered_techniques": [
+          "T1213",
+          "T1552.001",
+          "T1083"
+        ],
+        "optional_dependency_signals": {
+          "any_http_paths": [
+            "/.env.old",
+            "/assets/app.js.map"
+          ],
+          "any_http_indicators": [
+            "combined:.env",
+            "path:.map"
+          ],
+          "any_techniques": [
+            "T1552.001",
+            "T1083"
+          ]
+        },
+        "telemetry_value": 0.9
       },
       "planned_clone_mode": "seeded-git-daemon",
-      "planned_repositories": ["infra-deploy", "customer-portal", "ops-runbooks"]
+      "planned_repositories": [
+        "infra-deploy",
+        "customer-portal",
+        "ops-runbooks"
+      ]
     },
-    "covers_tactics": ["Credential Access", "Discovery", "Collection"],
-    "dependencies": ["internal-portal"]
+    "covers_tactics": [
+      "Credential Access",
+      "Discovery",
+      "Collection"
+    ],
+    "dependencies": [
+      "internal-portal"
+    ]
   },
   {
     "asset_id": "ops-db",
@@ -165,9 +304,15 @@
     "interaction_level": "medium",
     "description": "An OpenCanary-backed MySQL service exposed only after the attacker finds internal developer context.",
     "template_family": "database-service",
-    "protocols": ["mysql"],
-    "ports": [3306],
-    "source_refs": ["opencanary:mysql"],
+    "protocols": [
+      "mysql"
+    ],
+    "ports": [
+      3306
+    ],
+    "source_refs": [
+      "opencanary:mysql"
+    ],
     "telemetry_source": "opencanary",
     "default_settings": {
       "runtime": {
@@ -175,7 +320,9 @@
         "image": "thinkst/opencanary",
         "network": "{project_name}_net_internal",
         "memory_limit": "256m",
-        "tmpfs": ["/run"],
+        "tmpfs": [
+          "/run"
+        ],
         "volumes": [
           "{host_project_root}/deploy/opencanary/internal/mysql.conf:/root/.opencanary.conf:ro",
           "{host_project_root}/deploy/opencanary/var:/var/tmp"
@@ -194,26 +341,70 @@
         },
         "source": "opencanary/mysql"
       },
-      "database_names": ["ops", "inventory"],
+      "database_names": [
+        "ops",
+        "inventory"
+      ],
       "auth_mode": "credential-prompt",
       "query_logging": true,
       "sample_rows": 25,
-      "image_references": ["thinkst/opencanary"],
+      "image_references": [
+        "thinkst/opencanary"
+      ],
       "unlock_signals": {
-        "any_http_paths": ["/.env.old", "/backup/db_backup_2024.sql.bak"],
-        "any_http_indicators": ["combined:.env", "combined:backup", "path:.bak"]
+        "any_http_paths": [
+          "/.env.old",
+          "/backup/db_backup_2024.sql.bak"
+        ],
+        "any_http_indicators": [
+          "combined:.env",
+          "combined:backup",
+          "path:.bak"
+        ]
       },
       "selection_profile": {
         "tactic_difficulties": {
           "Credential Access": 3,
           "Collection": 4
         },
-        "reveal_outputs": ["database names", "login prompts", "table-name hints"],
-        "selection_notes": "Use after Git or backup artifacts point toward database credentials or data access."
+        "reveal_outputs": [
+          "database names",
+          "login prompts",
+          "table-name hints"
+        ],
+        "selection_notes": "Use after Git or backup artifacts point toward database credentials or data access.",
+        "asset_group": "database",
+        "covered_techniques": [
+          "T1005",
+          "T1110",
+          "T1552.001"
+        ],
+        "optional_dependency_signals": {
+          "any_http_paths": [
+            "/.env.old",
+            "/backup/db_backup_2024.sql.bak"
+          ],
+          "any_http_indicators": [
+            "combined:.env",
+            "combined:backup",
+            "path:.bak"
+          ],
+          "any_techniques": [
+            "T1005",
+            "T1110",
+            "T1552.001"
+          ]
+        },
+        "telemetry_value": 0.85
       }
     },
-    "covers_tactics": ["Credential Access", "Collection"],
-    "dependencies": ["git-internal"]
+    "covers_tactics": [
+      "Credential Access",
+      "Collection"
+    ],
+    "dependencies": [
+      "git-internal"
+    ]
   },
   {
     "asset_id": "admin-jumpbox",
@@ -222,9 +413,15 @@
     "interaction_level": "high",
     "description": "A Cowrie-backed SSH service for observing credential reuse, shell commands, and lateral movement attempts.",
     "template_family": "ssh-service",
-    "protocols": ["ssh"],
-    "ports": [22],
-    "source_refs": ["tpotce:cowrie"],
+    "protocols": [
+      "ssh"
+    ],
+    "ports": [
+      22
+    ],
+    "source_refs": [
+      "tpotce:cowrie"
+    ],
     "telemetry_source": "cowrie",
     "default_settings": {
       "runtime": {
@@ -250,18 +447,49 @@
         "source": "tpotce/docker/cowrie"
       },
       "hostname": "admin-jumpbox-01",
-      "image_references": ["ghcr.io/telekom-security/cowrie:24.04.1"],
+      "image_references": [
+        "ghcr.io/telekom-security/cowrie:24.04.1"
+      ],
       "selection_profile": {
         "tactic_difficulties": {
           "Lateral Movement": 4,
           "Privilege Escalation": 5
         },
-        "reveal_outputs": ["interactive shell telemetry", "command breadcrumbs", "operator filesystem hints"],
-        "selection_notes": "Use only after SSH behaviour, admin host discovery, or strong credential reuse."
+        "reveal_outputs": [
+          "interactive shell telemetry",
+          "command breadcrumbs",
+          "operator filesystem hints"
+        ],
+        "selection_notes": "Use only after SSH behaviour, admin host discovery, or strong credential reuse.",
+        "asset_group": "admin-access",
+        "covered_techniques": [
+          "T1021",
+          "T1021.004",
+          "T1059",
+          "T1548.003"
+        ],
+        "optional_dependency_signals": {
+          "any_techniques": [
+            "T1021",
+            "T1021.004",
+            "T1059",
+            "T1548.003"
+          ],
+          "any_tactics": [
+            "Lateral Movement",
+            "Privilege Escalation"
+          ]
+        },
+        "telemetry_value": 0.9
       }
     },
-    "covers_tactics": ["Lateral Movement", "Privilege Escalation"],
-    "dependencies": ["git-internal"]
+    "covers_tactics": [
+      "Lateral Movement",
+      "Privilege Escalation"
+    ],
+    "dependencies": [
+      "git-internal"
+    ]
   },
   {
     "asset_id": "redis-cache",
@@ -270,9 +498,15 @@
     "interaction_level": "medium",
     "description": "An OpenCanary-backed Redis service for service discovery and credential probing.",
     "template_family": "redis-service",
-    "protocols": ["redis"],
-    "ports": [6379],
-    "source_refs": ["opencanary:redis"],
+    "protocols": [
+      "redis"
+    ],
+    "ports": [
+      6379
+    ],
+    "source_refs": [
+      "opencanary:redis"
+    ],
     "telemetry_source": "opencanary",
     "default_settings": {
       "runtime": {
@@ -280,7 +514,9 @@
         "image": "thinkst/opencanary",
         "network": "{project_name}_net_internal",
         "memory_limit": "256m",
-        "tmpfs": ["/run"],
+        "tmpfs": [
+          "/run"
+        ],
         "volumes": [
           "{host_project_root}/deploy/opencanary/internal/redis.conf:/root/.opencanary.conf:ro",
           "{host_project_root}/deploy/opencanary/var:/var/tmp"
@@ -299,10 +535,16 @@
         },
         "source": "opencanary/redis"
       },
-      "image_references": ["thinkst/opencanary"],
+      "image_references": [
+        "thinkst/opencanary"
+      ],
       "unlock_signals": {
-        "any_http_paths": ["/.env.old"],
-        "any_http_indicators": ["combined:.env"]
+        "any_http_paths": [
+          "/.env.old"
+        ],
+        "any_http_indicators": [
+          "combined:.env"
+        ]
       },
       "selection_profile": {
         "tactic_difficulties": {
@@ -310,8 +552,31 @@
           "Discovery": 2,
           "Collection": 3
         },
-        "reveal_outputs": ["cache key names", "session metadata", "service upstream hints"],
-        "selection_notes": "Use after REDIS_HOST, .env access, cache credential references, or Redis probing."
+        "reveal_outputs": [
+          "cache key names",
+          "session metadata",
+          "service upstream hints"
+        ],
+        "selection_notes": "Use after REDIS_HOST, .env access, cache credential references, or Redis probing.",
+        "asset_group": "cache",
+        "covered_techniques": [
+          "T1046",
+          "T1552.001",
+          "T1213"
+        ],
+        "optional_dependency_signals": {
+          "any_http_paths": [
+            "/.env.old"
+          ],
+          "any_http_indicators": [
+            "combined:.env"
+          ],
+          "any_techniques": [
+            "T1046",
+            "T1552.001"
+          ]
+        },
+        "telemetry_value": 0.8
       },
       "planned_read_mode": "seeded-read-only-redis",
       "planned_seed_keys": [
@@ -322,8 +587,14 @@
         "token:reporting:readonly"
       ]
     },
-    "covers_tactics": ["Credential Access", "Discovery", "Collection"],
-    "dependencies": ["internal-portal"]
+    "covers_tactics": [
+      "Credential Access",
+      "Discovery",
+      "Collection"
+    ],
+    "dependencies": [
+      "internal-portal"
+    ]
   },
   {
     "asset_id": "web-admin-console",
@@ -332,9 +603,15 @@
     "interaction_level": "medium",
     "description": "A realistic internal admin login surface exposed after admin or API probing.",
     "template_family": "web-service",
-    "protocols": ["http"],
-    "ports": [80],
-    "source_refs": ["mvp:static-web-admin-console"],
+    "protocols": [
+      "http"
+    ],
+    "ports": [
+      80
+    ],
+    "source_refs": [
+      "mvp:static-web-admin-console"
+    ],
     "telemetry_source": "asset_runtime",
     "default_settings": {
       "runtime": {
@@ -342,7 +619,9 @@
         "image": "nginx:alpine",
         "network": "{project_name}_net_internal",
         "memory_limit": "128m",
-        "volumes": ["{host_project_root}/deploy/internal-assets/web-admin-console/html:/usr/share/nginx/html:ro"],
+        "volumes": [
+          "{host_project_root}/deploy/internal-assets/web-admin-console/html:/usr/share/nginx/html:ro"
+        ],
         "port_mappings": [
           {
             "host": "127.0.0.1",
@@ -358,22 +637,64 @@
         "source": "mvp/static-web-admin-console-nginx"
       },
       "login_realm": "Admin",
-      "image_references": ["nginx:alpine"],
+      "image_references": [
+        "nginx:alpine"
+      ],
       "unlock_signals": {
-        "any_http_paths": ["/admin", "/api/search"],
-        "any_http_indicators": ["path:/admin", "path:/api", "user_agent:sqlmap"]
+        "any_http_paths": [
+          "/admin",
+          "/api/search"
+        ],
+        "any_http_indicators": [
+          "path:/admin",
+          "path:/api",
+          "user_agent:sqlmap"
+        ]
       },
       "selection_profile": {
         "tactic_difficulties": {
           "Credential Access": 3,
           "Discovery": 2
         },
-        "reveal_outputs": ["admin login surface", "ticket IDs", "admin node names"],
-        "selection_notes": "Use after /admin, admin source-map references, API probing, or scanner user agents."
+        "reveal_outputs": [
+          "admin login surface",
+          "ticket IDs",
+          "admin node names"
+        ],
+        "selection_notes": "Use after /admin, admin source-map references, API probing, or scanner user agents.",
+        "asset_group": "admin-web",
+        "covered_techniques": [
+          "T1110",
+          "T1190",
+          "T1078",
+          "T1046"
+        ],
+        "optional_dependency_signals": {
+          "any_http_paths": [
+            "/admin",
+            "/api/search"
+          ],
+          "any_http_indicators": [
+            "path:/admin",
+            "path:/api",
+            "user_agent:sqlmap"
+          ],
+          "any_techniques": [
+            "T1110",
+            "T1190",
+            "T1046"
+          ]
+        },
+        "telemetry_value": 0.8
       }
     },
-    "covers_tactics": ["Credential Access", "Discovery"],
-    "dependencies": ["internal-portal"]
+    "covers_tactics": [
+      "Credential Access",
+      "Discovery"
+    ],
+    "dependencies": [
+      "internal-portal"
+    ]
   },
   {
     "asset_id": "ftp-archive",
@@ -382,9 +703,15 @@
     "interaction_level": "medium",
     "description": "An OpenCanary-backed FTP service for archive discovery and credential probes.",
     "template_family": "file-transfer-service",
-    "protocols": ["ftp"],
-    "ports": [21],
-    "source_refs": ["opencanary:ftp"],
+    "protocols": [
+      "ftp"
+    ],
+    "ports": [
+      21
+    ],
+    "source_refs": [
+      "opencanary:ftp"
+    ],
     "telemetry_source": "opencanary",
     "default_settings": {
       "runtime": {
@@ -392,7 +719,9 @@
         "image": "thinkst/opencanary",
         "network": "{project_name}_net_internal",
         "memory_limit": "256m",
-        "tmpfs": ["/run"],
+        "tmpfs": [
+          "/run"
+        ],
         "volumes": [
           "{host_project_root}/deploy/opencanary/internal/ftp.conf:/root/.opencanary.conf:ro",
           "{host_project_root}/deploy/opencanary/var:/var/tmp"
@@ -411,11 +740,23 @@
         },
         "source": "opencanary/ftp"
       },
-      "archive_names": ["finance-drop", "backups"],
-      "image_references": ["thinkst/opencanary"],
+      "archive_names": [
+        "finance-drop",
+        "backups"
+      ],
+      "image_references": [
+        "thinkst/opencanary"
+      ],
       "unlock_signals": {
-        "any_http_paths": ["/backup/db_backup_2024.sql.bak", "/backup/passwords_internal.txt"],
-        "any_http_indicators": ["combined:backup", "combined:password", "path:.bak"]
+        "any_http_paths": [
+          "/backup/db_backup_2024.sql.bak",
+          "/backup/passwords_internal.txt"
+        ],
+        "any_http_indicators": [
+          "combined:backup",
+          "combined:password",
+          "path:.bak"
+        ]
       },
       "selection_profile": {
         "tactic_difficulties": {
@@ -423,12 +764,45 @@
           "Collection": 3,
           "Discovery": 2
         },
-        "reveal_outputs": ["archive names", "backup bundle references", "older config filenames"],
-        "selection_notes": "Use after backup path discovery, password files, or archive-oriented behaviour."
+        "reveal_outputs": [
+          "archive names",
+          "backup bundle references",
+          "older config filenames"
+        ],
+        "selection_notes": "Use after backup path discovery, password files, or archive-oriented behaviour.",
+        "asset_group": "archive",
+        "covered_techniques": [
+          "T1046",
+          "T1110",
+          "T1005",
+          "T1567.002"
+        ],
+        "optional_dependency_signals": {
+          "any_http_paths": [
+            "/backup/db_backup_2024.sql.bak",
+            "/backup/passwords_internal.txt"
+          ],
+          "any_http_indicators": [
+            "combined:backup",
+            "combined:password",
+            "path:.bak"
+          ],
+          "any_techniques": [
+            "T1005",
+            "T1110"
+          ]
+        },
+        "telemetry_value": 0.75
       }
     },
-    "covers_tactics": ["Credential Access", "Collection", "Discovery"],
-    "dependencies": ["internal-portal"]
+    "covers_tactics": [
+      "Credential Access",
+      "Collection",
+      "Discovery"
+    ],
+    "dependencies": [
+      "internal-portal"
+    ]
   },
   {
     "asset_id": "ssh-canary",
@@ -437,9 +811,15 @@
     "interaction_level": "medium",
     "description": "An OpenCanary-backed SSH credential service for lightweight internal login attempts.",
     "template_family": "ssh-service",
-    "protocols": ["ssh"],
-    "ports": [22],
-    "source_refs": ["opencanary:ssh"],
+    "protocols": [
+      "ssh"
+    ],
+    "ports": [
+      22
+    ],
+    "source_refs": [
+      "opencanary:ssh"
+    ],
     "telemetry_source": "opencanary",
     "default_settings": {
       "runtime": {
@@ -447,7 +827,9 @@
         "image": "thinkst/opencanary",
         "network": "{project_name}_net_internal",
         "memory_limit": "256m",
-        "tmpfs": ["/run"],
+        "tmpfs": [
+          "/run"
+        ],
         "volumes": [
           "{host_project_root}/deploy/opencanary/internal/ssh.conf:/root/.opencanary.conf:ro",
           "{host_project_root}/deploy/opencanary/var:/var/tmp"
@@ -467,22 +849,56 @@
         "source": "opencanary/ssh"
       },
       "hostname": "ssh-gw-02",
-      "image_references": ["thinkst/opencanary"],
+      "image_references": [
+        "thinkst/opencanary"
+      ],
       "unlock_signals": {
-        "any_http_paths": ["/backup/passwords_internal.txt"],
-        "any_http_indicators": ["combined:password"]
+        "any_http_paths": [
+          "/backup/passwords_internal.txt"
+        ],
+        "any_http_indicators": [
+          "combined:password"
+        ]
       },
       "selection_profile": {
         "tactic_difficulties": {
           "Credential Access": 3,
           "Discovery": 2
         },
-        "reveal_outputs": ["SSH banner", "login attempt telemetry", "host naming clues"],
-        "selection_notes": "Use after leaked password files or SSH-oriented credential reuse."
+        "reveal_outputs": [
+          "SSH banner",
+          "login attempt telemetry",
+          "host naming clues"
+        ],
+        "selection_notes": "Use after leaked password files or SSH-oriented credential reuse.",
+        "asset_group": "remote-access",
+        "covered_techniques": [
+          "T1110",
+          "T1021.004",
+          "T1046"
+        ],
+        "optional_dependency_signals": {
+          "any_http_paths": [
+            "/backup/passwords_internal.txt"
+          ],
+          "any_http_indicators": [
+            "combined:password"
+          ],
+          "any_techniques": [
+            "T1110",
+            "T1021.004"
+          ]
+        },
+        "telemetry_value": 0.7
       }
     },
-    "covers_tactics": ["Credential Access", "Discovery"],
-    "dependencies": ["internal-portal"]
+    "covers_tactics": [
+      "Credential Access",
+      "Discovery"
+    ],
+    "dependencies": [
+      "internal-portal"
+    ]
   },
   {
     "asset_id": "legacy-telnet",
@@ -491,9 +907,15 @@
     "interaction_level": "medium",
     "description": "An OpenCanary-backed Telnet service for legacy service probing.",
     "template_family": "legacy-service",
-    "protocols": ["telnet"],
-    "ports": [23],
-    "source_refs": ["opencanary:telnet"],
+    "protocols": [
+      "telnet"
+    ],
+    "ports": [
+      23
+    ],
+    "source_refs": [
+      "opencanary:telnet"
+    ],
     "telemetry_source": "opencanary",
     "default_settings": {
       "runtime": {
@@ -501,7 +923,9 @@
         "image": "thinkst/opencanary",
         "network": "{project_name}_net_internal",
         "memory_limit": "256m",
-        "tmpfs": ["/run"],
+        "tmpfs": [
+          "/run"
+        ],
         "volumes": [
           "{host_project_root}/deploy/opencanary/internal/telnet.conf:/root/.opencanary.conf:ro",
           "{host_project_root}/deploy/opencanary/var:/var/tmp"
@@ -521,10 +945,16 @@
         "source": "opencanary/telnet"
       },
       "hostname": "legacy-switch-01",
-      "image_references": ["thinkst/opencanary"],
+      "image_references": [
+        "thinkst/opencanary"
+      ],
       "unlock_signals": {
-        "any_http_paths": ["/backup/passwords_internal.txt"],
-        "any_http_indicators": ["combined:password"]
+        "any_http_paths": [
+          "/backup/passwords_internal.txt"
+        ],
+        "any_http_indicators": [
+          "combined:password"
+        ]
       },
       "selection_profile": {
         "tactic_difficulties": {
@@ -532,12 +962,41 @@
           "Discovery": 2,
           "Lateral Movement": 4
         },
-        "reveal_outputs": ["legacy service banner", "credential prompts", "network device naming clues"],
-        "selection_notes": "Use after legacy host references, password files, or broad protocol scanning."
+        "reveal_outputs": [
+          "legacy service banner",
+          "credential prompts",
+          "network device naming clues"
+        ],
+        "selection_notes": "Use after legacy host references, password files, or broad protocol scanning.",
+        "asset_group": "legacy-access",
+        "covered_techniques": [
+          "T1110",
+          "T1021",
+          "T1046"
+        ],
+        "optional_dependency_signals": {
+          "any_http_paths": [
+            "/backup/passwords_internal.txt"
+          ],
+          "any_http_indicators": [
+            "combined:password"
+          ],
+          "any_techniques": [
+            "T1110",
+            "T1021"
+          ]
+        },
+        "telemetry_value": 0.7
       }
     },
-    "covers_tactics": ["Credential Access", "Discovery", "Lateral Movement"],
-    "dependencies": ["internal-portal"]
+    "covers_tactics": [
+      "Credential Access",
+      "Discovery",
+      "Lateral Movement"
+    ],
+    "dependencies": [
+      "internal-portal"
+    ]
   },
   {
     "asset_id": "mail-relay",
@@ -546,9 +1005,15 @@
     "interaction_level": "medium",
     "description": "A Mailoney-backed mail service for SMTP enumeration and credential attempts.",
     "template_family": "mail-service",
-    "protocols": ["smtp"],
-    "ports": [25],
-    "source_refs": ["tpotce:mailoney"],
+    "protocols": [
+      "smtp"
+    ],
+    "ports": [
+      25
+    ],
+    "source_refs": [
+      "tpotce:mailoney"
+    ],
     "telemetry_source": "mailoney",
     "default_settings": {
       "runtime": {
@@ -570,12 +1035,26 @@
         },
         "source": "tpotce/docker/mailoney"
       },
-      "domains": ["corp.example"],
-      "mailboxes": ["admin", "finance", "it-support"],
-      "image_references": ["dtagdevsec/mailoney:24.04"],
+      "domains": [
+        "corp.example"
+      ],
+      "mailboxes": [
+        "admin",
+        "finance",
+        "it-support"
+      ],
+      "image_references": [
+        "dtagdevsec/mailoney:24.04"
+      ],
       "unlock_signals": {
-        "any_http_paths": ["/.env.old", "/backup/passwords_internal.txt"],
-        "any_http_indicators": ["combined:.env", "combined:password"]
+        "any_http_paths": [
+          "/.env.old",
+          "/backup/passwords_internal.txt"
+        ],
+        "any_http_indicators": [
+          "combined:.env",
+          "combined:password"
+        ]
       },
       "selection_profile": {
         "tactic_difficulties": {
@@ -583,12 +1062,44 @@
           "Discovery": 2,
           "Collection": 3
         },
-        "reveal_outputs": ["mail domains", "mailbox names", "SMTP command telemetry"],
-        "selection_notes": "Use after mail hostnames, SMTP probing, leaked accounts, or address enumeration."
+        "reveal_outputs": [
+          "mail domains",
+          "mailbox names",
+          "SMTP command telemetry"
+        ],
+        "selection_notes": "Use after mail hostnames, SMTP probing, leaked accounts, or address enumeration.",
+        "asset_group": "mail",
+        "covered_techniques": [
+          "T1046",
+          "T1110",
+          "T1087.001",
+          "T1005"
+        ],
+        "optional_dependency_signals": {
+          "any_http_paths": [
+            "/.env.old",
+            "/backup/passwords_internal.txt"
+          ],
+          "any_http_indicators": [
+            "combined:.env",
+            "combined:password"
+          ],
+          "any_techniques": [
+            "T1087.001",
+            "T1110"
+          ]
+        },
+        "telemetry_value": 0.75
       }
     },
-    "covers_tactics": ["Credential Access", "Discovery", "Collection"],
-    "dependencies": ["internal-portal"]
+    "covers_tactics": [
+      "Credential Access",
+      "Discovery",
+      "Collection"
+    ],
+    "dependencies": [
+      "internal-portal"
+    ]
   },
   {
     "asset_id": "ics-plc",
@@ -597,9 +1108,16 @@
     "interaction_level": "high",
     "description": "A static plant-control panel that gives ICS-interested attackers a safe internal target before any real Conpot-style runtime exists.",
     "template_family": "ics-service",
-    "protocols": ["http"],
-    "ports": [80],
-    "source_refs": ["mvp:static-ics-panel", "planned:tpotce/conpot"],
+    "protocols": [
+      "http"
+    ],
+    "ports": [
+      80
+    ],
+    "source_refs": [
+      "mvp:static-ics-panel",
+      "planned:tpotce/conpot"
+    ],
     "telemetry_source": "asset_runtime",
     "default_settings": {
       "runtime": {
@@ -607,7 +1125,9 @@
         "image": "nginx:alpine",
         "network": "{project_name}_net_internal",
         "memory_limit": "128m",
-        "volumes": ["{host_project_root}/deploy/internal-assets/ics-plc/html:/usr/share/nginx/html:ro"],
+        "volumes": [
+          "{host_project_root}/deploy/internal-assets/ics-plc/html:/usr/share/nginx/html:ro"
+        ],
         "port_mappings": [
           {
             "host": "127.0.0.1",
@@ -623,11 +1143,20 @@
         "source": "mvp/static-ics-panel-nginx"
       },
       "plant_profile": "water-treatment",
-      "modbus_unit_ids": [1, 2],
-      "image_references": ["nginx:alpine"],
+      "modbus_unit_ids": [
+        1,
+        2
+      ],
+      "image_references": [
+        "nginx:alpine"
+      ],
       "unlock_signals": {
-        "any_http_paths": ["/internal-api/status"],
-        "any_http_indicators": ["path:/internal-api"]
+        "any_http_paths": [
+          "/internal-api/status"
+        ],
+        "any_http_indicators": [
+          "path:/internal-api"
+        ]
       },
       "selection_profile": {
         "tactic_difficulties": {
@@ -635,12 +1164,41 @@
           "Collection": 3,
           "Lateral Movement": 4
         },
-        "reveal_outputs": ["PLC status paths", "unit maps", "plant segment references"],
-        "selection_notes": "Use after internal API status access, plant references, or ICS-shaped probing."
+        "reveal_outputs": [
+          "PLC status paths",
+          "unit maps",
+          "plant segment references"
+        ],
+        "selection_notes": "Use after internal API status access, plant references, or ICS-shaped probing.",
+        "asset_group": "operations",
+        "covered_techniques": [
+          "T1046",
+          "T1005",
+          "T1021"
+        ],
+        "optional_dependency_signals": {
+          "any_http_paths": [
+            "/internal-api/status"
+          ],
+          "any_http_indicators": [
+            "path:/internal-api"
+          ],
+          "any_techniques": [
+            "T1046",
+            "T1005"
+          ]
+        },
+        "telemetry_value": 0.8
       }
     },
-    "covers_tactics": ["Discovery", "Collection", "Lateral Movement"],
-    "dependencies": ["internal-portal"]
+    "covers_tactics": [
+      "Discovery",
+      "Collection",
+      "Lateral Movement"
+    ],
+    "dependencies": [
+      "internal-portal"
+    ]
   },
   {
     "asset_id": "log4shell-app",
@@ -649,9 +1207,16 @@
     "interaction_level": "high",
     "description": "A Vulhub-backed legacy Java service used as the first real vulnerable internal asset after web or credential-oriented profiling.",
     "template_family": "vulnerable-webapp",
-    "protocols": ["http"],
-    "ports": [8080],
-    "source_refs": ["vulhub:log4j/CVE-2021-44228", "proposalv2:adaptive-vulnerable-asset"],
+    "protocols": [
+      "http"
+    ],
+    "ports": [
+      8080
+    ],
+    "source_refs": [
+      "vulhub:log4j/CVE-2021-44228",
+      "proposalv2:adaptive-vulnerable-asset"
+    ],
     "telemetry_source": "falco",
     "default_settings": {
       "runtime": {
@@ -666,11 +1231,23 @@
       "vulnerability_family": "log4shell",
       "real_vulnerability": true,
       "isolation_required": true,
-      "telemetry_expectations": ["asset_runtime", "gateway_route", "dashboard_health"],
-      "image_references": ["vulhub/log4j/CVE-2021-44228"],
+      "telemetry_expectations": [
+        "asset_runtime",
+        "gateway_route",
+        "dashboard_health"
+      ],
+      "image_references": [
+        "vulhub/log4j/CVE-2021-44228"
+      ],
       "unlock_signals": {
-        "any_http_rules": ["public_http_exploit_probe"],
-        "any_http_indicators": ["combined:${jndi:", "combined:ldap://", "combined:log4j"]
+        "any_http_rules": [
+          "public_http_exploit_probe"
+        ],
+        "any_http_indicators": [
+          "combined:${jndi:",
+          "combined:ldap://",
+          "combined:log4j"
+        ]
       },
       "selection_profile": {
         "tactic_difficulties": {
@@ -678,12 +1255,43 @@
           "Execution": 5,
           "Discovery": 3
         },
-        "reveal_outputs": ["vulnerable endpoint behaviour", "stack-trace style context", "exploit telemetry"],
-        "selection_notes": "Use only after Java, JNDI, Log4j, or exploit-payload evidence."
+        "reveal_outputs": [
+          "vulnerable endpoint behaviour",
+          "stack-trace style context",
+          "exploit telemetry"
+        ],
+        "selection_notes": "Use only after Java, JNDI, Log4j, or exploit-payload evidence.",
+        "asset_group": "vulnerable-web",
+        "covered_techniques": [
+          "T1190",
+          "T1059",
+          "T1105"
+        ],
+        "optional_dependency_signals": {
+          "any_http_rules": [
+            "public_http_exploit_probe"
+          ],
+          "any_http_indicators": [
+            "combined:${jndi:",
+            "combined:ldap://",
+            "combined:log4j"
+          ],
+          "any_techniques": [
+            "T1190",
+            "T1059"
+          ]
+        },
+        "telemetry_value": 1.0
       }
     },
-    "covers_tactics": ["Initial Access", "Execution", "Discovery"],
-    "dependencies": ["internal-portal"]
+    "covers_tactics": [
+      "Initial Access",
+      "Execution",
+      "Discovery"
+    ],
+    "dependencies": [
+      "internal-portal"
+    ]
   },
   {
     "asset_id": "vpn-appliance",
@@ -692,9 +1300,17 @@
     "interaction_level": "medium",
     "description": "A VPN-looking internal appliance login portal used to attract appliance fingerprinting and credential attacks.",
     "template_family": "network-appliance",
-    "protocols": ["http"],
-    "ports": [80],
-    "source_refs": ["mvp:static-vpn-appliance", "planned:tpotce/ciscoasa", "planned:tpotce/citrixhoneypot"],
+    "protocols": [
+      "http"
+    ],
+    "ports": [
+      80
+    ],
+    "source_refs": [
+      "mvp:static-vpn-appliance",
+      "planned:tpotce/ciscoasa",
+      "planned:tpotce/citrixhoneypot"
+    ],
     "telemetry_source": "asset_runtime",
     "default_settings": {
       "runtime": {
@@ -725,10 +1341,20 @@
       "login_realm": "Employees",
       "mfa_prompt": true,
       "capture_usernames": true,
-      "image_references": ["nginx:alpine"],
+      "image_references": [
+        "nginx:alpine"
+      ],
       "unlock_signals": {
-        "any_http_paths": ["/admin", "/.env.old", "/assets/app.js.map"],
-        "any_http_indicators": ["path:/admin", "combined:.env", "path:.map"]
+        "any_http_paths": [
+          "/admin",
+          "/.env.old",
+          "/assets/app.js.map"
+        ],
+        "any_http_indicators": [
+          "path:/admin",
+          "combined:.env",
+          "path:.map"
+        ]
       },
       "selection_profile": {
         "tactic_difficulties": {
@@ -736,12 +1362,45 @@
           "Credential Access": 3,
           "Discovery": 2
         },
-        "reveal_outputs": ["VPN login surface", "profile paths", "remote-access configuration references"],
-        "selection_notes": "Use after admin references, internal portal access, VPN paths, or credential reuse."
+        "reveal_outputs": [
+          "VPN login surface",
+          "profile paths",
+          "remote-access configuration references"
+        ],
+        "selection_notes": "Use after admin references, internal portal access, VPN paths, or credential reuse.",
+        "asset_group": "remote-access",
+        "covered_techniques": [
+          "T1078",
+          "T1021",
+          "T1552.001"
+        ],
+        "optional_dependency_signals": {
+          "any_http_paths": [
+            "/admin",
+            "/.env.old",
+            "/assets/app.js.map"
+          ],
+          "any_http_indicators": [
+            "path:/admin",
+            "combined:.env",
+            "path:.map"
+          ],
+          "any_techniques": [
+            "T1078",
+            "T1552.001"
+          ]
+        },
+        "telemetry_value": 0.8
       }
     },
-    "covers_tactics": ["Initial Access", "Credential Access", "Discovery"],
-    "dependencies": ["internal-portal"]
+    "covers_tactics": [
+      "Initial Access",
+      "Credential Access",
+      "Discovery"
+    ],
+    "dependencies": [
+      "internal-portal"
+    ]
   },
   {
     "asset_id": "malware-sink",
@@ -750,9 +1409,17 @@
     "interaction_level": "high",
     "description": "A safe HTTP drop-zone service for downloader and collection behaviour. It advertises upload paths but does not persist payloads.",
     "template_family": "malware-capture-service",
-    "protocols": ["http"],
-    "ports": [80],
-    "source_refs": ["mvp:static-malware-sink", "planned:tpotce/dionaea", "planned:tpotce/honeytrap"],
+    "protocols": [
+      "http"
+    ],
+    "ports": [
+      80
+    ],
+    "source_refs": [
+      "mvp:static-malware-sink",
+      "planned:tpotce/dionaea",
+      "planned:tpotce/honeytrap"
+    ],
     "telemetry_source": "asset_runtime",
     "default_settings": {
       "runtime": {
@@ -760,7 +1427,9 @@
         "image": "nginx:alpine",
         "network": "{project_name}_net_internal",
         "memory_limit": "128m",
-        "volumes": ["{host_project_root}/deploy/internal-assets/malware-sink/html:/usr/share/nginx/html:ro"],
+        "volumes": [
+          "{host_project_root}/deploy/internal-assets/malware-sink/html:/usr/share/nginx/html:ro"
+        ],
         "port_mappings": [
           {
             "host": "127.0.0.1",
@@ -778,10 +1447,18 @@
       "capture_binaries": false,
       "download_sink": "metadata-only",
       "max_payload_bytes": 0,
-      "image_references": ["nginx:alpine"],
+      "image_references": [
+        "nginx:alpine"
+      ],
       "unlock_signals": {
-        "any_http_rules": ["public_http_exploit_probe"],
-        "any_http_indicators": ["combined:php://filter", "combined:../", "combined:ldap://"]
+        "any_http_rules": [
+          "public_http_exploit_probe"
+        ],
+        "any_http_indicators": [
+          "combined:php://filter",
+          "combined:../",
+          "combined:ldap://"
+        ]
       },
       "selection_profile": {
         "tactic_difficulties": {
@@ -789,11 +1466,44 @@
           "Execution": 4,
           "Collection": 4
         },
-        "reveal_outputs": ["download paths", "upload endpoints", "transfer-attempt telemetry"],
-        "selection_notes": "Use after downloader, payload, traversal, or command-and-control shaped behaviour."
+        "reveal_outputs": [
+          "download paths",
+          "upload endpoints",
+          "transfer-attempt telemetry"
+        ],
+        "selection_notes": "Use after downloader, payload, traversal, or command-and-control shaped behaviour.",
+        "asset_group": "payload-transfer",
+        "covered_techniques": [
+          "T1105",
+          "T1059",
+          "T1567",
+          "T1005"
+        ],
+        "optional_dependency_signals": {
+          "any_http_rules": [
+            "public_http_exploit_probe"
+          ],
+          "any_http_indicators": [
+            "combined:php://filter",
+            "combined:../",
+            "combined:ldap://"
+          ],
+          "any_techniques": [
+            "T1105",
+            "T1059",
+            "T1567"
+          ]
+        },
+        "telemetry_value": 0.9
       }
     },
-    "covers_tactics": ["Command and Control", "Execution", "Collection"],
-    "dependencies": ["internal-portal"]
+    "covers_tactics": [
+      "Command and Control",
+      "Execution",
+      "Collection"
+    ],
+    "dependencies": [
+      "internal-portal"
+    ]
   }
 ]

@@ -26,6 +26,14 @@ class RuntimeConfig:
     binding_ttl_seconds: int = 7 * 24 * 60 * 60
     state_dir: str = "data/runtime"
     asset_catalog_path: str = "data/assets/catalog.json"
+    attack_transition_prior_path: str = "data/transitions/technique_transition_prior.json"
+    transition_top_k: int = 5
+    transition_min_support: int = 1
+    transition_order2_min_support: int = 2
+    transition_order3_min_support: int = 3
+    exploit_lambda: float = 0.6
+    feedback_window_seconds: int = 300
+    reveal_feedback_path: str = "data/runtime/reveal_feedback.json"
     cowrie_event_mapping_path: str = "data/cowrie/event_mappings.json"
     cowrie_command_mapping_mode: str = "sigma"
     cowrie_command_mapping_path: str = "data/cowrie/command_mapping_rules.json"
@@ -40,7 +48,20 @@ class RuntimeConfig:
 
     @classmethod
     def from_env(cls) -> "RuntimeConfig":
-        """Build config from repo defaults plus supported environment overrides."""
+        """Build config from repo defaults plus supported environment overrides.
+
+        Example:
+            Input env:
+                HONEYPOT_TRANSITION_TOP_K=7
+                HONEYPOT_TRANSITION_ORDER2_MIN_SUPPORT=2
+                HONEYPOT_TRANSITION_ORDER3_MIN_SUPPORT=3
+                HONEYPOT_ATTACK_TRANSITION_PRIOR_PATH=tmp/prior.json
+            Output:
+                config.transition_top_k == 7
+                config.transition_order2_min_support == 2
+                config.transition_order3_min_support == 3
+                config.attack_transition_prior_path == "tmp/prior.json"
+        """
         config = cls()
         config.state_dir = os.getenv("HONEYPOT_STATE_DIR", config.state_dir)
         config.cowrie_command_mapping_mode = os.getenv(
@@ -59,4 +80,72 @@ class RuntimeConfig:
             "HONEYPOT_ENTRYPOINT_HTTP_SIGMA_RULES_PATH",
             config.entrypoint_http_sigma_rules_path,
         )
+        config.attack_transition_prior_path = os.getenv(
+            "HONEYPOT_ATTACK_TRANSITION_PRIOR_PATH",
+            config.attack_transition_prior_path,
+        )
+        config.transition_top_k = _env_int(
+            "HONEYPOT_TRANSITION_TOP_K",
+            config.transition_top_k,
+        )
+        config.transition_min_support = _env_int(
+            "HONEYPOT_TRANSITION_MIN_SUPPORT",
+            config.transition_min_support,
+        )
+        config.transition_order2_min_support = _env_int(
+            "HONEYPOT_TRANSITION_ORDER2_MIN_SUPPORT",
+            config.transition_order2_min_support,
+        )
+        config.transition_order3_min_support = _env_int(
+            "HONEYPOT_TRANSITION_ORDER3_MIN_SUPPORT",
+            config.transition_order3_min_support,
+        )
+        config.exploit_lambda = _env_float(
+            "HONEYPOT_EXPLOIT_LAMBDA",
+            config.exploit_lambda,
+        )
+        config.feedback_window_seconds = _env_int(
+            "HONEYPOT_FEEDBACK_WINDOW_SECONDS",
+            config.feedback_window_seconds,
+        )
+        config.reveal_feedback_path = os.getenv(
+            "HONEYPOT_REVEAL_FEEDBACK_PATH",
+            config.reveal_feedback_path,
+        )
         return config
+
+
+def _env_int(name: str, default: int) -> int:
+    """Read an integer environment variable with a safe fallback.
+
+    Example:
+        Input:
+            name="HONEYPOT_TRANSITION_TOP_K", default=5, env value="7"
+        Output:
+            7
+    """
+    value = os.getenv(name)
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+
+def _env_float(name: str, default: float) -> float:
+    """Read a floating-point environment variable with a safe fallback.
+
+    Example:
+        Input:
+            name="HONEYPOT_EXPLOIT_LAMBDA", default=0.6, env value="0.75"
+        Output:
+            0.75
+    """
+    value = os.getenv(name)
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        return default

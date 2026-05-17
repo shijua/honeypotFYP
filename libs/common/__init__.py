@@ -6,6 +6,8 @@ from libs.common.clock import utcnow
 from libs.common.config import RuntimeConfig
 from libs.common.iterables import dedupe_preserve
 from libs.common.iterables import dedupe_preserve_by
+from libs.common.iterables import string_items
+from libs.common.json_utils import mutable_nested_dict
 from libs.common.json_utils import read_json_object
 from libs.common.json_utils import read_json_value
 
@@ -13,9 +15,11 @@ __all__ = [
     "RuntimeConfig",
     "dedupe_preserve",
     "dedupe_preserve_by",
+    "mutable_nested_dict",
     "parse_iso_datetime",
     "read_json_object",
     "read_json_value",
+    "string_items",
     "utc_aware",
     "utcnow",
 ]

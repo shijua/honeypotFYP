@@ -132,10 +132,27 @@ The mode is selected by `HONEYPOT_COWRIE_COMMAND_MAPPING_MODE` and loaded throug
 - Path: `services/controller/*`
 - Purpose: decide which internal assets should be exposed next.
 - Core behavior:
-  - load T-Pot-inspired decoy template definitions from `data/assets/catalog.json`
-  - filter assets by dependencies, unlock state, and unlock cap
-  - score candidates with a light exploit/explore policy
-  - emit `unlock` or `noop` actions plus explanatory `DecisionEvent` records
+  - load runtime asset definitions from `data/assets/catalog.json`
+  - load a file-backed public ATT&CK transition prior from `data/transitions/technique_transition_prior.json`
+  - filter assets by hard dependencies, unlock signals, runtime availability, unlock state, and unlock cap
+  - score techniques with `Q(t)=0.6*C_t+0.4*p_K(t)`, where `C_t` is current profile confidence and `p_K(t)` is the recent-technique transition prior with supported order-2/order-3 hybrid backoff; runtime order-2 uses `max(base, 0.60*P(next|current)+0.25*P(next|previous,current)+0.15*base)`, and runtime order-3 uses `max(order2_score, 0.45*P(next|current)+0.20*P(next|previous,current)+0.25*P(next|previous2,previous,current)+0.10*order2_score)`
+  - score exploit assets with technique score, soft dependency match, and catalog telemetry value
+  - score plausible explore assets with complementary technique coverage, different asset groups, uncertainty, and reveal feedback coverage gap
+  - allow `internal-portal` as the first bootstrap discovery surface when profile evidence exists
+  - emit `unlock` or `noop` actions plus structured `DecisionEvent.details` containing selected technique, scores, rejected reasons, dataset-prior status, and feedback contribution
+
+#### Public transition prior
+The public transition prior is derived from local public ATT&CK-labelled datasets by `scripts/data/build_attack_transition_prior.py`. Raw datasets are kept under ignored paths such as `vendor/datasets/`; `scripts/data/fetch_public_attack_datasets.py` can fetch the small real-data default profile and can explicitly fetch Mordor/OTRF metadata plus all metadata-declared zip entries, including Host, Network, and Cloud files. PWNJUTSU is treated as index/dry-run until local files can expose ordered `case_id + timestamp/order + technique` records. The repo only stores importer code, tests, schema expectations, and optionally generated derived prior files. Input records are normalized into traces with `case_id`, `source_dataset`, and ordered events. Mordor metadata is expanded from ordered `attack_mappings`; records without ATT&CK technique ids are counted in the build report but do not contribute transition edges. The default prior uses trace-balanced order-1 bigram counts with a small global fallback and also emits order-2 `P(next | previous,current)` and order-3 `P(next | previous2,previous,current)` edges. The controller uses higher-order context only when support is high enough, and falls back to the order-1 prior otherwise. Event-count mode remains available as a baseline. The controller treats this prior as a ranking signal only; asset eligibility still comes from catalog hard gates such as dependencies and unlock signals.
+
+#### Technique-aware catalogue metadata
+The shared `AssetDefinition` API does not add new top-level fields for selection metadata. Instead, each runtime internal asset declares `default_settings.selection_profile` with `asset_group`, `covered_techniques`, `optional_dependency_signals`, `telemetry_value`, `tactic_difficulties`, `reveal_outputs`, and `selection_notes`. `covered_techniques` must be valid Enterprise ATT&CK technique or sub-technique ids. Older fields such as `covers_tactics`, `dependencies`, and `unlock_signals` remain compatibility and hard-gate fields.
+
+#### Reveal feedback
+The adaptive loop records revealed asset choices in `data/runtime/reveal_feedback.json`. Later evidence that references `source_ref.asset_id` marks a pending reveal useful; pending reveals that age past the feedback window are marked ignored. The current controller uses this feedback as a coverage-gap signal for exploration so under-sampled plausible asset groups can still be tried.
+
+#### Evaluation metrics
+
+Public-prior quality is evaluated offline with held-out traces, not by assuming that more data automatically improves the controller. `scripts/evaluation/technique_prior.py` reports labelled/skipped event counts, trace count, top1/top3/top5/top10 next-technique accuracy, MRR, negative log likelihood, unseen-source rate, train/test edge counts, and source-level breakdown. Live system overhead is measured separately with `scripts/evaluation/runtime_latency.py`, which records binding resolve latency, orchestrator apply latency, Docker-backed runtime startup as observed by the orchestrator response, and asset-gateway route visibility latency.
 
 ### 7) Gateway service
 - Path: `services/gateway/*`
@@ -172,7 +189,7 @@ Additional repositories now exist for:
 - entrypoint HTTP observations
 - Cowrie SSH observations
 - gateway route state
-- controller asset catalog and tactic transitions
+- controller asset catalog, public technique transitions, and reveal feedback
 
 ### 10) API layer
 - Paths:
@@ -204,7 +221,7 @@ Additional repositories now exist for:
 2. `entrypoint` captures HTTP anomalies and `cowrie` ingests SSH honeypot events.
 3. `binding_service` resolves a sticky binding for that attacker.
 4. `profiler` ingests normalized events and builds an initial or refined attacker profile.
-5. `controller` reads the current profile plus unlocked assets and returns actions.
+5. `controller` reads the current profile, the public transition prior, the technique-aware asset catalog, current unlocked assets, and reveal feedback before returning actions.
 6. `orchestrator` applies those actions back onto the binding state and attempts to start any newly selected assets.
 7. `gateway` mirrors the current exposure/routing view for that binding, separating reachable assets from failed ones.
 8. Shared contracts keep the loop testable across service boundaries.

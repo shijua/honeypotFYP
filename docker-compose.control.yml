@@ -140,6 +140,7 @@ services:
       --orchestrator-url http://orchestrator:8005
       --trace-file data/runtime/decision_trace.json
       --loop-state-file data/runtime/adaptive_loop_state.json
+      --feedback-file data/runtime/reveal_feedback.json
       --max-actions-per-trigger 2
       --poll-seconds 2"
     environment:

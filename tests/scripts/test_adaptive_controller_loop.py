@@ -225,3 +225,136 @@ def test_tick_once_processes_new_evidence_once_and_limits_unlock_actions(
     trace = json.loads(trace_file.read_text(encoding="utf-8"))
     assert trace["records"][0]["actions"][0]["asset_id"] == "internal-portal"
     assert trace["records"][0]["dropped_actions"][0]["asset_id"] == "finance-share"
+
+
+def test_reveal_feedback_records_reveal_and_later_useful_touch(tmp_path) -> None:
+    feedback_file = tmp_path / "reveal_feedback.json"
+    evidence_file = tmp_path / "evidence.json"
+
+    adaptive_controller_loop.record_reveal_feedback(
+        feedback_file=feedback_file,
+        attacker_key="198.51.100.10",
+        binding_id="binding-1",
+        applied_actions=[
+            {
+                "action_type": "unlock",
+                "binding_id": "binding-1",
+                "asset_id": "finance-share",
+                "reason": "selected",
+            }
+        ],
+        controller_response={
+            "candidate_asset_ids": ["internal-portal", "finance-share", "git-internal"],
+            "decision_events": [
+                {
+                    "asset_added": "finance-share",
+                    "details": {
+                        "feedback_context_key": "T1552.001|any_http_indicators:path:.bak",
+                        "asset_group": "data-share",
+                    },
+                }
+            ]
+        },
+    )
+    evidence_file.write_text(
+        json.dumps(
+            {
+                "records": {
+                    "198.51.100.10": [
+                            {
+                                "attacker_key": "198.51.100.10",
+                                "ts": "2099-01-01T00:00:01Z",
+                                "tech_id": "T1005",
+                                "source_ref": {
+                                "source": "internal_http",
+                                "asset_id": "finance-share",
+                                "http_path": "/finance/archive/2024/payroll-archive.zip",
+                            },
+                        }
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    adaptive_controller_loop.update_reveal_feedback_from_evidence(
+        feedback_file=feedback_file,
+        evidence_file=evidence_file,
+        feedback_window_seconds=300,
+    )
+
+    payload = json.loads(feedback_file.read_text(encoding="utf-8"))
+    group = payload["contexts"]["T1552.001|any_http_indicators:path:.bak"]["asset_groups"]["data-share"]
+    assert group["revealed"] == 1
+    assert group["useful"] == 1
+    assert payload["pending"][0]["status"] == "useful"
+    assert payload["pending"][0]["available_assets"] == [
+        "internal-portal",
+        "finance-share",
+        "git-internal",
+    ]
+    assert payload["pending"][0]["revealed_assets"] == ["finance-share"]
+
+
+def test_reveal_feedback_marks_unclassified_touch_as_shallow(tmp_path) -> None:
+    feedback_file = tmp_path / "reveal_feedback.json"
+    evidence_file = tmp_path / "evidence.json"
+
+    adaptive_controller_loop.record_reveal_feedback(
+        feedback_file=feedback_file,
+        attacker_key="198.51.100.20",
+        binding_id="binding-2",
+        applied_actions=[
+            {
+                "action_type": "unlock",
+                "binding_id": "binding-2",
+                "asset_id": "internal-portal",
+                "reason": "selected",
+            }
+        ],
+        controller_response={
+            "candidate_asset_ids": ["internal-portal"],
+            "decision_events": [
+                {
+                    "asset_added": "internal-portal",
+                    "details": {
+                        "feedback_context_key": "T1046",
+                        "asset_group": "portal",
+                    },
+                }
+            ],
+        },
+    )
+    evidence_file.write_text(
+        json.dumps(
+            {
+                "records": {
+                    "198.51.100.20": [
+                        {
+                            "attacker_key": "198.51.100.20",
+                            "ts": "2099-01-01T00:00:01Z",
+                            "source_ref": {
+                                "source": "internal_http",
+                                "asset_id": "internal-portal",
+                                "http_path": "/",
+                            },
+                        }
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    adaptive_controller_loop.update_reveal_feedback_from_evidence(
+        feedback_file=feedback_file,
+        evidence_file=evidence_file,
+        feedback_window_seconds=300,
+    )
+
+    payload = json.loads(feedback_file.read_text(encoding="utf-8"))
+    group = payload["contexts"]["T1046"]["asset_groups"]["portal"]
+    assert group["revealed"] == 1
+    assert group["shallow"] == 1
+    assert payload["pending"][0]["status"] == "shallow"

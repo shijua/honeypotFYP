@@ -29,3 +29,14 @@ def dedupe_preserve_by(values: Iterable[T], key: Callable[[T], K]) -> list[T]:
         seen.add(marker)
         ordered.append(value)
     return ordered
+
+
+def string_items(value: object) -> list[str]:
+    """Return string items from a JSON-style list, otherwise an empty list.
+
+    Example:
+        string_items(["e-1", 2, "e-2"]) -> ["e-1", "e-2"]
+    """
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str)]

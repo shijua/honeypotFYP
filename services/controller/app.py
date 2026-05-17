@@ -13,19 +13,30 @@ from fastapi import Depends, FastAPI
 from libs.common.config import RuntimeConfig
 from libs.contracts.models import ControllerTickRequest, ControllerTickResponse
 from services.controller.domain import ControllerService
-from services.controller.repository import FileAssetRepository, StaticTransitionRepository
+from services.controller.repository import (
+    FileAssetRepository,
+    FileRevealFeedbackRepository,
+    FileTechniqueTransitionRepository,
+)
 
 app = FastAPI(title="controller", version="0.1.0")
 
-_config = RuntimeConfig()
+_config = RuntimeConfig.from_env()
 _asset_repository = FileAssetRepository(_config.asset_catalog_path)
-_transition_repository = StaticTransitionRepository()
+_transition_repository = FileTechniqueTransitionRepository(
+    _config.attack_transition_prior_path,
+    min_support=_config.transition_min_support,
+    order2_min_support=_config.transition_order2_min_support,
+    order3_min_support=_config.transition_order3_min_support,
+)
+_feedback_repository = FileRevealFeedbackRepository(_config.reveal_feedback_path)
 _service = ControllerService(
     _asset_repository,
     _transition_repository,
     config=_config,
     # Seed RNG for deterministic local runs and tests.
     rng=random.Random(0),
+    feedback_repository=_feedback_repository,
 )
 
 

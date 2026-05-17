@@ -62,6 +62,7 @@ export PROJECT_NAME HOST_PROJECT_ROOT ASSET_GATEWAY_PORTS
 WAIT_RETRIES="${WAIT_RETRIES:-60}"
 WAIT_DELAY_SECONDS="${WAIT_DELAY_SECONDS:-2}"
 RESET_BEFORE_RUN="${RESET_BEFORE_RUN:-1}"
+HOST_CHECK_ADDRESS="${HOST_BIND_ADDRESS:-127.0.0.1}"
 ENTERPRISE_SERVICES=(
   public-portal
   public-portal-forwarder
@@ -172,10 +173,10 @@ echo "Starting enterprise default slice..."
 COMPOSE_IGNORE_ORPHANS=True "${COMPOSE[@]}" -p "$PROJECT_NAME" -f "$ENTERPRISE_FILE" up -d "${ENTERPRISE_SERVICES[@]}"
 
 echo "Checking public portal..."
-wait_for_host_http "http://127.0.0.1:${PUBLIC_PORTAL_PORT:-8080}"
+wait_for_host_http "http://${HOST_CHECK_ADDRESS}:${PUBLIC_PORTAL_PORT:-8080}"
 
 echo "Checking Cowrie SSH port..."
-wait_for_tcp 127.0.0.1 "${COWRIE_SSH_PORT:-2222}"
+wait_for_tcp "$HOST_CHECK_ADDRESS" "${COWRIE_SSH_PORT:-2222}"
 
 echo "Checking control plane is not published to host..."
 if curl -fsSI --max-time 2 http://127.0.0.1:8002 >/dev/null 2>&1; then

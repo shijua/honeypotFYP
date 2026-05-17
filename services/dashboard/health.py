@@ -8,6 +8,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from libs.common.config import RuntimeConfig
+
 
 def build_chain_health(
     *,
@@ -65,6 +67,7 @@ def build_chain_health(
     latest_opencanary = _latest_record(opencanary_observations, "ts")
     latest_decision = _latest_record(decision_trace, "ts")
     latest_route = _latest_record(gateway_routes, "updated_at")
+    transition_prior = _transition_prior_stage(Path(RuntimeConfig.from_env().attack_transition_prior_path))
 
     stages = [
         _service_stage(
@@ -143,6 +146,7 @@ def build_chain_health(
                 empty_detail="adapter is up, waiting for stored Cowrie observation",
             ),
             _profile_stage(attackers, bindings, latest_decision),
+            transition_prior,
             _gateway_stage(latest_route),
             _service_stage(
                 project_name,
@@ -302,6 +306,48 @@ def _profile_stage(
         status="ok",
         signal=f"{len(attackers)} attacker profiles",
         detail=detail or "profiles available",
+    )
+
+
+def _transition_prior_stage(path: Path) -> dict[str, str]:
+    """Report whether the public-dataset technique prior is available.
+
+    Example:
+        missing data/transitions/technique_transition_prior.json -> WARN
+    """
+    if not path.exists():
+        return _health_stage(
+            stage="Technique transition prior",
+            component=str(path),
+            status="warn",
+            signal="missing",
+            detail="controller will run with an empty public prior until the dataset builder is run",
+        )
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return _health_stage(
+            stage="Technique transition prior",
+            component=str(path),
+            status="bad",
+            signal="unreadable",
+            detail=str(exc),
+        )
+    transitions = payload.get("transitions") if isinstance(payload, dict) else None
+    if not isinstance(transitions, dict) or not transitions:
+        return _health_stage(
+            stage="Technique transition prior",
+            component=str(path),
+            status="warn",
+            signal="empty",
+            detail="prior file exists but contains no transition edges",
+        )
+    return _health_stage(
+        stage="Technique transition prior",
+        component=str(path),
+        status="ok",
+        signal=f"{sum(len(value) for value in transitions.values() if isinstance(value, dict))} transitions",
+        detail=_record_detail(payload, ["generated_at", "sources", "min_support"]),
     )
 
 

@@ -305,8 +305,11 @@ class AssetDefinition(VersionedModel):
     Internal asset exploration can use `any_internal_http_paths`,
     `any_internal_http_rules`, and `any_internal_http_indicators`.
     Optional `default_settings.selection_profile` metadata describes reveal
-    outputs and tactic difficulty for future controller scoring without adding
-    new top-level contract fields.
+    outputs and technique-aware controller scoring metadata without adding new
+    top-level contract fields. The public-prior controller reads
+    `asset_group`, `covered_techniques`, `optional_dependency_signals`, and
+    `telemetry_value` from that profile, while the older `covers_tactics`,
+    `dependencies`, and `unlock_signals` fields remain hard gates.
 
     Example:
         {
@@ -321,6 +324,10 @@ class AssetDefinition(VersionedModel):
                     "any_http_indicators": ["path:.bak"]
                 },
                 "selection_profile": {
+                    "asset_group": "data-share",
+                    "covered_techniques": ["T1005", "T1552.001"],
+                    "optional_dependency_signals": {"any_http_indicators": ["path:.bak"]},
+                    "telemetry_value": 0.85,
                     "tactic_difficulties": {"Collection": 2},
                     "reveal_outputs": ["finance exports"]
                 }
@@ -386,7 +393,7 @@ class DecisionEvent(VersionedModel):
     """Explainable audit record for one controller or orchestrator decision.
 
     Example:
-        {"decision_type": "unlock", "asset_added": "git-internal", "trigger_evidence_ids": ["e-1"]}
+        {"decision_type": "unlock", "asset_added": "git-internal", "details": {"selected_technique": "T1213"}}
     """
 
     ts: datetime = Field(default_factory=utcnow)
@@ -397,6 +404,7 @@ class DecisionEvent(VersionedModel):
     trigger_evidence_ids: List[str] = Field(default_factory=list)
     asset_added: Optional[str] = None
     asset_removed: Optional[str] = None
+    details: Dict[str, Any] = Field(default_factory=dict)
 
 
 class ControllerTickResponse(VersionedModel):

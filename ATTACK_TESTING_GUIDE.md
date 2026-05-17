@@ -33,6 +33,12 @@ ssh -N \
 
 Open `http://localhost:18090/` for the dashboard and `http://localhost:18000/` for the public portal.
 
+Quick health check:
+
+```bash
+curl -s "http://146.169.44.23:8090/api/summary" | jq '.chain_health[] | select(.stage == "Technique transition prior" or .stage == "Profile/controller" or .stage == "Gateway/assets")'
+```
+
 ## 2. Public Signals
 
 Run this from the same terminal/browser source IP that will later test internal ports:

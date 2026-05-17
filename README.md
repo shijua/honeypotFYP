@@ -102,6 +102,58 @@ The default local runtime now persists state under `data/runtime/`:
 
 The controller asset catalog is now externalized at `data/assets/catalog.json`. Public HTTP profiling uses Sigma YAML rules in `data/detections/http_sigma`; only matching suspicious public-web requests create profiler evidence. Cowrie event mappings are externalized at `data/cowrie/event_mappings.json`. The profiler resolves tactic/technique relationships from the official MITRE ATT&CK `attack-stix-data` bundle at `data/mitre/enterprise-attack.json`.
 
+## Public Technique Transition Prior
+
+The controller uses a public-dataset transition prior as a ranking signal: `P(next ATT&CK technique | recent technique)`. Raw public datasets are intentionally ignored by git and should live under `vendor/datasets/`; only the importer, tests, and generated derived prior schema belong in the repo. The prior is not an asset mapping. It estimates technique order, while `data/assets/catalog.json` decides which honeypot asset can plausibly cover each technique and which dependency signals are required.
+
+The repo expects public raw datasets under ignored `vendor/datasets/`. You can keep the default location or pass `--output-root /path/to/datasets` to the fetcher and then pass that same directory to the builder. The generated prior/report under `data/transitions/` are local build artifacts and are ignored except for `.gitkeep`.
+
+```bash
+vendor/datasets/mordor/
+vendor/datasets/pwnjutsu/
+vendor/datasets/casinolimit/
+vendor/datasets/windows-apt-2025/
+vendor/datasets/uwf-zeekdata24/
+```
+
+For a practical first real-data run, fetch lightweight public slices that are small enough for normal development. UWF-ZeekData24 and CasinoLimit are fetched by the default command. Mordor/OTRF is supported through GitHub metadata plus metadata-declared zip files, including Host, Network, and Cloud entries. PWNJUTSU is metadata/index dry-run only by default because the raw archives are large and must be inspected before they are counted as labelled ordered traces.
+
+```bash
+python scripts/data/fetch_public_attack_datasets.py
+```
+
+Add a small Mordor/OTRF sample explicitly:
+
+```bash
+python scripts/data/fetch_public_attack_datasets.py --dataset mordor --mordor-section compound --mordor-limit 20
+```
+
+Fetch all Mordor/OTRF metadata-declared zip entries:
+
+```bash
+python scripts/data/fetch_public_attack_datasets.py --dataset mordor --mordor-limit 0
+```
+
+Use `--mordor-file-type host` if you want only Host zip entries for a lighter local checkout.
+
+Inspect PWNJUTSU without downloading large archives:
+
+```bash
+python scripts/data/fetch_public_attack_datasets.py --dataset pwnjutsu --dry-run
+```
+
+Build the derived prior from one or more local files, directories, or zip archives:
+
+```bash
+python scripts/data/build_attack_transition_prior.py \
+  vendor/datasets
+python scripts/validation/attack_transition_prior.py
+```
+
+Use `python scripts/data/fetch_public_attack_datasets.py --dry-run` to inspect planned downloads. Use `--dataset uwf-zeekdata24`, `--dataset casinolimit`, or `--dataset mordor` to fetch one source. Use `--output-root vendor/datasets-lab` if you want to keep a separate local dataset checkout. If you manually download PWNJUTSU, Windows-APT 2025, or larger CasinoLimit/UWF files later, place them under the dataset root and rerun the same builder command.
+
+Supported input shapes are `csv`, `json`, `jsonl`, `ndjson`, `yaml`, `yml`, `zip`, and single-file `json.bz2`/`jsonl.bz2` style payloads. The builder normalizes records into traces with `case_id`, `source_dataset`, and ordered ATT&CK-labelled events, skips records without a technique id, writes `data/transitions/technique_transition_prior.json`, and writes a diagnostic report to `data/transitions/technique_transition_prior_report.json`. The generated prior contains order-1 `transitions` for `P(next | current)`, order-2 `order2_transitions` for `P(next | previous,current)`, and order-3 `order3_transitions` for `P(next | previous2,previous,current)`. Mordor metadata is expanded from ordered `attack_mappings`; raw Network/Cloud/Host zip content only contributes if it has explicit ATT&CK technique labels. PWNJUTSU contributes only when a local file has explicit `case_id`, timestamp/order, and ATT&CK technique ids. Add `--normalized-output data/transitions/normalized_traces.sample.json` only when you explicitly want to inspect the normalized trace schema; do not commit large normalized outputs. If the prior file is missing or empty, the controller still starts with an empty prior and the dashboard reports the transition prior as degraded.
+
 ## Cowrie Command Detection
 
 Cowrie command profiling has three runtime modes:
@@ -131,6 +183,24 @@ HONEYPOT_COWRIE_COMMAND_MAPPING_MODE=hybrid ./scripts/start_enterprise_stack.sh
 The Cowrie adapter reads the configured Sigma YAML folder directly at runtime and imports rule conditions it can express from one Cowrie command: process/image fields, command-line fields, auditd `EXECVE` arguments, and simple keyword lists. The supported condition subset includes standalone selections, `selection_a and selection_b`, `all of selection_*`, `1 of selection_*`, and `selection and not filter_*`. Selections with unsupported fields are skipped instead of weakened. Override the Sigma rule directory with `HONEYPOT_COWRIE_SIGMA_RULES_PATH` when testing a different Sigma checkout.
 
 Use `ATTACK_TESTING_GUIDE.md` only to test whether live Cowrie commands produce observations and profiler evidence. Rule-source details belong here and in `ARCHITECTURE.md`, not in the testing guide.
+
+## Evaluation
+
+The public transition prior should be evaluated separately from live runtime latency. More public data helps only when labels are correct, technique ids are present, event order is meaningful, and the source behavior is close enough to the honeynet setting. Use held-out traces to report predictive quality:
+
+```bash
+python scripts/evaluation/technique_prior.py vendor/datasets --holdout-percent 20 --top-k 5
+```
+
+Useful report fields are `labelled_events_used`, `skipped_events_without_technique`, `trace_count`, `evaluated_edges`, `top1_accuracy`, `top3_accuracy`, `top5_accuracy`, `top10_accuracy`, `mrr`, `mean_negative_log_likelihood`, `unseen_source_rate`, `order2_context_rate`, `order3_context_rate`, `train_transition_count`, and `source_breakdown`. The runtime default is trace-balanced n-gram training with a small global fallback plus hybrid order-2/order-3 backoff at scoring time: `--count-mode trace-balanced --global-fallback-weight 0.05 --model-mode hybrid`. Use `--model-mode order1` for the old one-step comparison, `--model-mode order3` to test strict third-order context, and `--count-mode event-count --global-fallback-weight 0` for the count baseline.
+
+After the compose stack is running, measure live reveal latency with:
+
+```bash
+python scripts/evaluation/runtime_latency.py --attacker-key "$CLIENT_TARGET_HOST"
+```
+
+This measures binding resolve latency, orchestrator apply latency, Docker runtime start as seen by the orchestrator, and the time until `data/runtime/asset_gateway_routes.json` contains the route. Use `--assets internal-portal,finance-share` for a small run or `--dry-run` to list the fixed-port assets that would be measured.
 
 ## Simulation Helpers
 

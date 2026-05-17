@@ -5,6 +5,7 @@ import zipfile
 from pathlib import Path
 
 from libs.contracts.models import AssetDefinition
+from services.profiler.attack_catalog import MitreAttackCatalog
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -173,9 +174,26 @@ def test_internal_assets_declare_selection_profiles() -> None:
         assert isinstance(selection_profile, dict)
         assert selection_profile["reveal_outputs"]
         assert selection_profile["selection_notes"]
+        assert isinstance(selection_profile["asset_group"], str)
+        assert selection_profile["asset_group"]
+        assert isinstance(selection_profile["covered_techniques"], list)
+        assert selection_profile["covered_techniques"]
+        assert isinstance(selection_profile["telemetry_value"], (int, float))
+        assert 0 <= selection_profile["telemetry_value"] <= 1
+        assert isinstance(selection_profile["optional_dependency_signals"], dict)
 
         tactic_difficulties = selection_profile["tactic_difficulties"]
         assert set(asset.covers_tactics).issubset(tactic_difficulties)
         for difficulty in tactic_difficulties.values():
             assert isinstance(difficulty, int)
             assert 1 <= difficulty <= 5
+
+
+def test_internal_asset_covered_techniques_exist_in_enterprise_attack() -> None:
+    catalog = MitreAttackCatalog(ROOT / "data/mitre/enterprise-attack.json")
+    assets = _catalog_by_id()
+
+    for asset in assets.values():
+        selection_profile = asset.default_settings["selection_profile"]
+        for technique in selection_profile["covered_techniques"]:
+            assert catalog.tactic_for_technique(technique) is not None

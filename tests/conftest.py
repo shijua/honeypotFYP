@@ -13,8 +13,7 @@ from tests.support.inmemory_repositories import InMemoryBindingRepository
 from services.controller.app import app as controller_app
 from services.controller.app import get_service as get_controller_service
 from services.controller.domain import ControllerService
-from services.controller.repository import StaticTransitionRepository
-from tests.support.inmemory_repositories import InMemoryAssetRepository
+from tests.support.inmemory_repositories import InMemoryAssetRepository, InMemoryTechniqueTransitionRepository
 from services.cowrie.app import app as cowrie_app
 from services.cowrie.app import get_service as get_cowrie_service
 from services.cowrie.command_mapping import FileCowrieCommandRuleCatalog
@@ -83,7 +82,7 @@ def profiler_client() -> TestClient:
 def controller_client() -> TestClient:
     service = ControllerService(
         InMemoryAssetRepository(),
-        StaticTransitionRepository(),
+        InMemoryTechniqueTransitionRepository(),
         config=RuntimeConfig(epsilon=0.0),
         rng=random.Random(0),
     )
@@ -181,7 +180,7 @@ def mvp_clients() -> dict[str, TestClient]:
     )
     controller_service = ControllerService(
         InMemoryAssetRepository(),
-        StaticTransitionRepository(),
+        InMemoryTechniqueTransitionRepository(),
         config=RuntimeConfig(epsilon=0.0),
         rng=random.Random(0),
     )
