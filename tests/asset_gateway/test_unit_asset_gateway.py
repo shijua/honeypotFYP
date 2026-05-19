@@ -46,6 +46,35 @@ def test_select_route_prefers_source_ip_exact_match() -> None:
     assert route.backend_host == "honeynet-b-internal-portal"
 
 
+def test_select_route_uses_latest_route_for_same_attacker_and_port() -> None:
+    routes = [
+        AssetRoute(
+            attacker_key="198.51.100.10",
+            binding_id="binding-a",
+            asset_id="web-admin-console",
+            public_port=18081,
+            backend_host="static-admin",
+            backend_port=80,
+            updated_at="2026-04-27T12:00:00Z",
+        ),
+        AssetRoute(
+            attacker_key="198.51.100.10",
+            binding_id="binding-a",
+            asset_id="log4shell-app",
+            public_port=18081,
+            backend_host="vulhub-log4shell",
+            backend_port=8080,
+            updated_at="2026-04-27T12:01:00Z",
+        ),
+    ]
+
+    route = select_route(routes, client_ip="198.51.100.10", public_port=18081)
+
+    assert route is not None
+    assert route.asset_id == "log4shell-app"
+    assert route.backend_host == "vulhub-log4shell"
+
+
 def test_select_route_rejects_unmatched_source_ip_even_when_port_has_one_route() -> None:
     routes = [
         AssetRoute(

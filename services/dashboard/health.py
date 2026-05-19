@@ -6,7 +6,7 @@ import json
 import os
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from libs.common.config import RuntimeConfig
 
@@ -22,49 +22,54 @@ def build_chain_health(
     entrypoint_observations: list[dict[str, Any]],
     cowrie_observations: list[dict[str, Any]],
     opencanary_observations: list[dict[str, Any]],
+    high_interaction_observations: list[dict[str, Any]],
     decision_trace: list[dict[str, Any]],
 ) -> list[dict[str, str]]:
     """Build a visible health trace for the attacker telemetry pipeline."""
-    raw_cowrie_event = _last_cowrie_log_event(_cowrie_log_path())
-    raw_opencanary_event = _last_opencanary_log_event(_opencanary_log_path())
-    raw_internal_http_event = _last_internal_http_event(
-        state_dir / "internal_http_events.jsonl"
+    raw_cowrie_event = _last_json_log_event(_cowrie_log_path(), _safe_cowrie_log_event)
+    raw_opencanary_event = _last_json_log_event(
+        _opencanary_log_path(),
+        _safe_opencanary_log_event,
     )
-    cowrie_forwarder = _container_for_service(
+    internal_http_events_path = state_dir / "internal_http_events.jsonl"
+    high_interaction_events_path = state_dir / "high_interaction_events.jsonl"
+    raw_internal_http_event = _last_json_log_event(
+        internal_http_events_path,
+        _safe_internal_http_event,
+    )
+    raw_high_interaction_event = _last_json_log_event(
+        high_interaction_events_path,
+        _safe_high_interaction_event,
+    )
+    cowrie_forwarder, cowrie_forwarder_log = _forwarder_probe(
         project_name,
         containers,
         "cowrie-forwarder",
     )
-    cowrie_forwarder_log = _last_forwarder_log_line(
-        cowrie_forwarder.get("name") if cowrie_forwarder else ""
-    )
-    public_portal_forwarder = _container_for_service(
+    public_portal_forwarder, public_portal_forwarder_log = _forwarder_probe(
         project_name,
         containers,
         "public-portal-forwarder",
     )
-    public_portal_forwarder_log = _last_forwarder_log_line(
-        public_portal_forwarder.get("name") if public_portal_forwarder else ""
-    )
-    opencanary_forwarder = _container_for_service(
+    opencanary_forwarder, opencanary_forwarder_log = _forwarder_probe(
         project_name,
         containers,
         "opencanary-forwarder",
     )
-    opencanary_forwarder_log = _last_forwarder_log_line(
-        opencanary_forwarder.get("name") if opencanary_forwarder else ""
-    )
-    internal_http_forwarder = _container_for_service(
+    internal_http_forwarder, internal_http_forwarder_log = _forwarder_probe(
         project_name,
         containers,
         "internal-http-forwarder",
     )
-    internal_http_forwarder_log = _last_forwarder_log_line(
-        internal_http_forwarder.get("name") if internal_http_forwarder else ""
+    high_interaction_forwarder, high_interaction_forwarder_log = _forwarder_probe(
+        project_name,
+        containers,
+        "high-interaction-forwarder",
     )
     latest_entrypoint = _latest_record(entrypoint_observations, "ts")
     latest_cowrie = _latest_record(cowrie_observations, "ts")
     latest_opencanary = _latest_record(opencanary_observations, "ts")
+    latest_high_interaction = _latest_record(high_interaction_observations, "ts")
     latest_decision = _latest_record(decision_trace, "ts")
     latest_route = _latest_record(gateway_routes, "updated_at")
     transition_prior = _transition_prior_stage(Path(RuntimeConfig.from_env().attack_transition_prior_path))
@@ -145,6 +150,25 @@ def build_chain_health(
                 detail=_record_detail(latest_cowrie, ["eventid", "command", "attacker_key"]),
                 empty_detail="adapter is up, waiting for stored Cowrie observation",
             ),
+            _raw_high_interaction_stage(raw_high_interaction_event),
+            _forwarder_stage(
+                high_interaction_forwarder,
+                high_interaction_forwarder_log,
+                stage="High-interaction forwarder",
+                component="high-interaction-forwarder",
+                target="high-interaction-adapter",
+            ),
+            _service_stage(
+                project_name,
+                containers,
+                service_name="high-interaction-adapter",
+                stage="High-interaction adapter",
+                detail=_record_detail(
+                    latest_high_interaction,
+                    ["source", "service", "event_type", "attacker_key"],
+                ),
+                empty_detail="adapter is up, waiting for Conpot/Dionaea/Honeytrap telemetry",
+            ),
             _profile_stage(attackers, bindings, latest_decision),
             transition_prior,
             _gateway_stage(latest_route),
@@ -187,56 +211,83 @@ def _service_stage(
 
 
 def _raw_cowrie_stage(event: dict[str, Any] | None) -> dict[str, str]:
-    if event is None:
-        return _health_stage(
-            stage="Cowrie raw log",
-            component="deploy/cowrie/var/log/cowrie/cowrie.json",
-            status="warn",
-            signal="no raw event",
-            detail="waiting for Cowrie to write a JSON event",
-        )
-    return _health_stage(
+    return _raw_log_stage(
         stage="Cowrie raw log",
-        component="cowrie.json",
-        status="ok",
-        signal=str(event.get("eventid", "event")),
-        detail=_record_detail(event, ["timestamp", "src_ip", "input", "session"]),
+        event=event,
+        missing_component="deploy/cowrie/var/log/cowrie/cowrie.json",
+        present_component="cowrie.json",
+        missing_detail="waiting for Cowrie to write a JSON event",
+        signal_field="eventid",
+        detail_fields=["timestamp", "src_ip", "input", "session"],
     )
 
 
 def _raw_opencanary_stage(event: dict[str, Any] | None) -> dict[str, str]:
-    if event is None:
-        return _health_stage(
-            stage="OpenCanary raw log",
-            component="deploy/opencanary/var/opencanary.log",
-            status="warn",
-            signal="no raw event",
-            detail="waiting for an unlocked OpenCanary internal asset to write a JSON event",
-        )
-    return _health_stage(
+    return _raw_log_stage(
         stage="OpenCanary raw log",
-        component="opencanary.log",
-        status="ok",
-        signal=str(event.get("service", event.get("dst_port", "event"))),
-        detail=_record_detail(event, ["utc_time", "src_host", "dst_port", "service"]),
+        event=event,
+        missing_component="deploy/opencanary/var/opencanary.log",
+        present_component="opencanary.log",
+        missing_detail="waiting for an unlocked OpenCanary internal asset to write a JSON event",
+        signal_field="service",
+        fallback_signal_field="dst_port",
+        detail_fields=["utc_time", "src_host", "dst_port", "service"],
     )
 
 
 def _raw_internal_http_stage(event: dict[str, Any] | None) -> dict[str, str]:
+    return _raw_log_stage(
+        stage="Internal HTTP raw log",
+        event=event,
+        missing_component="data/runtime/internal_http_events.jsonl",
+        present_component="internal_http_events.jsonl",
+        missing_detail="waiting for asset-gateway to observe an unlocked HTTP asset request",
+        signal_field="path",
+        detail_fields=["attacker_key", "asset_id", "method", "path"],
+    )
+
+
+def _raw_high_interaction_stage(event: dict[str, Any] | None) -> dict[str, str]:
+    return _raw_log_stage(
+        stage="High-interaction raw log",
+        event=event,
+        missing_component="data/runtime/high_interaction_events.jsonl",
+        present_component="high_interaction_events.jsonl",
+        missing_detail="waiting for asset-gateway or backend sidecar to observe upgraded TCP interaction",
+        signal_field="event_type",
+        detail_fields=["source", "asset_id", "service", "attacker_key"],
+    )
+
+
+def _raw_log_stage(
+    *,
+    stage: str,
+    event: dict[str, Any] | None,
+    missing_component: str,
+    present_component: str,
+    missing_detail: str,
+    signal_field: str,
+    detail_fields: list[str],
+    fallback_signal_field: str | None = None,
+) -> dict[str, str]:
+    """Build one raw-log health row while preserving source-specific labels."""
     if event is None:
         return _health_stage(
-            stage="Internal HTTP raw log",
-            component="data/runtime/internal_http_events.jsonl",
+            stage=stage,
+            component=missing_component,
             status="warn",
             signal="no raw event",
-            detail="waiting for asset-gateway to observe an unlocked HTTP asset request",
+            detail=missing_detail,
         )
+    signal_value = event.get(signal_field)
+    if signal_value in (None, "") and fallback_signal_field is not None:
+        signal_value = event.get(fallback_signal_field)
     return _health_stage(
-        stage="Internal HTTP raw log",
-        component="internal_http_events.jsonl",
+        stage=stage,
+        component=present_component,
         status="ok",
-        signal=str(event.get("path", "event")),
-        detail=_record_detail(event, ["attacker_key", "asset_id", "method", "path"]),
+        signal=str(signal_value or "event"),
+        detail=_record_detail(event, detail_fields),
     )
 
 
@@ -417,6 +468,17 @@ def _container_health_status(container: dict[str, str] | None) -> str:
     return "bad"
 
 
+def _forwarder_probe(
+    project_name: str,
+    containers: list[dict[str, str]],
+    service_name: str,
+) -> tuple[dict[str, str] | None, str]:
+    """Return one forwarder container plus the newest useful log line."""
+    container = _container_for_service(project_name, containers, service_name)
+    log_line = _last_forwarder_log_line(container.get("name") if container else "")
+    return container, log_line
+
+
 def _latest_record(records: list[dict[str, Any]], key: str) -> dict[str, Any] | None:
     if not records:
         return None
@@ -455,7 +517,16 @@ def _opencanary_log_path() -> Path:
     )
 
 
-def _last_cowrie_log_event(path: Path) -> dict[str, Any] | None:
+def _last_json_log_event(
+    path: Path,
+    sanitizer: Callable[[dict[str, Any]], dict[str, Any]],
+) -> dict[str, Any] | None:
+    """Return the newest JSON object from a log file tail after sanitizing it.
+
+    Example:
+        _last_json_log_event(Path("cowrie.json"), _safe_cowrie_log_event)
+        reads only the final chunk and returns safe display fields.
+    """
     if not path.exists():
         return None
     try:
@@ -472,68 +543,23 @@ def _last_cowrie_log_event(path: Path) -> dict[str, Any] | None:
         except json.JSONDecodeError:
             continue
         if isinstance(event, dict):
-            return _safe_cowrie_log_event(event)
+            return sanitizer(event)
     return None
 
 
 def _safe_cowrie_log_event(event: dict[str, Any]) -> dict[str, Any]:
     safe_fields = ["eventid", "timestamp", "src_ip", "session", "input"]
-    return {
-        field: event[field]
-        for field in safe_fields
-        if isinstance(event.get(field), (str, int, float, bool))
-    }
+    return _safe_fields(event, safe_fields)
 
 
-def _last_opencanary_log_event(path: Path) -> dict[str, Any] | None:
-    if not path.exists():
-        return None
-    try:
-        with path.open("rb") as handle:
-            handle.seek(0, os.SEEK_END)
-            size = handle.tell()
-            handle.seek(max(size - 65536, 0), os.SEEK_SET)
-            payload = handle.read().decode("utf-8", errors="ignore")
-    except OSError:
-        return None
-    for line in reversed(payload.splitlines()):
-        try:
-            event = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(event, dict):
-            return _safe_opencanary_log_event(event)
-    return None
-
-
-def _last_internal_http_event(path: Path) -> dict[str, Any] | None:
-    if not path.exists():
-        return None
-    try:
-        with path.open("rb") as handle:
-            handle.seek(0, os.SEEK_END)
-            size = handle.tell()
-            handle.seek(max(size - 65536, 0), os.SEEK_SET)
-            payload = handle.read().decode("utf-8", errors="ignore")
-    except OSError:
-        return None
-    for line in reversed(payload.splitlines()):
-        try:
-            event = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(event, dict):
-            return _safe_internal_http_event(event)
-    return None
+def _safe_high_interaction_event(event: dict[str, Any]) -> dict[str, Any]:
+    safe_fields = ["source", "asset_id", "service", "event_type", "attacker_key"]
+    return _safe_fields(event, safe_fields)
 
 
 def _safe_internal_http_event(event: dict[str, Any]) -> dict[str, Any]:
     safe_fields = ["attacker_key", "asset_id", "method", "path", "query_string"]
-    return {
-        field: event[field]
-        for field in safe_fields
-        if isinstance(event.get(field), (str, int, float, bool))
-    }
+    return _safe_fields(event, safe_fields)
 
 
 def _safe_opencanary_log_event(event: dict[str, Any]) -> dict[str, Any]:
@@ -546,9 +572,7 @@ def _safe_opencanary_log_event(event: dict[str, Any]) -> dict[str, Any]:
         "logtype",
     ]
     safe = {
-        field: event[field]
-        for field in safe_fields
-        if isinstance(event.get(field), (str, int, float, bool))
+        **_safe_fields(event, safe_fields),
     }
     logdata = event.get("logdata")
     if isinstance(logdata, dict):
@@ -556,6 +580,14 @@ def _safe_opencanary_log_event(event: dict[str, Any]) -> dict[str, Any]:
             if key.lower() == "service" and isinstance(value, str):
                 safe["service"] = value
     return safe
+
+
+def _safe_fields(event: dict[str, Any], fields: list[str]) -> dict[str, Any]:
+    return {
+        field: event[field]
+        for field in fields
+        if isinstance(event.get(field), (str, int, float, bool))
+    }
 
 
 def _last_forwarder_log_line(container_name: str) -> str:

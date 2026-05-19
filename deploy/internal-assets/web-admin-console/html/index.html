@@ -175,6 +175,11 @@
       font-size: 12px;
     }
 
+    .system-list a {
+      color: #d9ecff;
+      text-decoration: none;
+    }
+
     @media (max-width: 760px) {
       body {
         grid-template-columns: 1fr;
@@ -199,6 +204,14 @@
         <li><strong>Change Window</strong><span>Friday 23:00-01:00 UTC</span></li>
         <li><strong>Authentication</strong><span>SSO password plus step-up MFA</span></li>
         <li><strong>Audit Mode</strong><span>Privileged actions require ticket reference</span></li>
+        <li><strong>Inventory API</strong><span><a href="/api/inventory.json">host and software summary</a></span></li>
+        <li><strong>Process Snapshot</strong><span><a href="/api/processes.json">admin worker process list</a></span></li>
+        <li><strong>Network View</strong><span><a href="/api/network-connections.txt">service connection export</a></span></li>
+        <li><strong>Audit Export</strong><span><a href="/api/audit-log.csv">privileged action log</a></span></li>
+        <li><strong>Auth Policy</strong><span><a href="/api/auth-policy.json">SSO and break-glass policy</a></span></li>
+        <li><strong>Config Repos</strong><span><a href="/api/config-repositories.json">deployment source references</a></span></li>
+        <li><strong>Container Resources</strong><span><a href="/api/container-resources.json">namespace and workload summary</a></span></li>
+        <li><strong>Account Lifecycle</strong><span><a href="/api/account-lifecycle.json">role and account change queue</a></span></li>
       </ul>
     </div>
     <div class="aside-meta">

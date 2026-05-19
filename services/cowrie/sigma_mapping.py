@@ -33,10 +33,10 @@ from libs.common.sigma import (
 from services.cowrie.command_mapping import (
     CommandMatch,
     CowrieCommandRule,
-    SourceRef,
     command_matches_rule,
     normalize_command,
 )
+from services.cowrie.mapping_utils import lower_strings, source_ref_from_payload, strings
 
 
 @dataclass(frozen=True)
@@ -184,29 +184,20 @@ def _cowrie_rule_from_sigma_payload(payload: dict[str, object]) -> CowrieCommand
         technique_id=str(payload.get("technique_id", "")),
         confidence=str(payload.get("confidence", "medium")),
         match=CommandMatch(
-            process_names=tuple(_lower_strings(match_payload.get("process_names", []))),
+            process_names=tuple(lower_strings(match_payload.get("process_names", []))),
             command_line_contains_any=tuple(
-                _lower_strings(match_payload.get("command_line_contains_any", []))
+                lower_strings(match_payload.get("command_line_contains_any", []))
             ),
             command_line_regex_any=tuple(
-                _strings(match_payload.get("command_line_regex_any", []))
+                strings(match_payload.get("command_line_regex_any", []))
             ),
         ),
         source_refs=tuple(
-            _source_ref_from_sigma_payload(item)
+            source_ref_from_payload(item)
             for item in payload.get("source_refs", [])
             if isinstance(item, dict)
         ),
         exclude_match=_optional_match_from_sigma_payload(payload.get("exclude_match")),
-    )
-
-
-def _source_ref_from_sigma_payload(payload: dict[str, object]) -> SourceRef:
-    url = payload.get("url")
-    return SourceRef(
-        type=str(payload.get("type", "")),
-        name=str(payload.get("name", "")),
-        url=str(url) if url is not None else None,
     )
 
 
@@ -215,26 +206,14 @@ def _optional_match_from_sigma_payload(payload: object) -> CommandMatch | None:
     if not isinstance(payload, dict):
         return None
     return CommandMatch(
-        process_names=tuple(_lower_strings(payload.get("process_names", []))),
+        process_names=tuple(lower_strings(payload.get("process_names", []))),
         command_line_contains_any=tuple(
-            _lower_strings(payload.get("command_line_contains_any", []))
+            lower_strings(payload.get("command_line_contains_any", []))
         ),
         command_line_regex_any=tuple(
-            _strings(payload.get("command_line_regex_any", []))
+            strings(payload.get("command_line_regex_any", []))
         ),
     )
-
-
-def _lower_strings(value: object) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    return [str(item).lower() for item in value]
-
-
-def _strings(value: object) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    return [str(item) for item in value]
 
 
 def _match_from_sigma_selection(selection: object) -> dict[str, list[str]]:

@@ -61,11 +61,29 @@ def test_static_internal_assets_include_breadcrumb_files() -> None:
         "deploy/internal-assets/finance-share/html/exports/db_backup_2024.sql.bak",
         "deploy/internal-assets/ics-plc/html/config/plc-backup-2026-04.cfg",
         "deploy/internal-assets/ics-plc/html/maps/modbus-unit-map.csv",
+        "deploy/internal-assets/ics-plc/html/captures/plant-span-summary.txt",
+        "deploy/internal-assets/ics-plc/html/captures/camera-index.csv",
         "deploy/internal-assets/vpn-appliance/html/backup/ra-config-2026-04.bak",
         "deploy/internal-assets/vpn-appliance/html/download/contractor-profile.ovpn",
         "deploy/internal-assets/vpn-appliance/html/logs/vpn-auth.log",
+        "deploy/internal-assets/vpn-appliance/html/policy/tunnel-routes.txt",
+        "deploy/internal-assets/vpn-appliance/html/policy/failover-accounts.csv",
         "deploy/internal-assets/malware-sink/html/downloads/agent-update.bin",
         "deploy/internal-assets/malware-sink/html/upload/README.txt",
+        "deploy/internal-assets/malware-sink/html/staging/manifest.json",
+        "deploy/internal-assets/malware-sink/html/staging/tool-transfer-notes.txt",
+        "deploy/internal-assets/malware-sink/html/staging/archive-plan.txt",
+        "deploy/internal-assets/internal-portal/html/directory/hosts.csv",
+        "deploy/internal-assets/internal-portal/html/directory/network-connections.csv",
+        "deploy/internal-assets/web-admin-console/html/api/inventory.json",
+        "deploy/internal-assets/web-admin-console/html/api/processes.json",
+        "deploy/internal-assets/web-admin-console/html/api/network-connections.txt",
+        "deploy/internal-assets/web-admin-console/html/api/groups.json",
+        "deploy/internal-assets/web-admin-console/html/api/audit-log.csv",
+        "deploy/internal-assets/web-admin-console/html/api/auth-policy.json",
+        "deploy/internal-assets/web-admin-console/html/api/config-repositories.json",
+        "deploy/internal-assets/web-admin-console/html/api/container-resources.json",
+        "deploy/internal-assets/web-admin-console/html/api/account-lifecycle.json",
     ]
 
     for relative_path in breadcrumb_paths:
@@ -181,6 +199,16 @@ def test_internal_assets_declare_selection_profiles() -> None:
         assert isinstance(selection_profile["telemetry_value"], (int, float))
         assert 0 <= selection_profile["telemetry_value"] <= 1
         assert isinstance(selection_profile["optional_dependency_signals"], dict)
+        telemetry_validation = asset.default_settings.get("telemetry_validation")
+        assert isinstance(telemetry_validation, dict)
+        assert telemetry_validation["kind"] == asset.telemetry_source
+        assert telemetry_validation["expected_trigger"]
+        if asset.telemetry_source in {"opencanary", "mailoney"}:
+            assert isinstance(telemetry_validation["service"], str)
+            assert telemetry_validation["service"]
+        if asset.telemetry_source == "high_interaction":
+            assert isinstance(telemetry_validation["source"], str)
+            assert telemetry_validation["source"]
 
         tactic_difficulties = selection_profile["tactic_difficulties"]
         assert set(asset.covers_tactics).issubset(tactic_difficulties)
@@ -197,3 +225,41 @@ def test_internal_asset_covered_techniques_exist_in_enterprise_attack() -> None:
         selection_profile = asset.default_settings["selection_profile"]
         for technique in selection_profile["covered_techniques"]:
             assert catalog.tactic_for_technique(technique) is not None
+
+
+def test_web_admin_console_declares_same_port_upgrade_candidate() -> None:
+    assets = _catalog_by_id()
+    selection_profile = assets["web-admin-console"].default_settings["selection_profile"]
+    upgrade_candidates = selection_profile["upgrade_candidates"]
+
+    candidates_by_id = {item["asset_id"]: item for item in upgrade_candidates}
+    assert set(candidates_by_id) == {"log4shell-app", "spring-gateway-app"}
+    assert candidates_by_id["log4shell-app"]["public_port"] == 18081
+    assert candidates_by_id["spring-gateway-app"]["public_port"] == 18081
+    assert "any_http_rules:public_http_exploit_probe" in candidates_by_id["log4shell-app"]["required_markers"]
+    assert "any_http_indicators:combined:spring" in candidates_by_id["spring-gateway-app"]["required_markers"]
+
+
+def test_high_interaction_assets_declare_real_runtime_and_gateway_ports() -> None:
+    assets = _catalog_by_id()
+    expected_ports = {
+        "conpot-plc": {18084, 1502, 1102},
+        "dionaea-capture": {18085, 1445, 11433, 12122},
+        "honeytrap-generic": {19999},
+        "spring-gateway-app": {18081},
+    }
+
+    for asset_id, public_ports in expected_ports.items():
+        asset = assets[asset_id]
+        runtime = asset.default_settings["runtime"]
+        mappings = runtime["port_mappings"]
+
+        assert asset.interaction_level == "high"
+        assert asset.telemetry_source == "high_interaction"
+        assert runtime["backend"] in {"docker", "compose"}
+        assert {item["requested_host_port"] for item in mappings} == public_ports
+
+    assert assets["conpot-plc"].dependencies == ["ics-plc"]
+    assert assets["dionaea-capture"].dependencies == ["malware-sink"]
+    assert assets["honeytrap-generic"].dependencies == ["malware-sink"]
+    assert assets["spring-gateway-app"].dependencies == ["web-admin-console"]

@@ -5,36 +5,14 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from pathlib import Path
 from typing import Iterable, Iterator
 
-from libs.common.json_utils import read_json_object
-from scripts.forwarders.common import follow_file, forward_events, post_json_event
+from scripts.forwarders.common import follow_file, forward_events, iter_json_objects
+from scripts.forwarders.common import load_asset_gateway_routes, post_json_event
+from scripts.forwarders.common import payload_event
 from scripts.forwarders.common import refresh_log_handle as _refresh_log_handle
-
-
-def iter_json_events(lines: Iterable[str]) -> Iterator[dict[str, object]]:
-    """Yield valid OpenCanary JSON objects from newline-delimited log lines."""
-    for line_number, line in enumerate(lines, start=1):
-        stripped = line.strip()
-        if not stripped:
-            continue
-        try:
-            event = json.loads(stripped)
-        except json.JSONDecodeError as exc:
-            print(
-                f"Skipping invalid JSON on line {line_number}: {exc}",
-                file=sys.stderr,
-            )
-            continue
-        if not isinstance(event, dict):
-            print(
-                f"Skipping non-object JSON on line {line_number}",
-                file=sys.stderr,
-            )
-            continue
-        yield event
+from scripts.forwarders.common import safe_int
 
 
 def build_adapter_payload(
@@ -60,17 +38,6 @@ def normalize_event(event: dict[str, object]) -> dict[str, object] | None:
     return normalized
 
 
-def load_asset_gateway_routes(route_file: Path | None) -> list[dict[str, object]]:
-    """Load routes used to attribute proxied OpenCanary events to attackers."""
-    if route_file is None:
-        return []
-    payload = read_json_object(route_file, {"routes": []})
-    routes = payload.get("routes", []) if isinstance(payload, dict) else []
-    if not isinstance(routes, list):
-        return []
-    return [route for route in routes if isinstance(route, dict)]
-
-
 def attribute_asset_gateway_source(
     event: dict[str, object],
     routes: list[dict[str, object]],
@@ -85,7 +52,7 @@ def attribute_asset_gateway_source(
         route
         for route in routes
         if route.get("backend_ip") == dst_host
-        and _safe_int(route.get("backend_port")) == dst_port
+        and safe_int(route.get("backend_port")) == dst_port
     ]
     if len(matches) != 1:
         return event
@@ -124,7 +91,7 @@ def forward_lines(
     asset_routes = load_asset_gateway_routes(asset_routes_file)
 
     def _payloads() -> Iterator[dict[str, object]]:
-        for event in iter_json_events(lines):
+        for event in iter_json_objects(lines, label="OpenCanary JSON"):
             normalized = normalize_event(event)
             if normalized is None:
                 print("Ignored OpenCanary lifecycle event without src_host", flush=True)
@@ -138,20 +105,12 @@ def forward_lines(
         timeout_seconds=timeout_seconds,
         post_event=post_event,
         success_message=lambda payload: (
-            f"Forwarded OpenCanary {_event_service(_payload_event(payload))}"
+            f"Forwarded OpenCanary {_event_service(payload_event(payload))}"
         ),
         rejected_label="event",
         endpoint_label="Adapter",
         unreachable_target="adapter",
     )
-
-
-def _payload_event(payload: dict[str, object]) -> dict[str, object]:
-    event = payload.get("event")
-    if isinstance(event, dict):
-        return event
-    return {}
-
 
 def follow_log_file(
     log_file: Path,
@@ -187,13 +146,6 @@ def _event_service(event: dict[str, object]) -> str:
                 return value.lower()
     port = event.get("dst_port")
     return str(port) if port is not None else "event"
-
-
-def _safe_int(value: object) -> int | None:
-    try:
-        return int(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return None
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:

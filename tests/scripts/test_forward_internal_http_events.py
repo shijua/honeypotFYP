@@ -44,4 +44,10 @@ def test_forward_internal_http_events_posts_jsonl_payload(
 
 
 def test_forward_internal_http_events_skips_invalid_lines() -> None:
-    assert list(forwarder.iter_json_events(["not-json\n", "[]\n", "\n"])) == []
+    forwarded = forwarder.forward_lines(
+        ["not-json\n", "[]\n", "\n"],
+        observer_url="http://entrypoint-observer:8010/v1/entrypoint/events",
+        timeout_seconds=1.0,
+    )
+
+    assert forwarded == 0

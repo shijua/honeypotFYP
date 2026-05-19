@@ -654,6 +654,7 @@ class CowrieObservation(VersionedModel):
     password_seen: bool = False
     command: Optional[str] = None
     message: Optional[str] = None
+    asset_id: Optional[str] = None
     tags: List[str] = Field(default_factory=list)
     profiler_evidence_ids: List[str] = Field(default_factory=list)
 
@@ -704,12 +705,17 @@ class OpenCanaryLogEvent(VersionedModel):
 
 
 class OpenCanaryObservation(VersionedModel):
-    """Persisted sanitized observation from one OpenCanary log event."""
+    """Persisted sanitized observation from one OpenCanary log event.
+
+    `source` is fixed so dashboard/event-count code can identify OpenCanary
+    without guessing from legacy fields such as `logtype`.
+    """
 
     observation_id: str
     ts: datetime
     attacker_key: str
     binding_id: str
+    source: Literal["opencanary"] = "opencanary"
     service: str
     src_host: str
     src_port: Optional[int] = None
@@ -735,6 +741,81 @@ class OpenCanaryIngestResponse(VersionedModel):
     """Result after OpenCanary telemetry has updated binding/profile state."""
 
     observation: OpenCanaryObservation
+    binding: BindingRecord
+    profile: ProfileSnapshot
+
+
+# ---- High-interaction honeypot telemetry contracts ----
+class HighInteractionLogEvent(VersionedModel):
+    """Normalized Conpot/Dionaea/Honeytrap event accepted by the adapter.
+
+    High-interaction backends do not share one native log schema. Forwarders
+    normalize each raw line into this compact shape so the adapter can still
+    map source, service, event type, and protocol details into ATT&CK evidence.
+
+    Example:
+        {
+            "source": "conpot",
+            "asset_id": "conpot-plc",
+            "attacker_key": "198.51.100.10",
+            "service": "modbus",
+            "event_type": "modbus.read",
+            "logdata": {"function": "Read Holding Registers"}
+        }
+    """
+
+    source: Literal["conpot", "dionaea", "honeytrap"] = Field(min_length=1)
+    attacker_key: str = Field(min_length=1)
+    service: str = Field(default="unknown", min_length=1)
+    event_type: str = Field(default="interaction", min_length=1)
+    ts: datetime = Field(default_factory=utcnow)
+    asset_id: Optional[str] = None
+    src_host: Optional[str] = None
+    src_port: Optional[int] = None
+    dst_host: Optional[str] = None
+    dst_port: Optional[int] = None
+    logdata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class HighInteractionObservation(VersionedModel):
+    """Persisted sanitized observation from a high-interaction backend.
+
+    Example:
+        {"source": "dionaea", "service": "smb", "event_type": "download.offer", "asset_id": "dionaea-capture"}
+    """
+
+    observation_id: str
+    ts: datetime
+    attacker_key: str
+    binding_id: str
+    source: str
+    service: str
+    event_type: str
+    asset_id: Optional[str] = None
+    src_host: Optional[str] = None
+    src_port: Optional[int] = None
+    dst_host: Optional[str] = None
+    dst_port: Optional[int] = None
+    logdata: Dict[str, Any] = Field(default_factory=dict)
+    tags: List[str] = Field(default_factory=list)
+    profiler_evidence_ids: List[str] = Field(default_factory=list)
+
+
+class HighInteractionIngestRequest(VersionedModel):
+    """Request to ingest one normalized high-interaction event.
+
+    Example:
+        {"event": {...HighInteractionLogEvent...}, "protocol": "tcp"}
+    """
+
+    event: HighInteractionLogEvent
+    protocol: str = Field(default="tcp", min_length=1)
+
+
+class HighInteractionIngestResponse(VersionedModel):
+    """Result after high-interaction telemetry updated binding/profile state."""
+
+    observation: HighInteractionObservation
     binding: BindingRecord
     profile: ProfileSnapshot
 

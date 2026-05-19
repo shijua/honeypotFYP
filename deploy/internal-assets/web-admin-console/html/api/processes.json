@@ -1,0 +1,10 @@
+{
+  "generated_at": "2026-04-27T22:15:00Z",
+  "hostname": "intranet-admin-02",
+  "processes": [
+    {"pid": 1127, "user": "root", "name": "nginx: master process"},
+    {"pid": 1148, "user": "www-data", "name": "nginx: worker process"},
+    {"pid": 1881, "user": "svc-admin-console", "name": "admin-console scheduler"},
+    {"pid": 1904, "user": "svc-admin-console", "name": "ticket-sync --queue OPS-ADMIN"}
+  ]
+}

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 
+import services.orchestrator.runtime_routes as runtime_routes_module
 import services.orchestrator.template_runtime as template_runtime_module
 import pytest
 
@@ -23,10 +24,10 @@ from services.orchestrator.domain import OrchestratorService
 from services.orchestrator.template_runtime import (
     ComposeTemplateRuntime,
     DockerTemplateRuntime,
-    _resolve_host_port,
     MockTemplateRuntime,
     HybridTemplateRuntime,
 )
+from services.orchestrator.runtime_routes import _resolve_host_port
 
 
 pytestmark = pytest.mark.unit
@@ -241,15 +242,15 @@ def test_recycle_stops_runtime_records_for_binding() -> None:
 def test_resolve_host_port_falls_back_when_requested_port_is_busy() -> None:
     busy_port = 18080
 
-    original_find = template_runtime_module._find_free_port
-    original_port_is_free = template_runtime_module._port_is_free
-    template_runtime_module._find_free_port = lambda: 28080
-    template_runtime_module._port_is_free = lambda port: False
+    original_find = runtime_routes_module._find_free_port
+    original_port_is_free = runtime_routes_module._port_is_free
+    runtime_routes_module._find_free_port = lambda: 28080
+    runtime_routes_module._port_is_free = lambda port: False
     try:
         resolved = _resolve_host_port(busy_port)
     finally:
-        template_runtime_module._find_free_port = original_find
-        template_runtime_module._port_is_free = original_port_is_free
+        runtime_routes_module._find_free_port = original_find
+        runtime_routes_module._port_is_free = original_port_is_free
 
     assert resolved == 28080
 

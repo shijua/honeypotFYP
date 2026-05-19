@@ -46,23 +46,37 @@
       "log_profile_events": true,
       "selection_profile": {
         "tactic_difficulties": {
-          "Discovery": 1
+          "Discovery": 1,
+          "Reconnaissance": 2
         },
         "reveal_outputs": [
           "service directory",
           "selected internal hostnames",
-          "credential-gated links"
+          "credential-gated links",
+          "host inventory",
+          "network map references",
+          "external network range references"
         ],
         "selection_notes": "Best first internal asset after public-surface discovery or leaked portal references.",
         "asset_group": "portal",
         "covered_techniques": [
           "T1046",
-          "T1083"
+          "T1083",
+          "T1018",
+          "T1049",
+          "T1592",
+          "T1595",
+          "T1590"
         ],
         "optional_dependency_signals": {
           "any_techniques": [
             "T1046",
-            "T1083"
+            "T1083",
+            "T1018",
+            "T1049",
+            "T1592",
+            "T1595",
+            "T1590"
           ],
           "any_http_paths": [
             "/robots.txt",
@@ -70,10 +84,17 @@
           ]
         },
         "telemetry_value": 0.6
+      },
+      "telemetry_validation": {
+        "kind": "asset_runtime",
+        "event_file": "internal_http_events.jsonl",
+        "match": "asset_id",
+        "expected_trigger": "HTTP request through the asset-gateway fixed port"
       }
     },
     "covers_tactics": [
-      "Discovery"
+      "Discovery",
+      "Reconnaissance"
     ],
     "dependencies": []
   },
@@ -147,14 +168,16 @@
         "reveal_outputs": [
           "finance exports",
           "SQL backup references",
-          "archive filenames"
+          "archive filenames",
+          "staged collection folders"
         ],
         "selection_notes": "Use after backup, finance, password, or data-collection breadcrumbs.",
         "asset_group": "data-share",
         "covered_techniques": [
           "T1005",
           "T1552.001",
-          "T1213"
+          "T1213",
+          "T1074"
         ],
         "optional_dependency_signals": {
           "any_http_paths": [
@@ -168,10 +191,17 @@
           ],
           "any_techniques": [
             "T1005",
-            "T1552.001"
+            "T1552.001",
+            "T1074"
           ]
         },
         "telemetry_value": 0.85
+      },
+      "telemetry_validation": {
+        "kind": "asset_runtime",
+        "event_file": "internal_http_events.jsonl",
+        "match": "asset_id",
+        "expected_trigger": "HTTP request through the asset-gateway fixed port"
       }
     },
     "covers_tactics": [
@@ -286,7 +316,14 @@
         "infra-deploy",
         "customer-portal",
         "ops-runbooks"
-      ]
+      ],
+      "telemetry_validation": {
+        "kind": "opencanary",
+        "event_file": "opencanary_observations.json",
+        "match": "service",
+        "service": "git",
+        "expected_trigger": "git protocol probe through the asset-gateway fixed port"
+      }
     },
     "covers_tactics": [
       "Credential Access",
@@ -396,6 +433,13 @@
           ]
         },
         "telemetry_value": 0.85
+      },
+      "telemetry_validation": {
+        "kind": "opencanary",
+        "event_file": "opencanary_observations.json",
+        "match": "service",
+        "service": "mysql",
+        "expected_trigger": "mysql protocol probe through the asset-gateway fixed port"
       }
     },
     "covers_tactics": [
@@ -427,10 +471,25 @@
       "runtime": {
         "backend": "docker",
         "image": "ghcr.io/telekom-security/cowrie:24.04.1",
+        "network": "{project_name}_net_internal",
+        "memory_limit": "256m",
+        "pids_limit": 256,
+        "cap_drop": [
+          "ALL"
+        ],
+        "cap_add": [
+          "NET_BIND_SERVICE"
+        ],
+        "security_opt": [
+          "no-new-privileges"
+        ],
         "entrypoint": "/bin/sh",
         "command": [
           "-lc",
           "mkdir -p /tmp/cowrie /tmp/cowrie/data etc && exec /usr/bin/twistd --nodaemon -y cowrie.tac --pidfile /tmp/cowrie/cowrie.pid cowrie"
+        ],
+        "volumes": [
+          "{host_project_root}/data/runtime/high_interaction/{binding_id_short}/admin-jumpbox:/cowrie/cowrie-git/var"
         ],
         "port_mappings": [
           {
@@ -444,7 +503,24 @@
           "host": "127.0.0.1",
           "port_setting": "host_port"
         },
-        "source": "tpotce/docker/cowrie"
+        "source": "tpotce/docker/cowrie",
+        "sidecar_forwarders": [
+          {
+            "name": "cowrie-runtime-forwarder",
+            "image": "python:3.10-slim",
+            "network": "{project_name}_net_control",
+            "working_dir": "/app",
+            "volumes": [
+              "{host_project_root}:/app",
+              "{host_project_root}/data/runtime/high_interaction/{binding_id_short}/admin-jumpbox:/cowrie-var"
+            ],
+            "command": [
+              "bash",
+              "-lc",
+              "python scripts/forwarders/cowrie_json.py --log-file /cowrie-var/log/cowrie/cowrie.json --adapter-url http://cowrie-adapter:8011/v1/cowrie/events --asset-id admin-jumpbox --poll-seconds 0.5"
+            ]
+          }
+        ]
       },
       "hostname": "admin-jumpbox-01",
       "image_references": [
@@ -452,13 +528,23 @@
       ],
       "selection_profile": {
         "tactic_difficulties": {
+          "Collection": 4,
+          "Credential Access": 4,
+          "Defense Evasion": 4,
+          "Discovery": 3,
+          "Execution": 3,
           "Lateral Movement": 4,
           "Privilege Escalation": 5
         },
         "reveal_outputs": [
           "interactive shell telemetry",
           "command breadcrumbs",
-          "operator filesystem hints"
+          "operator filesystem hints",
+          "user and host discovery commands",
+          "process and network enumeration",
+          "scheduled task and service command telemetry",
+          "credential-dump and cleanup command telemetry",
+          "staged files and tool-transfer command telemetry"
         ],
         "selection_notes": "Use only after SSH behaviour, admin host discovery, or strong credential reuse.",
         "asset_group": "admin-access",
@@ -466,24 +552,74 @@
           "T1021",
           "T1021.004",
           "T1059",
-          "T1548.003"
+          "T1548",
+          "T1548.003",
+          "T1033",
+          "T1082",
+          "T1057",
+          "T1016",
+          "T1049",
+          "T1007",
+          "T1069",
+          "T1518",
+          "T1053",
+          "T1068",
+          "T1003",
+          "T1222",
+          "T1070",
+          "T1569",
+          "T1570",
+          "T1074"
         ],
         "optional_dependency_signals": {
           "any_techniques": [
             "T1021",
             "T1021.004",
             "T1059",
-            "T1548.003"
+            "T1548",
+            "T1548.003",
+            "T1033",
+            "T1082",
+            "T1057",
+            "T1016",
+            "T1049",
+            "T1007",
+            "T1069",
+            "T1518",
+            "T1053",
+            "T1068",
+            "T1003",
+            "T1222",
+            "T1070",
+            "T1569",
+            "T1570",
+            "T1074"
           ],
           "any_tactics": [
+            "Collection",
+            "Credential Access",
+            "Defense Evasion",
+            "Discovery",
+            "Execution",
             "Lateral Movement",
             "Privilege Escalation"
           ]
         },
         "telemetry_value": 0.9
+      },
+      "telemetry_validation": {
+        "kind": "cowrie",
+        "event_file": "cowrie_observations.json",
+        "match": "asset_id",
+        "expected_trigger": "SSH login or command through the asset-gateway Cowrie runtime"
       }
     },
     "covers_tactics": [
+      "Collection",
+      "Credential Access",
+      "Defense Evasion",
+      "Discovery",
+      "Execution",
       "Lateral Movement",
       "Privilege Escalation"
     ],
@@ -585,7 +721,14 @@
         "service:customer-portal:upstream",
         "deploy:latest:customer-portal",
         "token:reporting:readonly"
-      ]
+      ],
+      "telemetry_validation": {
+        "kind": "opencanary",
+        "event_file": "opencanary_observations.json",
+        "match": "service",
+        "service": "redis",
+        "expected_trigger": "redis protocol probe through the asset-gateway fixed port"
+      }
     },
     "covers_tactics": [
       "Credential Access",
@@ -653,13 +796,23 @@
       },
       "selection_profile": {
         "tactic_difficulties": {
+          "Collection": 3,
           "Credential Access": 3,
-          "Discovery": 2
+          "Discovery": 2,
+          "Initial Access": 4
         },
         "reveal_outputs": [
           "admin login surface",
           "ticket IDs",
-          "admin node names"
+          "admin node names",
+          "software inventory",
+          "privilege group hints",
+          "network configuration summaries",
+          "audit-log exports",
+          "authentication policy summaries",
+          "configuration repository references",
+          "container resource summaries",
+          "account lifecycle and role-change records"
         ],
         "selection_notes": "Use after /admin, admin source-map references, API probing, or scanner user agents.",
         "asset_group": "admin-web",
@@ -667,7 +820,19 @@
           "T1110",
           "T1190",
           "T1078",
-          "T1046"
+          "T1046",
+          "T1033",
+          "T1082",
+          "T1057",
+          "T1518",
+          "T1016",
+          "T1069",
+          "T1654",
+          "T1556",
+          "T1602",
+          "T1613",
+          "T1098",
+          "T1136"
         ],
         "optional_dependency_signals": {
           "any_http_paths": [
@@ -682,15 +847,58 @@
           "any_techniques": [
             "T1110",
             "T1190",
-            "T1046"
+            "T1046",
+            "T1033",
+            "T1082",
+            "T1057",
+            "T1518",
+            "T1016",
+            "T1069",
+            "T1654",
+            "T1556",
+            "T1602",
+            "T1613",
+            "T1098",
+            "T1136"
           ]
         },
+        "upgrade_candidates": [
+          {
+            "asset_id": "log4shell-app",
+            "public_port": 18081,
+            "required_markers": [
+              "any_http_rules:public_http_exploit_probe",
+              "any_http_indicators:combined:${jndi:",
+              "any_http_indicators:combined:log4j"
+            ],
+            "reason": "Java admin-console exploit evidence can replace the static console backend with the vulnerable Log4Shell lab on the same observed port."
+          },
+          {
+            "asset_id": "spring-gateway-app",
+            "public_port": 18081,
+            "required_markers": [
+              "any_http_rules:public_http_exploit_probe",
+              "any_http_indicators:combined:spring",
+              "any_http_indicators:combined:actuator",
+              "any_http_indicators:combined:spel"
+            ],
+            "reason": "Spring gateway or actuator exploit evidence can replace the static admin console with a vulnerable Spring Cloud Gateway lab on the same port."
+          }
+        ],
         "telemetry_value": 0.8
+      },
+      "telemetry_validation": {
+        "kind": "asset_runtime",
+        "event_file": "internal_http_events.jsonl",
+        "match": "asset_id",
+        "expected_trigger": "HTTP request through the asset-gateway fixed port"
       }
     },
     "covers_tactics": [
+      "Collection",
       "Credential Access",
-      "Discovery"
+      "Discovery",
+      "Initial Access"
     ],
     "dependencies": [
       "internal-portal"
@@ -793,6 +1001,13 @@
           ]
         },
         "telemetry_value": 0.75
+      },
+      "telemetry_validation": {
+        "kind": "opencanary",
+        "event_file": "opencanary_observations.json",
+        "match": "service",
+        "service": "ftp",
+        "expected_trigger": "ftp protocol probe through the asset-gateway fixed port"
       }
     },
     "covers_tactics": [
@@ -890,6 +1105,13 @@
           ]
         },
         "telemetry_value": 0.7
+      },
+      "telemetry_validation": {
+        "kind": "opencanary",
+        "event_file": "opencanary_observations.json",
+        "match": "service",
+        "service": "ssh",
+        "expected_trigger": "ssh protocol probe through the asset-gateway fixed port"
       }
     },
     "covers_tactics": [
@@ -987,6 +1209,13 @@
           ]
         },
         "telemetry_value": 0.7
+      },
+      "telemetry_validation": {
+        "kind": "opencanary",
+        "event_file": "opencanary_observations.json",
+        "match": "service",
+        "service": "telnet",
+        "expected_trigger": "telnet protocol probe through the asset-gateway fixed port"
       }
     },
     "covers_tactics": [
@@ -1065,7 +1294,8 @@
         "reveal_outputs": [
           "mail domains",
           "mailbox names",
-          "SMTP command telemetry"
+          "SMTP command telemetry",
+          "archive mailbox hints"
         ],
         "selection_notes": "Use after mail hostnames, SMTP probing, leaked accounts, or address enumeration.",
         "asset_group": "mail",
@@ -1073,7 +1303,8 @@
           "T1046",
           "T1110",
           "T1087.001",
-          "T1005"
+          "T1005",
+          "T1114"
         ],
         "optional_dependency_signals": {
           "any_http_paths": [
@@ -1086,10 +1317,18 @@
           ],
           "any_techniques": [
             "T1087.001",
-            "T1110"
+            "T1110",
+            "T1114"
           ]
         },
         "telemetry_value": 0.75
+      },
+      "telemetry_validation": {
+        "kind": "mailoney",
+        "event_file": "opencanary_observations.json",
+        "match": "service",
+        "service": "smtp",
+        "expected_trigger": "SMTP probe through the asset-gateway fixed port"
       }
     },
     "covers_tactics": [
@@ -1160,21 +1399,33 @@
       },
       "selection_profile": {
         "tactic_difficulties": {
+          "Credential Access": 4,
           "Discovery": 3,
+          "Reconnaissance": 3,
           "Collection": 3,
           "Lateral Movement": 4
         },
         "reveal_outputs": [
           "PLC status paths",
           "unit maps",
-          "plant segment references"
+          "plant segment references",
+          "network connection map",
+          "span-port capture summary",
+          "plant network range notes",
+          "camera monitoring index"
         ],
         "selection_notes": "Use after internal API status access, plant references, or ICS-shaped probing.",
         "asset_group": "operations",
         "covered_techniques": [
           "T1046",
           "T1005",
-          "T1021"
+          "T1021",
+          "T1018",
+          "T1049",
+          "T1592",
+          "T1590",
+          "T1040",
+          "T1125"
         ],
         "optional_dependency_signals": {
           "any_http_paths": [
@@ -1185,14 +1436,41 @@
           ],
           "any_techniques": [
             "T1046",
-            "T1005"
+            "T1005",
+            "T1018",
+            "T1049",
+            "T1592",
+            "T1590",
+            "T1040",
+            "T1125"
           ]
         },
+        "upgrade_candidates": [
+          {
+            "asset_id": "conpot-plc",
+            "public_port": 18084,
+            "required_markers": [
+              "any_internal_http_paths:/config/plc-backup-2026-04.cfg",
+              "any_internal_http_indicators:path:.cfg",
+              "any_techniques:T1046",
+              "any_techniques:T1021"
+            ],
+            "reason": "PLC/HMI exploration can keep the same HMI port while adding real Conpot protocol backends for Modbus and S7 probes."
+          }
+        ],
         "telemetry_value": 0.8
+      },
+      "telemetry_validation": {
+        "kind": "asset_runtime",
+        "event_file": "internal_http_events.jsonl",
+        "match": "asset_id",
+        "expected_trigger": "HTTP request through the asset-gateway fixed port"
       }
     },
     "covers_tactics": [
       "Discovery",
+      "Credential Access",
+      "Reconnaissance",
       "Collection",
       "Lateral Movement"
     ],
@@ -1217,7 +1495,7 @@
       "vulhub:log4j/CVE-2021-44228",
       "proposalv2:adaptive-vulnerable-asset"
     ],
-    "telemetry_source": "falco",
+    "telemetry_source": "high_interaction",
     "default_settings": {
       "runtime": {
         "backend": "compose",
@@ -1226,6 +1504,14 @@
         "runner": "docker_image",
         "compose_image": "docker/compose:1.29.2",
         "internal_network": "{project_name}_net_internal",
+        "gateway_target_service": "app",
+        "port_mappings": [
+          {
+            "host": "127.0.0.1",
+            "requested_host_port": 18081,
+            "container_port": 8080
+          }
+        ],
         "source": "vulhub/log4j/CVE-2021-44228"
       },
       "vulnerability_family": "log4shell",
@@ -1282,6 +1568,13 @@
           ]
         },
         "telemetry_value": 1.0
+      },
+      "telemetry_validation": {
+        "kind": "high_interaction",
+        "event_file": "high_interaction_observations.json",
+        "match": "asset_id",
+        "source": "vulhub",
+        "expected_trigger": "TCP/HTTP probe through upgraded high-interaction asset-gateway route"
       }
     },
     "covers_tactics": [
@@ -1290,7 +1583,7 @@
       "Discovery"
     ],
     "dependencies": [
-      "internal-portal"
+      "web-admin-console"
     ]
   },
   {
@@ -1358,6 +1651,9 @@
       },
       "selection_profile": {
         "tactic_difficulties": {
+          "Command and Control": 4,
+          "Defense Evasion": 3,
+          "Exfiltration": 4,
           "Initial Access": 3,
           "Credential Access": 3,
           "Discovery": 2
@@ -1365,14 +1661,26 @@
         "reveal_outputs": [
           "VPN login surface",
           "profile paths",
-          "remote-access configuration references"
+          "remote-access configuration references",
+          "network policy and appliance build hints",
+          "tunnel route and proxy hints",
+          "alternate authentication material references",
+          "egress route notes"
         ],
         "selection_notes": "Use after admin references, internal portal access, VPN paths, or credential reuse.",
         "asset_group": "remote-access",
         "covered_techniques": [
           "T1078",
           "T1021",
-          "T1552.001"
+          "T1552",
+          "T1552.001",
+          "T1033",
+          "T1082",
+          "T1016",
+          "T1550",
+          "T1572",
+          "T1011",
+          "T1133"
         ],
         "optional_dependency_signals": {
           "any_http_paths": [
@@ -1387,16 +1695,33 @@
           ],
           "any_techniques": [
             "T1078",
-            "T1552.001"
+            "T1552",
+            "T1552.001",
+            "T1033",
+            "T1082",
+            "T1016",
+            "T1550",
+            "T1572",
+            "T1011",
+            "T1133"
           ]
         },
         "telemetry_value": 0.8
+      },
+      "telemetry_validation": {
+        "kind": "asset_runtime",
+        "event_file": "internal_http_events.jsonl",
+        "match": "asset_id",
+        "expected_trigger": "HTTP request through the asset-gateway fixed port"
       }
     },
     "covers_tactics": [
       "Initial Access",
       "Credential Access",
-      "Discovery"
+      "Discovery",
+      "Command and Control",
+      "Defense Evasion",
+      "Exfiltration"
     ],
     "dependencies": [
       "internal-portal"
@@ -1463,13 +1788,20 @@
       "selection_profile": {
         "tactic_difficulties": {
           "Command and Control": 5,
+          "Defense Evasion": 3,
           "Execution": 4,
-          "Collection": 4
+          "Collection": 4,
+          "Exfiltration": 4,
+          "Lateral Movement": 4,
+          "Resource Development": 3
         },
         "reveal_outputs": [
           "download paths",
           "upload endpoints",
-          "transfer-attempt telemetry"
+          "transfer-attempt telemetry",
+          "resource staging manifest",
+          "archive and tool-transfer notes",
+          "encoded transfer and malicious-file execution hints"
         ],
         "selection_notes": "Use after downloader, payload, traversal, or command-and-control shaped behaviour.",
         "asset_group": "payload-transfer",
@@ -1477,7 +1809,15 @@
           "T1105",
           "T1059",
           "T1567",
-          "T1005"
+          "T1005",
+          "T1608",
+          "T1587",
+          "T1570",
+          "T1074",
+          "T1560",
+          "T1132",
+          "T1204.002",
+          "T1041"
         ],
         "optional_dependency_signals": {
           "any_http_rules": [
@@ -1491,19 +1831,630 @@
           "any_techniques": [
             "T1105",
             "T1059",
-            "T1567"
+            "T1567",
+            "T1608",
+            "T1587",
+            "T1570",
+            "T1074",
+            "T1560",
+            "T1132",
+            "T1204.002",
+            "T1041"
           ]
         },
+        "upgrade_candidates": [
+          {
+            "asset_id": "dionaea-capture",
+            "public_port": 18085,
+            "required_markers": [
+              "any_internal_http_paths:/downloads/agent-update.bin",
+              "any_internal_http_indicators:path:.bin",
+              "any_techniques:T1105",
+              "any_techniques:T1204.002"
+            ],
+            "reason": "Downloader and payload-transfer evidence can replace the static malware sink with Dionaea capture services on the same download port."
+          },
+          {
+            "asset_id": "honeytrap-generic",
+            "public_port": 19999,
+            "required_markers": [
+              "any_techniques:T1046",
+              "any_techniques:T1105",
+              "any_internal_http_indicators:path:.bin"
+            ],
+            "reason": "Unknown binary transfer or generic TCP probing can reveal a generic Honeytrap listener without changing the existing malware-sink story."
+          }
+        ],
         "telemetry_value": 0.9
+      },
+      "telemetry_validation": {
+        "kind": "asset_runtime",
+        "event_file": "internal_http_events.jsonl",
+        "match": "asset_id",
+        "expected_trigger": "HTTP request through the asset-gateway fixed port"
       }
     },
     "covers_tactics": [
       "Command and Control",
+      "Defense Evasion",
       "Execution",
-      "Collection"
+      "Collection",
+      "Exfiltration",
+      "Lateral Movement",
+      "Resource Development"
     ],
     "dependencies": [
       "internal-portal"
+    ]
+  },
+  {
+    "asset_id": "conpot-plc",
+    "asset_name": "Conpot PLC Backend",
+    "exposure_type": "internal",
+    "interaction_level": "high",
+    "description": "A Conpot-backed ICS backend used as the same-port upgrade for the plant HMI and PLC probes.",
+    "template_family": "ics-service",
+    "protocols": [
+      "http",
+      "modbus",
+      "s7"
+    ],
+    "ports": [
+      80,
+      502,
+      102
+    ],
+    "source_refs": [
+      "honeynet:conpot"
+    ],
+    "telemetry_source": "high_interaction",
+    "default_settings": {
+      "runtime": {
+        "backend": "docker",
+        "image": "honeynet/conpot:latest",
+        "network": "{project_name}_net_internal",
+        "memory_limit": "512m",
+        "pids_limit": 512,
+        "cap_drop": [
+          "ALL"
+        ],
+        "cap_add": [
+          "NET_BIND_SERVICE"
+        ],
+        "security_opt": [
+          "no-new-privileges"
+        ],
+        "volumes": [
+          "{host_project_root}/data/runtime/high_interaction/{binding_id_short}/conpot-plc:/var/log/conpot"
+        ],
+        "port_mappings": [
+          {
+            "host": "127.0.0.1",
+            "requested_host_port": 18084,
+            "container_port": 80
+          },
+          {
+            "host": "127.0.0.1",
+            "requested_host_port": 1502,
+            "container_port": 502
+          },
+          {
+            "host": "127.0.0.1",
+            "requested_host_port": 1102,
+            "container_port": 102
+          }
+        ],
+        "healthcheck": {
+          "type": "tcp",
+          "host": "127.0.0.1",
+          "port_setting": "host_port"
+        },
+        "source": "honeynet/conpot",
+        "sidecar_forwarders": [
+          {
+            "name": "conpot-forwarder",
+            "image": "python:3.10-slim",
+            "network": "{project_name}_net_control",
+            "working_dir": "/app",
+            "volumes": [
+              "{host_project_root}:/app",
+              "{host_project_root}/data/runtime/high_interaction/{binding_id_short}/conpot-plc:/runtime-logs"
+            ],
+            "command": [
+              "bash",
+              "-lc",
+              "python scripts/forwarders/high_interaction_logs.py --log-file /runtime-logs/conpot.json --adapter-url http://high-interaction-adapter:8014/v1/high-interaction/events --source conpot --asset-id conpot-plc --service modbus --event-type backend.log --asset-routes-file data/runtime/asset_gateway_routes.json --poll-seconds 0.5"
+            ]
+          }
+        ]
+      },
+      "image_references": [
+        "honeynet/conpot:latest"
+      ],
+      "real_backend": true,
+      "upgrade_source": "ics-plc",
+      "unlock_signals": {
+        "any_internal_http_paths": [
+          "/config/plc-backup-2026-04.cfg",
+          "/captures/plant-span-summary.txt"
+        ],
+        "any_internal_http_indicators": [
+          "path:.cfg",
+          "path:.txt"
+        ],
+        "any_techniques": [
+          "T1046",
+          "T1021",
+          "T1040"
+        ]
+      },
+      "selection_profile": {
+        "tactic_difficulties": {
+          "Collection": 4,
+          "Discovery": 3,
+          "Lateral Movement": 4,
+          "Reconnaissance": 3
+        },
+        "reveal_outputs": [
+          "Conpot HMI interaction",
+          "Modbus TCP register probes",
+          "S7 connection telemetry",
+          "ICS protocol source attribution"
+        ],
+        "selection_notes": "Same-port upgrade from static plant HMI after PLC config, span capture, or ICS protocol intent.",
+        "asset_group": "operations-high",
+        "upgrade_source": "ics-plc",
+        "covered_techniques": [
+          "T1046",
+          "T1021",
+          "T1005",
+          "T1040",
+          "T1018",
+          "T1049"
+        ],
+        "optional_dependency_signals": {
+          "any_internal_http_indicators": [
+            "path:.cfg",
+            "path:.txt"
+          ],
+          "any_techniques": [
+            "T1046",
+            "T1021",
+            "T1040"
+          ]
+        },
+        "telemetry_value": 1
+      },
+      "telemetry_validation": {
+        "kind": "high_interaction",
+        "event_file": "high_interaction_observations.json",
+        "match": "asset_id",
+        "source": "conpot",
+        "expected_trigger": "TCP/HTTP probe through upgraded high-interaction asset-gateway route"
+      }
+    },
+    "covers_tactics": [
+      "Collection",
+      "Discovery",
+      "Lateral Movement",
+      "Reconnaissance"
+    ],
+    "dependencies": [
+      "ics-plc"
+    ]
+  },
+  {
+    "asset_id": "dionaea-capture",
+    "asset_name": "Dionaea Capture Backend",
+    "exposure_type": "internal",
+    "interaction_level": "high",
+    "description": "A Dionaea-backed capture service used as the same-port upgrade for downloader, SMB, MSSQL, and FTP transfer behaviour.",
+    "template_family": "malware-capture-service",
+    "protocols": [
+      "http",
+      "smb",
+      "mssql",
+      "ftp"
+    ],
+    "ports": [
+      80,
+      445,
+      1433,
+      21
+    ],
+    "source_refs": [
+      "ghcr.io/telekom-security/dionaea"
+    ],
+    "telemetry_source": "high_interaction",
+    "default_settings": {
+      "runtime": {
+        "backend": "docker",
+        "image": "ghcr.io/telekom-security/dionaea:24.04.1",
+        "network": "{project_name}_net_internal",
+        "memory_limit": "768m",
+        "pids_limit": 512,
+        "cap_drop": [
+          "ALL"
+        ],
+        "cap_add": [
+          "NET_BIND_SERVICE"
+        ],
+        "security_opt": [
+          "no-new-privileges"
+        ],
+        "volumes": [
+          "{host_project_root}/data/runtime/high_interaction/{binding_id_short}/dionaea-capture:/opt/dionaea/var/log"
+        ],
+        "port_mappings": [
+          {
+            "host": "127.0.0.1",
+            "requested_host_port": 18085,
+            "container_port": 80
+          },
+          {
+            "host": "127.0.0.1",
+            "requested_host_port": 1445,
+            "container_port": 445
+          },
+          {
+            "host": "127.0.0.1",
+            "requested_host_port": 11433,
+            "container_port": 1433
+          },
+          {
+            "host": "127.0.0.1",
+            "requested_host_port": 12122,
+            "container_port": 21
+          }
+        ],
+        "healthcheck": {
+          "type": "tcp",
+          "host": "127.0.0.1",
+          "port_setting": "host_port"
+        },
+        "source": "telekom-security/dionaea",
+        "sidecar_forwarders": [
+          {
+            "name": "dionaea-forwarder",
+            "image": "python:3.10-slim",
+            "network": "{project_name}_net_control",
+            "working_dir": "/app",
+            "volumes": [
+              "{host_project_root}:/app",
+              "{host_project_root}/data/runtime/high_interaction/{binding_id_short}/dionaea-capture:/runtime-logs"
+            ],
+            "command": [
+              "bash",
+              "-lc",
+              "python scripts/forwarders/high_interaction_logs.py --log-file /runtime-logs/dionaea.json --adapter-url http://high-interaction-adapter:8014/v1/high-interaction/events --source dionaea --asset-id dionaea-capture --service smb --event-type backend.log --asset-routes-file data/runtime/asset_gateway_routes.json --poll-seconds 0.5"
+            ]
+          }
+        ]
+      },
+      "image_references": [
+        "ghcr.io/telekom-security/dionaea:24.04.1"
+      ],
+      "real_backend": true,
+      "upgrade_source": "malware-sink",
+      "unlock_signals": {
+        "any_internal_http_paths": [
+          "/downloads/agent-update.bin",
+          "/upload/README.txt"
+        ],
+        "any_internal_http_indicators": [
+          "path:.bin",
+          "path:/upload"
+        ],
+        "any_techniques": [
+          "T1105",
+          "T1204.002",
+          "T1041"
+        ]
+      },
+      "selection_profile": {
+        "tactic_difficulties": {
+          "Command and Control": 5,
+          "Collection": 4,
+          "Execution": 4,
+          "Exfiltration": 4,
+          "Initial Access": 4
+        },
+        "reveal_outputs": [
+          "HTTP downloader interaction",
+          "SMB probe telemetry",
+          "MSSQL probe telemetry",
+          "FTP transfer telemetry",
+          "payload metadata"
+        ],
+        "selection_notes": "Same-port upgrade from malware sink after downloader, upload, or payload-transfer intent.",
+        "asset_group": "payload-transfer-high",
+        "upgrade_source": "malware-sink",
+        "covered_techniques": [
+          "T1190",
+          "T1204.002",
+          "T1105",
+          "T1041",
+          "T1005",
+          "T1567"
+        ],
+        "optional_dependency_signals": {
+          "any_internal_http_indicators": [
+            "path:.bin",
+            "path:/upload"
+          ],
+          "any_techniques": [
+            "T1105",
+            "T1204.002",
+            "T1041"
+          ]
+        },
+        "telemetry_value": 1
+      },
+      "telemetry_validation": {
+        "kind": "high_interaction",
+        "event_file": "high_interaction_observations.json",
+        "match": "asset_id",
+        "source": "dionaea",
+        "expected_trigger": "TCP/HTTP probe through upgraded high-interaction asset-gateway route"
+      }
+    },
+    "covers_tactics": [
+      "Command and Control",
+      "Collection",
+      "Execution",
+      "Exfiltration",
+      "Initial Access"
+    ],
+    "dependencies": [
+      "malware-sink"
+    ]
+  },
+  {
+    "asset_id": "honeytrap-generic",
+    "asset_name": "Honeytrap Generic TCP Backend",
+    "exposure_type": "internal",
+    "interaction_level": "high",
+    "description": "A Honeytrap-backed generic TCP capture service for unknown probing and payload-transfer behaviour.",
+    "template_family": "generic-capture-service",
+    "protocols": [
+      "tcp"
+    ],
+    "ports": [
+      80
+    ],
+    "source_refs": [
+      "dtagdevsec/honeytrap"
+    ],
+    "telemetry_source": "high_interaction",
+    "default_settings": {
+      "runtime": {
+        "backend": "docker",
+        "image": "dtagdevsec/honeytrap:24.04.1",
+        "network": "{project_name}_net_internal",
+        "memory_limit": "512m",
+        "pids_limit": 512,
+        "cap_drop": [
+          "ALL"
+        ],
+        "cap_add": [
+          "NET_BIND_SERVICE"
+        ],
+        "security_opt": [
+          "no-new-privileges"
+        ],
+        "volumes": [
+          "{host_project_root}/data/runtime/high_interaction/{binding_id_short}/honeytrap-generic:/opt/honeytrap/var/log"
+        ],
+        "port_mappings": [
+          {
+            "host": "127.0.0.1",
+            "requested_host_port": 19999,
+            "container_port": 80
+          }
+        ],
+        "healthcheck": {
+          "type": "tcp",
+          "host": "127.0.0.1",
+          "port_setting": "host_port"
+        },
+        "source": "telekom-security/honeytrap",
+        "sidecar_forwarders": [
+          {
+            "name": "honeytrap-forwarder",
+            "image": "python:3.10-slim",
+            "network": "{project_name}_net_control",
+            "working_dir": "/app",
+            "volumes": [
+              "{host_project_root}:/app",
+              "{host_project_root}/data/runtime/high_interaction/{binding_id_short}/honeytrap-generic:/runtime-logs"
+            ],
+            "command": [
+              "bash",
+              "-lc",
+              "python scripts/forwarders/high_interaction_logs.py --log-file /runtime-logs/honeytrap.json --adapter-url http://high-interaction-adapter:8014/v1/high-interaction/events --source honeytrap --asset-id honeytrap-generic --service tcp --event-type backend.log --asset-routes-file data/runtime/asset_gateway_routes.json --poll-seconds 0.5"
+            ]
+          }
+        ]
+      },
+      "image_references": [
+        "dtagdevsec/honeytrap:24.04.1"
+      ],
+      "real_backend": true,
+      "upgrade_source": "malware-sink",
+      "unlock_signals": {
+        "any_techniques": [
+          "T1046",
+          "T1105",
+          "T1190"
+        ],
+        "any_internal_http_indicators": [
+          "path:.bin",
+          "path:/upload"
+        ]
+      },
+      "selection_profile": {
+        "tactic_difficulties": {
+          "Command and Control": 4,
+          "Discovery": 3,
+          "Initial Access": 4
+        },
+        "reveal_outputs": [
+          "generic TCP banner interaction",
+          "unknown payload capture",
+          "probe metadata"
+        ],
+        "selection_notes": "Reveal only after generic TCP probing or payload-transfer intent; use when a specific protocol backend is not justified.",
+        "asset_group": "generic-capture",
+        "upgrade_source": "malware-sink",
+        "covered_techniques": [
+          "T1046",
+          "T1190",
+          "T1105"
+        ],
+        "optional_dependency_signals": {
+          "any_techniques": [
+            "T1046",
+            "T1190",
+            "T1105"
+          ],
+          "any_internal_http_indicators": [
+            "path:.bin",
+            "path:/upload"
+          ]
+        },
+        "telemetry_value": 0.9
+      },
+      "telemetry_validation": {
+        "kind": "high_interaction",
+        "event_file": "high_interaction_observations.json",
+        "match": "asset_id",
+        "source": "honeytrap",
+        "expected_trigger": "TCP/HTTP probe through upgraded high-interaction asset-gateway route"
+      }
+    },
+    "covers_tactics": [
+      "Command and Control",
+      "Discovery",
+      "Initial Access"
+    ],
+    "dependencies": [
+      "malware-sink"
+    ]
+  },
+  {
+    "asset_id": "spring-gateway-app",
+    "asset_name": "Spring Gateway App",
+    "exposure_type": "internal",
+    "interaction_level": "high",
+    "description": "A Vulhub-backed Spring Cloud Gateway target used as a same-port upgrade for Spring exploit-shaped admin console traffic.",
+    "template_family": "vulnerable-webapp",
+    "protocols": [
+      "http"
+    ],
+    "ports": [
+      8080
+    ],
+    "source_refs": [
+      "vulhub:spring/CVE-2022-22947"
+    ],
+    "telemetry_source": "high_interaction",
+    "default_settings": {
+      "runtime": {
+        "backend": "compose",
+        "compose_file": "vendor/vulhub/spring/CVE-2022-22947/docker-compose.yml",
+        "project_name": "{project_name}-{binding_id_short}-{asset_id}",
+        "runner": "docker_image",
+        "compose_image": "docker/compose:1.29.2",
+        "internal_network": "{project_name}_net_internal",
+        "gateway_target_service": "app",
+        "port_mappings": [
+          {
+            "host": "127.0.0.1",
+            "requested_host_port": 18081,
+            "container_port": 8080
+          }
+        ],
+        "source": "vulhub/spring/CVE-2022-22947"
+      },
+      "vulnerability_family": "spring-cloud-gateway",
+      "real_vulnerability": true,
+      "isolation_required": true,
+      "telemetry_expectations": [
+        "asset_runtime",
+        "gateway_route",
+        "dashboard_health",
+        "internal_http"
+      ],
+      "image_references": [
+        "vulhub/spring/CVE-2022-22947"
+      ],
+      "unlock_signals": {
+        "any_http_rules": [
+          "public_http_exploit_probe"
+        ],
+        "any_http_indicators": [
+          "combined:spring",
+          "combined:actuator",
+          "combined:spel"
+        ],
+        "any_techniques": [
+          "T1190",
+          "T1203",
+          "T1059"
+        ]
+      },
+      "selection_profile": {
+        "tactic_difficulties": {
+          "Execution": 5,
+          "Initial Access": 4,
+          "Command and Control": 4
+        },
+        "reveal_outputs": [
+          "Spring gateway endpoint behaviour",
+          "exploit-shaped HTTP telemetry",
+          "command execution follow-up context"
+        ],
+        "selection_notes": "Use only after Spring, actuator, SpEL, or generic exploit evidence against the admin-console story.",
+        "asset_group": "vulnerable-web",
+        "upgrade_source": "web-admin-console",
+        "covered_techniques": [
+          "T1190",
+          "T1203",
+          "T1059",
+          "T1105"
+        ],
+        "optional_dependency_signals": {
+          "any_http_rules": [
+            "public_http_exploit_probe"
+          ],
+          "any_http_indicators": [
+            "combined:spring",
+            "combined:actuator",
+            "combined:spel"
+          ],
+          "any_techniques": [
+            "T1190",
+            "T1203",
+            "T1059"
+          ]
+        },
+        "telemetry_value": 1
+      },
+      "telemetry_validation": {
+        "kind": "high_interaction",
+        "event_file": "high_interaction_observations.json",
+        "match": "asset_id",
+        "source": "vulhub",
+        "expected_trigger": "TCP/HTTP probe through upgraded high-interaction asset-gateway route"
+      }
+    },
+    "covers_tactics": [
+      "Execution",
+      "Initial Access",
+      "Command and Control"
+    ],
+    "dependencies": [
+      "web-admin-console"
     ]
   }
 ]

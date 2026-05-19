@@ -1,0 +1,4 @@
+camera_id,location,stream_alias,status,retention_hours
+CAM-FILTER-B-01,Filter B intake,rtsp://plant-video.internal/filter-b-01,online,24
+CAM-CHEM-02,Chemical dosing room,rtsp://plant-video.internal/chem-02,maintenance,12
+CAM-GATE-03,South service gate,rtsp://plant-video.internal/gate-03,online,24

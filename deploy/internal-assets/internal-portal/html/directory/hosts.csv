@@ -1,0 +1,6 @@
+hostname,owner,zone,role,primary_ip,last_seen
+intranet-admin-02,platform-ops,ops-admin,admin-console,10.44.18.12,2026-04-27T22:14:00Z
+finance-share-01,finance-ops,corp-data,file-share,10.44.22.31,2026-04-27T22:11:00Z
+gitlab-runner-03,developer-platform,build,ci-runner,10.44.27.18,2026-04-27T22:08:00Z
+vpn-ra-01,network-ops,remote-access,vpn-appliance,10.44.9.20,2026-04-27T22:03:00Z
+plc-panel-02,plant-engineering,ot-view,plc-dashboard,10.45.6.42,2026-04-27T21:58:00Z

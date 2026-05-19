@@ -10,7 +10,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Protocol
 
-from libs.common.json_store import JsonFileStore
+from libs.common.observation_repository import FileObservationRepository
 from libs.contracts.models import CowrieObservation
 
 
@@ -30,7 +30,7 @@ class CowrieObservationRepository(Protocol):
         ...
 
 
-class FileCowrieObservationRepository:
+class FileCowrieObservationRepository(FileObservationRepository[CowrieObservation]):
     """File-backed Cowrie observation store used by the default local runtime.
 
     Example file shape:
@@ -38,18 +38,4 @@ class FileCowrieObservationRepository:
     """
 
     def __init__(self, path: str | Path) -> None:
-        self._store = JsonFileStore(path, default_data={"observations": []})
-
-    def add(self, observation: CowrieObservation) -> CowrieObservation:
-        payload = self._store.read()
-        payload.setdefault("observations", []).append(observation.model_dump(mode="json"))
-        self._store.write(payload)
-        return observation
-
-    def list_recent(self, limit: int = 100) -> Iterable[CowrieObservation]:
-        payload = self._store.read()
-        observations = payload.get("observations", [])[-limit:]
-        return tuple(
-            CowrieObservation.model_validate(item)
-            for item in observations
-        )
+        super().__init__(path, CowrieObservation)

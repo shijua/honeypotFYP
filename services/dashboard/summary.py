@@ -13,6 +13,8 @@ from libs.common.clock import parse_iso_datetime
 from libs.common.config import RuntimeConfig
 from libs.common.iterables import dedupe_preserve
 from libs.common.json_utils import read_json_object
+from libs.common.runtime_records import evidence_records as evidence_records_from_file
+from libs.common.runtime_records import list_records
 
 
 @dataclass(frozen=True)
@@ -25,27 +27,35 @@ class DockerStatusProbe:
 
 def summarize_demo(state_dir: Path) -> dict[str, Any]:
     """Build a deterministic report from adaptive demo runtime files."""
-    cowrie_observations = _list_from_file(
+    cowrie_observations = list_records(
         state_dir / "cowrie_observations.json",
         "observations",
     )
-    entrypoint_observations = _list_from_file(
+    entrypoint_observations = list_records(
         state_dir / "entrypoint_observations.json",
         "observations",
     )
-    opencanary_observations = _list_from_file(
+    opencanary_observations = list_records(
         state_dir / "opencanary_observations.json",
+        "observations",
+    )
+    high_interaction_observations = list_records(
+        state_dir / "high_interaction_observations.json",
         "observations",
     )
     observations = [
         *entrypoint_observations,
         *cowrie_observations,
         *opencanary_observations,
+        *high_interaction_observations,
     ]
-    bindings = _list_from_file(state_dir / "bindings.json", "records")
-    runtime_records = _list_from_file(state_dir / "asset_runtime.json", "records")
-    decision_trace = _list_from_file(state_dir / "decision_trace.json", "records")
-    evidence_records = _evidence_records(state_dir / "evidence.json")
+    bindings = list_records(state_dir / "bindings.json", "records")
+    runtime_records = list_records(state_dir / "asset_runtime.json", "records")
+    decision_trace = list_records(state_dir / "decision_trace.json", "records")
+    evidence_records = evidence_records_from_file(
+        state_dir / "evidence.json",
+        include_bucket_attacker=True,
+    )
     profiles_payload = read_json_object(state_dir / "profiles.json", {"profiles": {}})
     profiles = profiles_payload.get("profiles", {})
     profiles = profiles if isinstance(profiles, dict) else {}
@@ -113,32 +123,6 @@ def current_docker_status() -> DockerStatusProbe:
         if separator and name:
             statuses[name] = status
     return DockerStatusProbe(statuses=statuses, error=None)
-
-
-def _list_from_file(path: Path, key: str) -> list[dict[str, Any]]:
-    payload = read_json_object(path, {key: []})
-    items = payload.get(key, [])
-    if not isinstance(items, list):
-        return []
-    return [item for item in items if isinstance(item, dict)]
-
-
-def _evidence_records(path: Path) -> list[dict[str, Any]]:
-    payload = read_json_object(path, {"records": {}})
-    records = payload.get("records", {})
-    if not isinstance(records, dict):
-        return []
-    items: list[dict[str, Any]] = []
-    for attacker_key, attacker_records in records.items():
-        if not isinstance(attacker_records, list):
-            continue
-        for item in attacker_records:
-            if not isinstance(item, dict):
-                continue
-            item = dict(item)
-            item.setdefault("attacker_key", str(attacker_key))
-            items.append(item)
-    return items
 
 
 def _attacker_report(
@@ -238,11 +222,14 @@ def _eventids(observations: list[dict[str, Any]]) -> list[str]:
             eventids.append(str(item["eventid"]))
             continue
         if isinstance(item.get("service"), str):
-            eventids.append(f"opencanary.{item['service']}")
+            source = item.get("source")
+            if isinstance(source, str) and source:
+                eventids.append(f"{source}.{item['service']}")
             continue
         if isinstance(item.get("method"), str) and isinstance(item.get("path"), str):
-            surface = str(item.get("surface") or "public")
-            eventids.append(f"{surface}_http.{str(item['method']).upper()}")
+            surface = item.get("surface")
+            if isinstance(surface, str) and surface:
+                eventids.append(f"{surface}_http.{str(item['method']).upper()}")
     return eventids
 
 

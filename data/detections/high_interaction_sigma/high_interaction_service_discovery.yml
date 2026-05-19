@@ -1,0 +1,28 @@
+title: High Interaction Service Discovery
+id: honeynet-high-interaction-service-discovery
+status: experimental
+logsource:
+  product: honeynet
+  category: high_interaction
+honeynet.rule_name: high_interaction_service_discovery
+detection:
+  selection_source:
+    honeynet.source:
+      - conpot
+      - dionaea
+      - honeytrap
+  selection_service:
+    honeynet.service|contains:
+      - ftp
+      - hmi
+      - http
+      - modbus
+      - mssql
+      - s7
+      - smb
+      - snmp
+      - tcp
+  condition: selection_source and selection_service
+tags:
+  - attack.discovery
+  - attack.t1046

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from uuid import uuid4
 
+from libs.common.json_utils import string_or_none
 from libs.contracts.models import (
     CowrieIngestRequest,
     CowrieIngestResponse,
@@ -84,6 +85,7 @@ class CowrieService:
             password_seen=event.password is not None,
             command=_event_value(event, mapping.command_field),
             message=event.message,
+            asset_id=string_or_none(_event_value(event, "asset_id")),
             tags=tags,
             profiler_evidence_ids=[evidence.evidence_id for evidence in evidences],
         )
@@ -161,6 +163,9 @@ def _output_fields(
         value = _event_value(event, field_name)
         if value is not None:
             fields[field_name] = value
+    asset_id = _event_value(event, "asset_id")
+    if isinstance(asset_id, str) and asset_id:
+        fields["asset_id"] = asset_id
     return fields
 
 

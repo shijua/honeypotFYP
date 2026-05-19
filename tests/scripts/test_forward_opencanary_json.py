@@ -7,7 +7,6 @@ from scripts.forwarders.opencanary_json import (
     attribute_asset_gateway_source,
     build_adapter_payload,
     follow_log_file,
-    iter_json_events,
     load_asset_gateway_routes,
     normalize_event,
     _refresh_log_handle,
@@ -15,21 +14,6 @@ from scripts.forwarders.opencanary_json import (
 
 
 pytestmark = pytest.mark.unit
-
-
-def test_iter_json_events_skips_invalid_lines() -> None:
-    events = list(
-        iter_json_events(
-            [
-                "\n",
-                '{"src_host": "198.51.100.1", "dst_port": 6379}\n',
-                "not-json\n",
-                "[1, 2, 3]\n",
-            ]
-        )
-    )
-
-    assert events == [{"src_host": "198.51.100.1", "dst_port": 6379}]
 
 
 def test_build_adapter_payload_wraps_event_and_protocol() -> None:

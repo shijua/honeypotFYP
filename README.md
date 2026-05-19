@@ -323,7 +323,7 @@ python scripts/validation/asset_telemetry.py --require-observed
 python scripts/validation/asset_telemetry.py --asset-id log4shell-app
 ```
 
-`asset_telemetry.py` validates the fixed-port MVP assets by default. `admin-jumpbox` and `log4shell-app` remain later/high-interaction paths, so the script reports their limitation instead of treating them as fixed-port smoke failures.
+`asset_telemetry.py` validates runtime-enabled catalog assets, including high-interaction paths. If `admin-jumpbox`, Vulhub-backed assets, or other high-interaction assets are selected without their runtime and telemetry being present, the script reports them as missing instead of silently treating them as later-only.
 
 Live monitoring dashboard:
 

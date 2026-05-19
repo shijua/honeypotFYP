@@ -1,0 +1,6 @@
+source,destination,port,protocol,owner,change_ticket
+intranet-admin-02,ops-db-01,3306,tcp,platform-ops,OPS-1842
+intranet-admin-02,redis-cache-01,6379,tcp,platform-ops,OPS-1797
+finance-share-01,mail-relay-01,25,tcp,finance-ops,OPS-1784
+gitlab-runner-03,artifact-staging-01,80,tcp,developer-platform,OPS-1839
+vpn-ra-01,admin-jumpbox-01,22,tcp,network-ops,OPS-1802

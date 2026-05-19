@@ -1,0 +1,17 @@
+{
+  "cluster": "ops-prod-a",
+  "namespace": "admin-console",
+  "workloads": [
+    {
+      "name": "admin-console-web",
+      "image": "registry.internal/admin-console:2026.04.29",
+      "replicas": 2
+    },
+    {
+      "name": "admin-worker",
+      "image": "registry.internal/admin-worker:2026.04.28",
+      "replicas": 3
+    }
+  ],
+  "service_accounts": ["svc.deploy", "svc.audit-export"]
+}

@@ -1,0 +1,5 @@
+timestamp,user,action,target,ticket,status
+2026-04-29T21:41:12Z,platform.ops,view_service_inventory,intranet-admin-02,OPS-1842,success
+2026-04-29T21:44:03Z,platform.ops,export_auth_policy,sso-admin-console,OPS-1842,success
+2026-04-29T22:03:28Z,svc.deploy,rotate_worker_token,admin-worker-03,OPS-1839,blocked_pending_mfa
+2026-04-29T22:18:55Z,security.review,download_network_connections,admin-console-api,OPS-1797,success

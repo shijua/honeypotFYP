@@ -56,8 +56,14 @@ ASSET_GATEWAY_PORTS="$(
     "${MAIL_RELAY_PORT:-2525}" \
     "${FINANCE_SHARE_PORT:-18082}" \
     "${ICS_PLC_PORT:-18084}" \
+    "${CONPOT_MODBUS_PORT:-1502}" \
+    "${CONPOT_S7_PORT:-1102}" \
     "${VPN_APPLIANCE_PORT:-18443}" \
-    "${MALWARE_SINK_PORT:-18085}"
+    "${MALWARE_SINK_PORT:-18085}" \
+    "${DIONAEA_SMB_PORT:-1445}" \
+    "${DIONAEA_MSSQL_PORT:-11433}" \
+    "${DIONAEA_FTP_PORT:-12122}" \
+    "${HONEYTRAP_GENERIC_PORT:-19999}"
 )"
 export PROJECT_NAME HOST_PROJECT_ROOT ASSET_GATEWAY_PORTS
 RESET_BEFORE_START="${RESET_BEFORE_START:-1}"
@@ -72,6 +78,8 @@ ENTERPRISE_SERVICES=(
   asset-gateway
   internal-http-forwarder
   internal-protocol-forwarder
+  high-interaction-adapter
+  high-interaction-forwarder
   cowrie
   opencanary-adapter
   opencanary-forwarder

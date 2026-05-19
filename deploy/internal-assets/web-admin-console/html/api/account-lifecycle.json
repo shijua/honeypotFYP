@@ -1,0 +1,26 @@
+{
+  "change_queue": [
+    {
+      "ticket": "OPS-1842",
+      "action": "add_role",
+      "account": "svc.audit-export",
+      "role": "audit-reader",
+      "status": "pending_approval"
+    },
+    {
+      "ticket": "OPS-1837",
+      "action": "create_account",
+      "account": "contractor.ops",
+      "role": "temporary-operator",
+      "status": "approved"
+    },
+    {
+      "ticket": "OPS-1802",
+      "action": "disable_account",
+      "account": "ops.breakglass",
+      "role": "emergency-access",
+      "status": "completed"
+    }
+  ],
+  "review_group": "platform-operations"
+}

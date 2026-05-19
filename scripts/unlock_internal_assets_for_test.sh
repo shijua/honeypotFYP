@@ -117,6 +117,7 @@ else
           .[]
           | select(.exposure_type == "internal")
           | select((.default_settings.runtime.backend // "") == "docker")
+          | select((.telemetry_source // "") != "high_interaction")
           | . as $asset
           | (
               ($asset.default_settings.runtime.port_mappings // [])

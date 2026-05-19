@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from scripts.data.build_attack_transition_prior import load_events
-from scripts.evaluation.technique_prior import _ranked_scores, evaluate_prior
+from scripts.data.build_attack_transition_prior import NormalizedEvent, load_events
+from scripts.evaluation.technique_prior import _evaluate_edges, _ranked_scores, evaluate_prior
 
 
 pytestmark = pytest.mark.unit
@@ -33,6 +33,9 @@ def test_evaluate_technique_prior_reports_holdout_metrics(tmp_path: Path) -> Non
     assert report["model_mode"] == "hybrid"
     assert "style_mode" not in report
     assert "order2_context_rate" in report
+    assert "parent_top1_accuracy" in report
+    assert "catalog_filtered_edges" in report
+    assert "asset_top1_accuracy" in report
     assert 0 <= report["top1_accuracy"] <= 1
     assert 0 <= report["top3_accuracy"] <= 1
 
@@ -95,3 +98,34 @@ def test_evaluate_technique_prior_can_rank_order1_order2_and_hybrid() -> None:
     assert hybrid_flags["had_order2"] is True
     assert hybrid_flags["used_order2"] is True
     assert hybrid_flags["used_order3"] is True
+
+
+def test_evaluate_technique_prior_reports_parent_and_asset_level_hits() -> None:
+    prior = {
+        "transitions": {
+            "T1000": {
+                "T1552": {"probability": 0.8, "support": 2},
+                "T1046": {"probability": 0.2, "support": 2},
+            }
+        },
+        "order2_transitions": {},
+        "order3_transitions": {},
+    }
+    trace = [
+        NormalizedEvent(case_id="case-a", source_dataset="fixture", technique="T1000", order=0),
+        NormalizedEvent(case_id="case-a", source_dataset="fixture", technique="T1552.001", order=1),
+    ]
+
+    metrics = _evaluate_edges(
+        prior,
+        [trace],
+        top_k=3,
+        model_mode="order1",
+        catalog_coverage={"T1552.001": ["finance-share"], "T1552": ["finance-share"]},
+    )
+
+    assert metrics["top1_accuracy"] == 0.0
+    assert metrics["parent_top1_accuracy"] == 1.0
+    assert metrics["catalog_filtered_edges"] == 1
+    assert metrics["catalog_top1_accuracy"] == 0.0
+    assert metrics["asset_top1_accuracy"] == 1.0

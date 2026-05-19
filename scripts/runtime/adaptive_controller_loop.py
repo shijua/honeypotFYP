@@ -29,6 +29,7 @@ from libs.common.iterables import dedupe_preserve
 from libs.common.iterables import string_items
 from libs.common.json_utils import mutable_nested_dict
 from libs.common.json_utils import read_json_object
+from libs.common.runtime_records import evidence_records as evidence_records_from_file
 from services.controller.repository import FileRevealFeedbackRepository
 
 
@@ -271,7 +272,7 @@ def update_reveal_feedback_from_evidence(
     pending = payload.get("pending", [])
     if not isinstance(pending, list) or not pending:
         return
-    evidence_records = _evidence_records(evidence_file)
+    evidence_records = evidence_records_from_file(evidence_file)
     now = datetime.now(timezone.utc)
     changed = False
 
@@ -296,20 +297,6 @@ def update_reveal_feedback_from_evidence(
         with feedback_file.open("w", encoding="utf-8") as handle:
             json.dump(payload, handle, indent=2, sort_keys=True)
             handle.write("\n")
-
-
-def _evidence_records(path: Path) -> list[dict[str, Any]]:
-    """Return flattened profiler evidence records from data/runtime/evidence.json."""
-    payload = read_json_object(path, {"records": {}})
-    records = payload.get("records", {})
-    if not isinstance(records, dict):
-        return []
-    flattened: list[dict[str, Any]] = []
-    for bucket in records.values():
-        if not isinstance(bucket, list):
-            continue
-        flattened.extend(item for item in bucket if isinstance(item, dict))
-    return flattened
 
 
 def _feedback_group(

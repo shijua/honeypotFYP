@@ -39,13 +39,14 @@ services:
     working_dir: /app
     command: >
       bash -lc "python -m services.asset_gateway.app
-      --ports ${ASSET_GATEWAY_PORTS:-18080,19418,13306,16379,18081,12121,12222,12323,2525,18082,18084,18443,18085}
+      --ports ${ASSET_GATEWAY_PORTS:-18080,19418,13306,16379,18081,12121,12222,12323,2525,18082,18084,18443,18085,1502,1102,1445,11433,12122,19999}
       --routes data/runtime/asset_gateway_routes.json"
     environment:
       PYTHONPATH: /app
       HONEYPOT_STATE_DIR: data/runtime
       HONEYPOT_INTERNAL_HTTP_EVENTS_FILE: data/runtime/internal_http_events.jsonl
       HONEYPOT_INTERNAL_PROTOCOL_EVENTS_FILE: data/runtime/internal_protocol_events.jsonl
+      HONEYPOT_HIGH_INTERACTION_EVENTS_FILE: data/runtime/high_interaction_events.jsonl
       HONEYPOT_ASSET_GATEWAY_HTTP_PORTS: "${ASSET_GATEWAY_HTTP_PORTS:-18080,18081,18082,18084,18443,18085}"
     volumes:
       - .:/app
@@ -61,8 +62,14 @@ services:
       - "${HOST_BIND_ADDRESS:-127.0.0.1}:${MAIL_RELAY_PORT:-2525}:2525"
       - "${HOST_BIND_ADDRESS:-127.0.0.1}:${FINANCE_SHARE_PORT:-18082}:18082"
       - "${HOST_BIND_ADDRESS:-127.0.0.1}:${ICS_PLC_PORT:-18084}:18084"
+      - "${HOST_BIND_ADDRESS:-127.0.0.1}:${CONPOT_MODBUS_PORT:-1502}:1502"
+      - "${HOST_BIND_ADDRESS:-127.0.0.1}:${CONPOT_S7_PORT:-1102}:1102"
       - "${HOST_BIND_ADDRESS:-127.0.0.1}:${VPN_APPLIANCE_PORT:-18443}:18443"
       - "${HOST_BIND_ADDRESS:-127.0.0.1}:${MALWARE_SINK_PORT:-18085}:18085"
+      - "${HOST_BIND_ADDRESS:-127.0.0.1}:${DIONAEA_SMB_PORT:-1445}:1445"
+      - "${HOST_BIND_ADDRESS:-127.0.0.1}:${DIONAEA_MSSQL_PORT:-11433}:11433"
+      - "${HOST_BIND_ADDRESS:-127.0.0.1}:${DIONAEA_FTP_PORT:-12122}:12122"
+      - "${HOST_BIND_ADDRESS:-127.0.0.1}:${HONEYTRAP_GENERIC_PORT:-19999}:19999"
     networks:
       - net_public
       - net_internal
@@ -102,6 +109,45 @@ services:
       - net_control
     depends_on:
       - opencanary-adapter
+    restart: unless-stopped
+
+  high-interaction-adapter:
+    image: python:3.10-slim
+    working_dir: /app
+    command: >
+      bash -lc "pip install -q fastapi uvicorn pydantic &&
+      python -m uvicorn services.high_interaction.app:app --host 0.0.0.0 --port 8014"
+    environment:
+      PYTHONPATH: /app
+    volumes:
+      - .:/app
+    expose:
+      - "8014"
+    networks:
+      - net_control
+    restart: unless-stopped
+
+  high-interaction-forwarder:
+    image: python:3.10-slim
+    working_dir: /app
+    command: >
+      bash -lc "python scripts/forwarders/high_interaction_logs.py
+      --log-file data/runtime/high_interaction_events.jsonl
+      --adapter-url http://high-interaction-adapter:8014/v1/high-interaction/events
+      --source honeytrap
+      --asset-id high-interaction-gateway
+      --service tcp
+      --event-type tcp.probe
+      --asset-routes-file data/runtime/asset_gateway_routes.json
+      --poll-seconds 0.5"
+    environment:
+      PYTHONPATH: /app
+    volumes:
+      - .:/app
+    networks:
+      - net_control
+    depends_on:
+      - high-interaction-adapter
     restart: unless-stopped
 
   cowrie:

@@ -1,0 +1,13 @@
+Remote access route table
+=========================
+
+Profile: contractor-profile
+Split tunnel: enabled
+Primary routes:
+- 10.42.18.0/24 admin-console and support tools
+- 10.42.24.0/24 finance archive services
+- 10.42.31.0/24 engineering telemetry jump points
+
+Proxy notes:
+- Legacy SOCKS failover remains configured for maintenance window testing.
+- Egress validation uses the proxy alias vpn-egress-02.internal before direct Internet access is permitted.

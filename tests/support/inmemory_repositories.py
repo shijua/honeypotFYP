@@ -8,6 +8,7 @@ their storage protocols.
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import Generic, TypeVar
 
 from libs.contracts.models import (
     AssetDefinition,
@@ -16,10 +17,14 @@ from libs.contracts.models import (
     CowrieObservation,
     EntrypointObservation,
     GatewayBindingState,
+    HighInteractionObservation,
     OpenCanaryObservation,
     ProfileSnapshot,
     TechniqueEvidence,
 )
+
+
+ObservationT = TypeVar("ObservationT")
 
 
 class InMemoryBindingRepository:
@@ -70,46 +75,42 @@ class InMemoryGatewayRouteRepository:
         return tuple(self._by_binding.values())
 
 
-class InMemoryEntrypointObservationRepository:
+class _InMemoryObservationRepository(Generic[ObservationT]):
+    """Shared append-only observation store for repository unit tests."""
+
+    def __init__(self) -> None:
+        self._observations: list[ObservationT] = []
+
+    def add(self, observation: ObservationT) -> ObservationT:
+        self._observations.append(observation)
+        return observation
+
+    def list_recent(self, limit: int = 100) -> Iterable[ObservationT]:
+        return tuple(self._observations[-limit:])
+
+
+class InMemoryEntrypointObservationRepository(
+    _InMemoryObservationRepository[EntrypointObservation]
+):
     """In-memory public entrypoint observation store for tests."""
 
-    def __init__(self) -> None:
-        self._observations: list[EntrypointObservation] = []
 
-    def add(self, observation: EntrypointObservation) -> EntrypointObservation:
-        self._observations.append(observation)
-        return observation
-
-    def list_recent(self, limit: int = 100) -> Iterable[EntrypointObservation]:
-        return tuple(self._observations[-limit:])
-
-
-class InMemoryCowrieObservationRepository:
+class InMemoryCowrieObservationRepository(
+    _InMemoryObservationRepository[CowrieObservation]
+):
     """In-memory Cowrie observation store for tests."""
 
-    def __init__(self) -> None:
-        self._observations: list[CowrieObservation] = []
 
-    def add(self, observation: CowrieObservation) -> CowrieObservation:
-        self._observations.append(observation)
-        return observation
-
-    def list_recent(self, limit: int = 100) -> Iterable[CowrieObservation]:
-        return tuple(self._observations[-limit:])
-
-
-class InMemoryOpenCanaryObservationRepository:
+class InMemoryOpenCanaryObservationRepository(
+    _InMemoryObservationRepository[OpenCanaryObservation]
+):
     """In-memory OpenCanary observation store for tests."""
 
-    def __init__(self) -> None:
-        self._observations: list[OpenCanaryObservation] = []
 
-    def add(self, observation: OpenCanaryObservation) -> OpenCanaryObservation:
-        self._observations.append(observation)
-        return observation
-
-    def list_recent(self, limit: int = 100) -> Iterable[OpenCanaryObservation]:
-        return tuple(self._observations[-limit:])
+class InMemoryHighInteractionObservationRepository(
+    _InMemoryObservationRepository[HighInteractionObservation]
+):
+    """In-memory high-interaction observation store for tests."""
 
 
 class InMemoryEvidenceRepository:

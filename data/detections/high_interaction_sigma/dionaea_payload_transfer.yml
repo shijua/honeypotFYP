@@ -1,0 +1,34 @@
+title: Dionaea Payload Transfer
+id: honeynet-dionaea-payload-transfer
+status: experimental
+logsource:
+  product: honeynet
+  category: high_interaction
+honeynet.rule_name: dionaea_payload_transfer
+detection:
+  source:
+    honeynet.source: dionaea
+  exposed_services:
+    honeynet.service:
+      - ftp
+      - http
+      - mssql
+      - smb
+  payload_terms:
+    combined|contains:
+      - download
+      - malware
+      - payload
+      - shellcode
+      - transfer
+      - upload
+  condition: source and exposed_services and payload_terms
+tags:
+  - attack.initial-access
+  - attack.t1190
+  - attack.execution
+  - attack.t1204.002
+  - attack.command-and-control
+  - attack.t1105
+  - attack.exfiltration
+  - attack.t1041

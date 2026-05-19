@@ -426,6 +426,14 @@ def _internal_protocol_events_path() -> Path:
     return state_dir / "internal_protocol_events.jsonl"
 
 
+def _high_interaction_events_path() -> Path:
+    raw_path = os.environ.get("HONEYPOT_HIGH_INTERACTION_EVENTS_FILE", "").strip()
+    if raw_path:
+        return Path(raw_path)
+    state_dir = Path(os.environ.get("HONEYPOT_STATE_DIR", "data/runtime"))
+    return state_dir / "high_interaction_events.jsonl"
+
+
 def _protocol_observer(
     route: AssetRoute,
     client_ip: str,
@@ -433,6 +441,14 @@ def _protocol_observer(
     """Return a client-to-backend observer for protocols the gateway can parse."""
     if route.asset_id == "mail-relay" or route.public_port == 2525:
         return lambda data: _report_smtp_commands(data, route=route, client_ip=client_ip)
+    source = _high_interaction_source(route.asset_id)
+    if source:
+        return lambda data: _report_high_interaction_probe(
+            data,
+            route=route,
+            client_ip=client_ip,
+            source=source,
+        )
     return None
 
 
@@ -494,6 +510,59 @@ def _parse_smtp_commands(data: bytes) -> list[str]:
         if command in valid_commands:
             commands.append(command)
     return dedupe_preserve(commands)
+
+
+def _report_high_interaction_probe(
+    data: bytes,
+    *,
+    route: AssetRoute,
+    client_ip: str,
+    source: str,
+) -> None:
+    """Write generic TCP interaction metadata for upgraded high-interaction assets.
+
+    Backend-specific sidecars can provide richer logs, but this gateway-level
+    record guarantees a TCP probe to Conpot/Dionaea/Honeytrap still creates
+    adapter-visible telemetry during smoke tests.
+    """
+    if not data:
+        return
+    preview = data[:256].decode("iso-8859-1", errors="replace")
+    event = {
+        "source": source,
+        "asset_id": route.asset_id,
+        "attacker_key": client_ip,
+        "src_host": client_ip,
+        "dst_host": route.backend_host,
+        "dst_port": route.backend_port,
+        "service": _high_interaction_service(route),
+        "event_type": "tcp.probe",
+        "ts": utcnow().astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "message": preview,
+        "bytes": len(data),
+        "public_port": route.public_port,
+    }
+    _append_jsonl(_high_interaction_events_path(), event)
+
+
+def _high_interaction_source(asset_id: str) -> str:
+    return {
+        "conpot-plc": "conpot",
+        "dionaea-capture": "dionaea",
+        "honeytrap-generic": "honeytrap",
+    }.get(asset_id, "")
+
+
+def _high_interaction_service(route: AssetRoute) -> str:
+    by_port = {
+        1102: "s7",
+        1502: "modbus",
+        1445: "smb",
+        11433: "mssql",
+        12122: "ftp",
+        19999: "tcp",
+    }
+    return by_port.get(route.public_port, "tcp")
 
 
 def _parse_http_request(data: bytes) -> ParsedHttpRequest | None:

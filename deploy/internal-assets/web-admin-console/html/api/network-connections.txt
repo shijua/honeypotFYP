@@ -1,0 +1,5 @@
+Proto Local Address          Foreign Address        State       Process
+tcp   10.44.18.12:443        10.44.27.18:51822      ESTABLISHED admin-console
+tcp   10.44.18.12:39144      10.44.22.31:3306       ESTABLISHED ticket-sync
+tcp   10.44.18.12:45108      10.44.26.17:6379       ESTABLISHED session-cache
+tcp   10.44.18.12:52882      10.44.12.25:25         TIME_WAIT   mail-alerts

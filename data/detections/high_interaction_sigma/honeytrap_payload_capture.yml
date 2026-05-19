@@ -1,0 +1,22 @@
+title: Honeytrap Payload Capture
+id: honeynet-honeytrap-payload-capture
+status: experimental
+logsource:
+  product: honeynet
+  category: high_interaction
+honeynet.rule_name: honeytrap_payload_capture
+detection:
+  source:
+    honeynet.source: honeytrap
+  payload_terms:
+    combined|contains:
+      - download
+      - payload
+      - transfer
+      - upload
+  condition: source and payload_terms
+tags:
+  - attack.initial-access
+  - attack.t1190
+  - attack.command-and-control
+  - attack.t1105

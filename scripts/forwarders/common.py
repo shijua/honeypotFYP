@@ -8,9 +8,11 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Callable, IO, Iterable, NamedTuple
+from typing import Callable, IO, Iterable, Iterator, NamedTuple
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+
+from libs.common.json_utils import read_json_object
 
 
 class OpenLog(NamedTuple):
@@ -36,6 +38,88 @@ def post_json_event(
     )
     with urlopen(request, timeout=timeout_seconds) as response:
         return response.status, response.read().decode("utf-8")
+
+
+def iter_json_objects(
+    lines: Iterable[str],
+    *,
+    label: str = "JSON",
+) -> Iterator[dict[str, object]]:
+    """Yield dict JSONL objects and print consistent skip messages.
+
+    Example:
+        ['{"eventid":"cowrie.command.input"}'] -> [{"eventid": "..."}]
+    """
+    for line_number, line in enumerate(lines, start=1):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        try:
+            item = json.loads(stripped)
+        except json.JSONDecodeError as exc:
+            print(f"Skipping invalid {label} on line {line_number}: {exc}", file=sys.stderr)
+            continue
+        if not isinstance(item, dict):
+            print(f"Skipping non-object {label} on line {line_number}", file=sys.stderr)
+            continue
+        yield item
+
+
+def load_asset_gateway_routes(route_file: Path | None) -> list[dict[str, object]]:
+    """Load routes used to attribute proxied backend events to attackers."""
+    if route_file is None:
+        return []
+    payload = read_json_object(route_file, {"routes": []})
+    routes = payload.get("routes", []) if isinstance(payload, dict) else []
+    if not isinstance(routes, list):
+        return []
+    return [route for route in routes if isinstance(route, dict)]
+
+
+def route_attacker_key(
+    routes: list[dict[str, object]],
+    *,
+    backend_host: str | None,
+    backend_port: int | None,
+    asset_id: str | None = None,
+) -> str | None:
+    """Return the attacker key for exactly one matching asset-gateway route.
+
+    Example:
+        route_attacker_key(routes, asset_id="conpot-plc", backend_host="172.1.0.2", backend_port=502) -> "198.51.100.10"
+    """
+    matches = [
+        route for route in routes
+        if (asset_id is None or route.get("asset_id") == asset_id)
+        and (
+            not backend_host
+            or route.get("backend_ip") == backend_host
+            or route.get("backend_host") == backend_host
+        )
+        and (backend_port is None or safe_int(route.get("backend_port")) == backend_port)
+    ]
+    if len(matches) != 1:
+        return None
+    attacker_key = str(matches[0].get("attacker_key", "")).strip()
+    return attacker_key or None
+
+
+def safe_int(value: object) -> int | None:
+    """Convert numeric-looking values to int without raising."""
+    try:
+        return int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+
+
+def payload_event(payload: dict[str, object]) -> dict[str, object]:
+    """Return the nested adapter event object when present.
+
+    Example:
+        payload_event({"event": {"eventid": "cowrie.command.input"}}) -> {"eventid": "..."}
+    """
+    event = payload.get("event")
+    return event if isinstance(event, dict) else {}
 
 
 def forward_events(

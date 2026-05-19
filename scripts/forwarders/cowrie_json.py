@@ -11,35 +11,12 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from pathlib import Path
 from typing import Iterable, Iterator
 
-from scripts.forwarders.common import follow_file, forward_events, post_json_event
+from scripts.forwarders.common import follow_file, forward_events, iter_json_objects
+from scripts.forwarders.common import payload_event, post_json_event
 from scripts.forwarders.common import refresh_log_handle as _refresh_log_handle
-
-
-def iter_json_events(lines: Iterable[str]) -> Iterator[dict[str, object]]:
-    """Yield valid Cowrie JSON objects from newline-delimited log lines."""
-    for line_number, line in enumerate(lines, start=1):
-        stripped = line.strip()
-        if not stripped:
-            continue
-        try:
-            event = json.loads(stripped)
-        except json.JSONDecodeError as exc:
-            print(
-                f"Skipping invalid JSON on line {line_number}: {exc}",
-                file=sys.stderr,
-            )
-            continue
-        if not isinstance(event, dict):
-            print(
-                f"Skipping non-object JSON on line {line_number}",
-                file=sys.stderr,
-            )
-            continue
-        yield event
 
 
 def build_adapter_payload(
@@ -50,7 +27,11 @@ def build_adapter_payload(
     return {"event": event, "protocol": protocol}
 
 
-def normalize_event(event: dict[str, object]) -> dict[str, object] | None:
+def normalize_event(
+    event: dict[str, object],
+    *,
+    asset_id: str | None = None,
+) -> dict[str, object] | None:
     """Return an adapter-safe event, or None for noisy Cowrie records.
 
     Cowrie occasionally emits structured fields where the adapter expects a
@@ -67,6 +48,8 @@ def normalize_event(event: dict[str, object]) -> dict[str, object] | None:
     message = normalized.get("message")
     if message is not None and not isinstance(message, str):
         normalized["message"] = json.dumps(message, sort_keys=True)
+    if asset_id and not normalized.get("asset_id"):
+        normalized["asset_id"] = asset_id
     return normalized
 
 
@@ -78,11 +61,12 @@ def forward_lines(
     adapter_url: str,
     protocol: str,
     timeout_seconds: float,
+    asset_id: str | None = None,
 ) -> int:
     """Forward a finite batch of Cowrie JSON lines and return success count."""
     def _payloads() -> Iterator[dict[str, object]]:
-        for event in iter_json_events(lines):
-            normalized = normalize_event(event)
+        for event in iter_json_objects(lines, label="Cowrie JSON"):
+            normalized = normalize_event(event, asset_id=asset_id)
             if normalized is None:
                 print(f"Skipped noisy {event.get('eventid', '<unknown>')}", flush=True)
                 continue
@@ -94,20 +78,12 @@ def forward_lines(
         timeout_seconds=timeout_seconds,
         post_event=post_event,
         success_message=lambda payload: (
-            f"Forwarded {_payload_event(payload).get('eventid', '<unknown>')}"
+            f"Forwarded {payload_event(payload).get('eventid', '<unknown>')}"
         ),
         rejected_label="event",
         endpoint_label="Adapter",
         unreachable_target="adapter",
     )
-
-
-def _payload_event(payload: dict[str, object]) -> dict[str, object]:
-    event = payload.get("event")
-    if isinstance(event, dict):
-        return event
-    return {}
-
 
 def follow_log_file(
     log_file: Path,
@@ -117,6 +93,7 @@ def follow_log_file(
     once: bool,
     poll_seconds: float,
     timeout_seconds: float,
+    asset_id: str | None = None,
 ) -> int:
     """Tail a Cowrie JSON log file and forward new events to the adapter."""
     return follow_file(
@@ -129,6 +106,7 @@ def follow_log_file(
             adapter_url=adapter_url,
             protocol=protocol,
             timeout_seconds=timeout_seconds,
+            asset_id=asset_id,
         ),
     )
 
@@ -175,6 +153,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=5.0,
         help="HTTP timeout when calling the adapter.",
     )
+    parser.add_argument(
+        "--asset-id",
+        default="",
+        help="Optional catalog asset id to attach to forwarded runtime Cowrie events.",
+    )
     return parser.parse_args(argv)
 
 
@@ -188,6 +171,7 @@ def main(argv: list[str] | None = None) -> int:
         once=args.once,
         poll_seconds=args.poll_seconds,
         timeout_seconds=args.timeout_seconds,
+        asset_id=args.asset_id or None,
     )
     if args.once:
         print(f"Forwarded {forwarded} Cowrie event(s)")

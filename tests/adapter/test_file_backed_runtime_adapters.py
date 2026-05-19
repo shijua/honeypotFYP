@@ -211,7 +211,9 @@ def test_file_opencanary_repository_persists_observations(tmp_path) -> None:
     repository.add(observation)
 
     reloaded = FileOpenCanaryObservationRepository(tmp_path / "opencanary.json")
-    assert tuple(reloaded.list_recent())[0].observation_id == "obs-3"
+    stored = tuple(reloaded.list_recent())[0]
+    assert stored.observation_id == "obs-3"
+    assert stored.source == "opencanary"
 
 
 def test_file_repositories_create_default_json_files(tmp_path) -> None:

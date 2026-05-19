@@ -16,24 +16,8 @@ from pathlib import Path
 from typing import Any
 
 from libs.common.json_utils import read_json_value
+from libs.common.runtime_records import list_records
 from services.dashboard.summary import summarize_demo
-
-
-LATER_ONLY_ASSETS = {
-    "admin-jumpbox": "later/high-interaction path: separate Cowrie runtime log forwarding is not part of the fixed-port MVP smoke test",
-    "log4shell-app": "later/high-interaction path: requires an isolated Vulhub checkout and compose-backed vulnerable runtime",
-}
-# Fixed-port OpenCanary assets record service names rather than catalog asset ids,
-# so validation uses this bridge until service metadata is moved into catalog.
-OPEN_CANARY_SERVICE_BY_ASSET = {
-    "git-internal": "git",
-    "ops-db": "mysql",
-    "redis-cache": "redis",
-    "ftp-archive": "ftp",
-    "ssh-canary": "ssh",
-    "legacy-telnet": "telnet",
-    "mail-relay": "smtp",
-}
 
 
 def main() -> int:
@@ -76,7 +60,7 @@ def build_report(
         catalog_path=data/assets/catalog.json, state_dir=data/runtime, asset_ids={"redis-cache"}
 
     Example output:
-        {"ok": true, "assets": [{"asset_id": "redis-cache", "telemetry": {"service": "redis"}}]}
+        {"ok": true, "assets": [{"asset_id": "redis-cache", "telemetry": {"kind": "opencanary"}}]}
     """
     catalog = read_json_value(catalog_path, [])
     assets = [
@@ -85,12 +69,15 @@ def build_report(
         and _asset_runtime_backend(item) in {"docker", "compose"}
         and (not asset_ids or item.get("asset_id") in asset_ids)
     ]
-    runtime_records = _records(state_dir / "asset_runtime.json", "records")
-    gateway_routes = _records(state_dir / "gateway_routes.json", "routes")
-    asset_gateway_routes = _records(state_dir / "asset_gateway_routes.json", "routes")
-    opencanary_observations = _records(state_dir / "opencanary_observations.json", "observations")
+    runtime_records = list_records(state_dir / "asset_runtime.json", "records")
+    gateway_routes = list_records(state_dir / "gateway_routes.json", "routes")
+    asset_gateway_routes = list_records(state_dir / "asset_gateway_routes.json", "routes")
+    opencanary_observations = list_records(state_dir / "opencanary_observations.json", "observations")
+    cowrie_observations = list_records(state_dir / "cowrie_observations.json", "observations")
+    high_interaction_observations = list_records(state_dir / "high_interaction_observations.json", "observations")
     internal_http_events = _jsonl_records(state_dir / "internal_http_events.jsonl")
     internal_protocol_events = _jsonl_records(state_dir / "internal_protocol_events.jsonl")
+    high_interaction_events = _jsonl_records(state_dir / "high_interaction_events.jsonl")
     dashboard_summary = summarize_demo(state_dir)
 
     asset_reports = [
@@ -100,8 +87,11 @@ def build_report(
             gateway_routes=gateway_routes,
             asset_gateway_routes=asset_gateway_routes,
             opencanary_observations=opencanary_observations,
+            cowrie_observations=cowrie_observations,
+            high_interaction_observations=high_interaction_observations,
             internal_http_events=internal_http_events,
             internal_protocol_events=internal_protocol_events,
+            high_interaction_events=high_interaction_events,
             dashboard_summary=dashboard_summary,
         )
         for asset in assets
@@ -122,8 +112,11 @@ def _asset_report(
     gateway_routes: list[dict[str, Any]],
     asset_gateway_routes: list[dict[str, Any]],
     opencanary_observations: list[dict[str, Any]],
+    cowrie_observations: list[dict[str, Any]],
+    high_interaction_observations: list[dict[str, Any]],
     internal_http_events: list[dict[str, Any]],
     internal_protocol_events: list[dict[str, Any]],
+    high_interaction_events: list[dict[str, Any]],
     dashboard_summary: dict[str, Any],
 ) -> dict[str, Any]:
     """Summarize whether one catalog asset passed the MVP live-smoke checks.
@@ -135,15 +128,6 @@ def _asset_report(
         {"asset_id": "finance-share", "status": "ok", "asset_gateway_routed": true, "ok": true}
     """
     asset_id = str(asset.get("asset_id", ""))
-    if asset_id in LATER_ONLY_ASSETS:
-        return {
-            "asset_id": asset_id,
-            "runtime_backend": _asset_runtime_backend(asset),
-            "status": "later",
-            "limitation": LATER_ONLY_ASSETS[asset_id],
-            "ok": True,
-        }
-
     runtime_matches = [item for item in runtime_records if item.get("asset_id") == asset_id]
     gateway_exposed = any(asset_id in route.get("exposed_assets", []) for route in gateway_routes)
     gateway_failed = any(asset_id in route.get("failed_assets", []) for route in gateway_routes)
@@ -153,8 +137,11 @@ def _asset_report(
     telemetry = _telemetry_report(
         asset=asset,
         opencanary_observations=opencanary_observations,
+        cowrie_observations=cowrie_observations,
+        high_interaction_observations=high_interaction_observations,
         internal_http_events=internal_http_events,
         internal_protocol_events=internal_protocol_events,
+        high_interaction_events=high_interaction_events,
     )
     observed = (
         bool(runtime_matches)
@@ -228,8 +215,11 @@ def _telemetry_report(
     *,
     asset: dict[str, Any],
     opencanary_observations: list[dict[str, Any]],
+    cowrie_observations: list[dict[str, Any]],
+    high_interaction_observations: list[dict[str, Any]],
     internal_http_events: list[dict[str, Any]],
     internal_protocol_events: list[dict[str, Any]],
+    high_interaction_events: list[dict[str, Any]],
 ) -> dict[str, Any]:
     """Check the telemetry source expected for one asset.
 
@@ -241,16 +231,40 @@ def _telemetry_report(
     """
     asset_id = str(asset.get("asset_id", ""))
     telemetry_source = str(asset.get("telemetry_source", ""))
-    if telemetry_source == "asset_runtime":
-        count = sum(1 for item in internal_http_events if item.get("asset_id") == asset_id)
+    validation = _telemetry_validation(asset)
+    validation_kind = str(validation.get("kind") or telemetry_source)
+    if validation_kind == "asset_runtime":
+        count = _count_asset_records(internal_http_events, asset_id)
         return {
             "kind": "internal_http",
             "observed": count > 0,
             "count": count,
-            "expected_trigger": "HTTP request through the asset-gateway fixed port",
+            "expected_trigger": _expected_trigger(validation),
         }
-    service = OPEN_CANARY_SERVICE_BY_ASSET.get(asset_id)
-    if service:
+    if validation_kind == "cowrie":
+        count = _count_asset_records(cowrie_observations, asset_id)
+        return {
+            "kind": "cowrie",
+            "observed": count > 0,
+            "count": count,
+            "expected_trigger": _expected_trigger(validation),
+        }
+    if validation_kind == "high_interaction":
+        source = str(validation.get("source") or "high_interaction")
+        observation_count = _count_asset_records(high_interaction_observations, asset_id)
+        raw_count = _count_asset_records(high_interaction_events, asset_id)
+        http_count = _count_asset_records(internal_http_events, asset_id)
+        return {
+            "kind": "high_interaction",
+            "source": source,
+            "observed": observation_count > 0 or raw_count > 0 or http_count > 0,
+            "observation_count": observation_count,
+            "raw_event_count": raw_count,
+            "internal_http_event_count": http_count,
+            "expected_trigger": _expected_trigger(validation),
+        }
+    if validation_kind in {"opencanary", "mailoney"}:
+        service = str(validation.get("service") or "")
         observation_count = sum(1 for item in opencanary_observations if item.get("service") == service)
         protocol_count = sum(
             1
@@ -259,12 +273,12 @@ def _telemetry_report(
             and item["logdata"].get("ASSET_ID") == asset_id
         )
         return {
-            "kind": "opencanary",
+            "kind": validation_kind,
             "service": service,
             "observed": observation_count > 0 or protocol_count > 0,
             "observation_count": observation_count,
             "internal_protocol_event_count": protocol_count,
-            "expected_trigger": f"{service} protocol probe through the asset-gateway fixed port",
+            "expected_trigger": _expected_trigger(validation),
         }
     return {
         "kind": telemetry_source or "unknown",
@@ -273,19 +287,33 @@ def _telemetry_report(
     }
 
 
-def _records(path: Path, key: str) -> list[dict[str, Any]]:
-    """Read a JSON object list from a runtime file.
+def _telemetry_validation(asset: dict[str, Any]) -> dict[str, Any]:
+    """Return catalog-declared validation metadata for one asset.
 
     Example:
-        _records(Path("bindings.json"), "records") -> [{"binding_id": "..."}]
+        {"default_settings": {"telemetry_validation": {"kind": "opencanary", "service": "redis"}}}
+        -> {"kind": "opencanary", "service": "redis"}
     """
-    payload = read_json_value(path, {key: []})
-    if not isinstance(payload, dict):
-        return []
-    records = payload.get(key, [])
-    if not isinstance(records, list):
-        return []
-    return [item for item in records if isinstance(item, dict)]
+    default_settings = asset.get("default_settings", {})
+    if not isinstance(default_settings, dict):
+        return {}
+    validation = default_settings.get("telemetry_validation", {})
+    return validation if isinstance(validation, dict) else {}
+
+
+def _expected_trigger(validation: dict[str, Any]) -> str:
+    """Return catalog text explaining how to trigger telemetry for an asset."""
+    value = validation.get("expected_trigger")
+    return str(value) if isinstance(value, str) and value else "catalog telemetry trigger"
+
+
+def _count_asset_records(records: list[dict[str, Any]], asset_id: str) -> int:
+    """Count records that explicitly belong to the requested asset.
+
+    Example:
+        _count_asset_records([{"asset_id": "admin-jumpbox"}], "admin-jumpbox") -> 1
+    """
+    return sum(1 for item in records if item.get("asset_id") == asset_id)
 
 
 def _jsonl_records(path: Path) -> list[dict[str, Any]]:

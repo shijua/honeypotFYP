@@ -4,35 +4,10 @@
 from __future__ import annotations
 
 import argparse
-import json
-import sys
 from pathlib import Path
-from typing import Iterable, Iterator
+from typing import Iterable
 
-from scripts.forwarders.common import follow_file, forward_events, post_json_event
-
-
-def iter_json_events(lines: Iterable[str]) -> Iterator[dict[str, object]]:
-    """Yield valid internal HTTP event objects from newline-delimited JSON."""
-    for line_number, line in enumerate(lines, start=1):
-        stripped = line.strip()
-        if not stripped:
-            continue
-        try:
-            event = json.loads(stripped)
-        except json.JSONDecodeError as exc:
-            print(
-                f"Skipping invalid internal HTTP JSON on line {line_number}: {exc}",
-                file=sys.stderr,
-            )
-            continue
-        if not isinstance(event, dict):
-            print(
-                f"Skipping non-object internal HTTP JSON on line {line_number}",
-                file=sys.stderr,
-            )
-            continue
-        yield event
+from scripts.forwarders.common import follow_file, forward_events, iter_json_objects, post_json_event
 
 
 post_event = post_json_event
@@ -45,7 +20,7 @@ def forward_lines(
 ) -> int:
     """Forward a finite batch of internal HTTP JSONL lines."""
     return forward_events(
-        iter_json_events(lines),
+        iter_json_objects(lines, label="internal HTTP JSON"),
         target_url=observer_url,
         timeout_seconds=timeout_seconds,
         post_event=post_event,

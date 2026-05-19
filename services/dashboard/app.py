@@ -70,6 +70,10 @@ def api_summary() -> dict[str, Any]:
         state_dir / "opencanary_observations.json",
         "observations",
     )
+    high_interaction_observations = _read_items(
+        state_dir / "high_interaction_observations.json",
+        "observations",
+    )
     decision_trace = _read_items(state_dir / "decision_trace.json", "records")
     containers = _probe_project_containers(project_name)
     attackers = [
@@ -87,6 +91,7 @@ def api_summary() -> dict[str, Any]:
         entrypoint_observations=entrypoint_observations,
         cowrie_observations=cowrie_observations,
         opencanary_observations=opencanary_observations,
+        high_interaction_observations=high_interaction_observations,
         decision_trace=decision_trace,
     )
 
@@ -101,6 +106,7 @@ def api_summary() -> dict[str, Any]:
             entrypoint_observations=entrypoint_observations,
             cowrie_observations=cowrie_observations,
             opencanary_observations=opencanary_observations,
+            high_interaction_observations=high_interaction_observations,
             containers=containers,
             chain_health=chain_health,
             asset_gateway_routes=asset_gateway_routes,
@@ -114,6 +120,7 @@ def api_summary() -> dict[str, Any]:
         "recent_entrypoint_observations": _recent_items(entrypoint_observations),
         "recent_cowrie_observations": _recent_items(cowrie_observations),
         "recent_opencanary_observations": _recent_items(opencanary_observations),
+        "recent_high_interaction_observations": _recent_items(high_interaction_observations),
     }
 
 
@@ -132,6 +139,7 @@ def _build_metrics(
     entrypoint_observations: list[dict[str, Any]],
     cowrie_observations: list[dict[str, Any]],
     opencanary_observations: list[dict[str, Any]],
+    high_interaction_observations: list[dict[str, Any]],
     containers: list[dict[str, str]],
     chain_health: list[dict[str, str]],
     asset_gateway_routes: list[dict[str, Any]],
@@ -155,6 +163,7 @@ def _build_metrics(
         "entrypoint_event_count": len(entrypoint_observations),
         "cowrie_event_count": len(cowrie_observations),
         "opencanary_event_count": len(opencanary_observations),
+        "high_interaction_event_count": len(high_interaction_observations),
         "containers_up": sum(
             1
             for container in containers

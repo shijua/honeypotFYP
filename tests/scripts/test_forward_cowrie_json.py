@@ -5,30 +5,12 @@ import pytest
 from scripts.forwarders.cowrie_json import (
     build_adapter_payload,
     follow_log_file,
-    iter_json_events,
     normalize_event,
     _refresh_log_handle,
 )
 
 
 pytestmark = pytest.mark.unit
-
-
-def test_iter_json_events_skips_invalid_lines() -> None:
-    events = list(
-        iter_json_events(
-            [
-                "\n",
-                '{"eventid": "cowrie.login.failed", "src_ip": "198.51.100.1"}\n',
-                "not-json\n",
-                "[1, 2, 3]\n",
-            ]
-        )
-    )
-
-    assert events == [
-        {"eventid": "cowrie.login.failed", "src_ip": "198.51.100.1"}
-    ]
 
 
 def test_build_adapter_payload_wraps_event_and_protocol() -> None:

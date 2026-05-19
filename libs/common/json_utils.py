@@ -25,6 +25,42 @@ def read_json_object(path: Path, default: dict[str, Any]) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else deepcopy(default)
 
 
+def first_value(payload: dict[str, object], *keys: str) -> object | None:
+    """Return the first present value from a JSON-style object.
+
+    Example:
+        first_value({"src_ip": "198.51.100.10"}, "attacker_key", "src_ip") -> "198.51.100.10"
+    """
+    for key in keys:
+        value = payload.get(key)
+        if value is not None:
+            return value
+    return None
+
+
+def string_or_none(value: object | None) -> str | None:
+    """Return a non-empty string value, otherwise None.
+
+    Example:
+        string_or_none("asset-1") -> "asset-1"
+        string_or_none("  asset-1  ") -> "asset-1"
+        string_or_none("") -> None
+    """
+    if not isinstance(value, str):
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
+def first_string(payload: dict[str, object], *keys: str) -> str | None:
+    """Return the first present non-empty string from a JSON-style object.
+
+    Example:
+        first_string({"remote_ip": "198.51.100.10"}, "src_ip", "remote_ip") -> "198.51.100.10"
+    """
+    return string_or_none(first_value(payload, *keys))
+
+
 def mutable_nested_dict(payload: dict[str, Any], keys: Iterable[str]) -> dict[str, Any]:
     """Return a writable nested dict, creating or repairing each level.
 

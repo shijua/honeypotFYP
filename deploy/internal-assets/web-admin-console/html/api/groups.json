@@ -1,0 +1,7 @@
+{
+  "groups": [
+    {"name": "platform-ops", "members": 8, "privilege": "admin-console-maintainer"},
+    {"name": "service-admins", "members": 13, "privilege": "service-restart"},
+    {"name": "break-glass-review", "members": 3, "privilege": "temporary-approval"}
+  ]
+}

@@ -1,0 +1,4 @@
+username,scope,status,review_ticket
+contractor.ops,contractor-profile,active,OPS-1817
+svc.remoteaudit,read-only-audit,maintenance-only,OPS-1842
+ops.breakglass,emergency-access,disabled,OPS-1802

@@ -1,0 +1,17 @@
+{
+  "generated_at": "2026-04-27T22:15:00Z",
+  "node": "intranet-admin-02",
+  "environment": "production",
+  "current_user": "svc-admin-console",
+  "hosts": [
+    {"hostname": "intranet-admin-02", "os": "Ubuntu 22.04", "role": "admin-console", "owner": "platform-ops"},
+    {"hostname": "ops-db-01", "os": "MariaDB appliance", "role": "operations database", "owner": "platform-ops"},
+    {"hostname": "redis-cache-01", "os": "Redis 6 compatibility image", "role": "session cache", "owner": "developer-platform"}
+  ],
+  "software": [
+    {"name": "nginx", "version": "1.24", "status": "managed"},
+    {"name": "admin-console", "version": "2026.04.29", "status": "pending restart"},
+    {"name": "legacy-log4j-bridge", "version": "2.14.1", "status": "compatibility mode"}
+  ],
+  "groups": ["platform-ops", "break-glass-review", "service-admins"]
+}

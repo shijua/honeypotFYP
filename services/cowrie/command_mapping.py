@@ -21,26 +21,9 @@ from pathlib import Path
 from typing import Protocol
 
 from libs.common.iterables import dedupe_preserve_by
-
-
-@dataclass(frozen=True)
-class SourceRef:
-    """External reference used to justify a command mapping rule.
-
-    The mapper does not use this at runtime for matching. It is stored with the
-    rule so we can explain why a command pattern maps to a specific technique.
-
-    Example:
-        SourceRef(
-            type="elastic_detection_rule",
-            name="Sensitive Keys...",
-            url="https://...",
-        )
-    """
-
-    type: str
-    name: str
-    url: str | None = None
+from services.cowrie.mapping_utils import SourceRef
+from services.cowrie.mapping_utils import lower_strings, paths_from, source_ref_from_payload
+from services.cowrie.mapping_utils import strings
 
 
 @dataclass(frozen=True)
@@ -157,7 +140,7 @@ class FileCowrieCommandRuleCatalog:
     """
 
     def __init__(self, path: str | Path | Sequence[str | Path]) -> None:
-        self._paths = _paths_from(path)
+        self._paths = paths_from(path)
         self._loaded = False
         self._rules: tuple[CowrieCommandRule, ...] = ()
 
@@ -274,7 +257,7 @@ def _rule_from_payload(payload: dict[str, object]) -> CowrieCommandRule:
         confidence=str(payload.get("confidence", "medium")),
         match=_match_from_payload(payload.get("match", {})),
         source_refs=tuple(
-            _source_ref_from_payload(item)
+            source_ref_from_payload(item)
             for item in payload.get("source_refs", [])
             if isinstance(item, dict)
         ),
@@ -287,12 +270,12 @@ def _match_from_payload(payload: object) -> CommandMatch:
     if not isinstance(payload, dict):
         payload = {}
     return CommandMatch(
-        process_names=tuple(_lower_strings(payload.get("process_names", []))),
+        process_names=tuple(lower_strings(payload.get("process_names", []))),
         command_line_contains_any=tuple(
-            _lower_strings(payload.get("command_line_contains_any", []))
+            lower_strings(payload.get("command_line_contains_any", []))
         ),
         command_line_regex_any=tuple(
-            _strings(payload.get("command_line_regex_any", []))
+            strings(payload.get("command_line_regex_any", []))
         ),
     )
 
@@ -302,34 +285,3 @@ def _optional_match_from_payload(payload: object) -> CommandMatch | None:
     if payload is None:
         return None
     return _match_from_payload(payload)
-
-
-def _source_ref_from_payload(payload: dict[str, object]) -> SourceRef:
-    """Convert one JSON source reference into a SourceRef."""
-    url = payload.get("url")
-    return SourceRef(
-        type=str(payload.get("type", "")),
-        name=str(payload.get("name", "")),
-        url=str(url) if url is not None else None,
-    )
-
-
-def _paths_from(path: str | Path | Sequence[str | Path]) -> tuple[Path, ...]:
-    """Normalize one mapping file or several mapping files into Path objects."""
-    if isinstance(path, (str, Path)):
-        return (Path(path),)
-    return tuple(Path(item) for item in path)
-
-
-def _lower_strings(value: object) -> list[str]:
-    """Return a lower-case string list, or an empty list for invalid input."""
-    if not isinstance(value, list):
-        return []
-    return [str(item).lower() for item in value]
-
-
-def _strings(value: object) -> list[str]:
-    """Return a string list without changing regex escape sequences."""
-    if not isinstance(value, list):
-        return []
-    return [str(item) for item in value]

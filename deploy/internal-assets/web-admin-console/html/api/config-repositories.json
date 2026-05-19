@@ -1,0 +1,17 @@
+{
+  "repositories": [
+    {
+      "name": "infra-deploy",
+      "service": "git://source-control.internal/infra-deploy.git",
+      "owners": ["platform-operations"],
+      "contains": ["k8s/values-prod.yaml", "runbooks/incident-admin-console.md"]
+    },
+    {
+      "name": "customer-portal",
+      "service": "git://source-control.internal/customer-portal.git",
+      "owners": ["web-platform"],
+      "contains": ["config/application-prod.yml", "ops/rollback.md"]
+    }
+  ],
+  "review_ticket": "OPS-1839"
+}

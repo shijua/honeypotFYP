@@ -13,25 +13,32 @@ Optional local tunnel for browser testing:
 
 ```bash
 ssh -N \
-  -L 18000:146.169.44.23:8080 \
-  -L 18090:146.169.44.23:8090 \
-  -L 18180:146.169.44.23:18080 \
-  -L 18081:146.169.44.23:18081 \
-  -L 18082:146.169.44.23:18082 \
-  -L 18084:146.169.44.23:18084 \
-  -L 18085:146.169.44.23:18085 \
-  -L 18443:146.169.44.23:18443 \
-  -L 19418:146.169.44.23:19418 \
-  -L 13306:146.169.44.23:13306 \
-  -L 16379:146.169.44.23:16379 \
-  -L 12121:146.169.44.23:12121 \
-  -L 12222:146.169.44.23:12222 \
-  -L 12323:146.169.44.23:12323 \
-  -L 12525:146.169.44.23:2525 \
+  -L 127.0.0.1:18000:146.169.44.23:8080 \
+  -L 127.0.0.1:18090:146.169.44.23:8090 \
+  -L 127.0.0.1:18180:146.169.44.23:18080 \
+  -L 127.0.0.1:18089:146.169.44.23:18081 \
+  -L 127.0.0.1:18082:146.169.44.23:18082 \
+  -L 127.0.0.1:18084:146.169.44.23:18084 \
+  -L 127.0.0.1:18085:146.169.44.23:18085 \
+  -L 127.0.0.1:18443:146.169.44.23:18443 \
+  -L 127.0.0.1:19419:146.169.44.23:19418 \
+  -L 127.0.0.1:13306:146.169.44.23:13306 \
+  -L 127.0.0.1:16379:146.169.44.23:16379 \
+  -L 127.0.0.1:12121:146.169.44.23:12121 \
+  -L 127.0.0.1:12222:146.169.44.23:12222 \
+  -L 127.0.0.1:12323:146.169.44.23:12323 \
+  -L 127.0.0.1:12525:146.169.44.23:2525 \
+  -L 127.0.0.1:11502:146.169.44.23:1502 \
+  -L 127.0.0.1:11102:146.169.44.23:1102 \
+  -L 127.0.0.1:11445:146.169.44.23:1445 \
+  -L 127.0.0.1:11433:146.169.44.23:11433 \
+  -L 127.0.0.1:12122:146.169.44.23:12122 \
+  -L 127.0.0.1:19999:146.169.44.23:19999 \
+  -L 127.0.0.1:10222:146.169.44.23:2222 \
   vm
 ```
 
-Open `http://localhost:18090/` for the dashboard and `http://localhost:18000/` for the public portal.
+Open browser pages with `127.0.0.1` instead of `localhost`, for example `http://127.0.0.1:18180/`, so the browser does not choose the IPv6 localhost path.
 
 Quick health check:
 
@@ -103,7 +110,7 @@ curl -s "http://146.169.44.23:8090/api/summary" | jq '{cowrie: [.recent_cowrie_o
 
 ## 4. Unlock Fixed-Port MVP Assets
 
-This is the manual test-mode path. It force-unlocks fixed-port MVP assets through the normal orchestrator API for the observed attacker key. `admin-jumpbox` and `log4shell-app` are intentionally later/high-interaction paths and are not part of this smoke test.
+This is the manual test-mode path. It force-unlocks fixed-port MVP assets through the normal orchestrator API for the observed attacker key. High-interaction assets are validated separately because they need their runtime backend and telemetry forwarder to be reachable.
 
 ```bash
 TEST_ATTACKER_KEY="$(
@@ -148,7 +155,7 @@ timeout 8s git ls-remote git://146.169.44.23:19418/infra-deploy.git || true
 printf "INFO\r\n" | nc -w 2 146.169.44.23 16379 || true
 printf "KEYS *\r\n" | nc -w 2 146.169.44.23 16379 || true
 printf "USER anonymous\r\nPASS anonymous\r\nQUIT\r\n" | nc -w 3 146.169.44.23 12121 || true
-timeout 8s ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 12222 root@146.169.44.23 true </dev/null || true
+timeout 8s ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 12222 root@146.169.44.23 true </dev/null || true
 { sleep 1; printf "admin\r\n"; sleep 1; printf "admin123\r\n"; sleep 1; } | nc -w 8 146.169.44.23 12323 || true
 printf "EHLO tester\r\nVRFY admin\r\nAUTH LOGIN\r\nYWRtaW4=\r\nV3JvbmdQYXNz\r\nQUIT\r\n" | nc -w 3 146.169.44.23 2525 || true
 python3 - <<'PY'
@@ -178,12 +185,68 @@ Check:
 ```bash
 sleep 3
 curl -s "http://146.169.44.23:8090/api/summary" | jq '{asset_gateway_routes, recent_opencanary_observations, attackers: [.attackers[] | {attacker_key, recent_tactics, recent_techniques, internal_http_evidence, unlocked_assets}]}'
-.venv/bin/python scripts/validation/asset_telemetry.py --require-observed
+.venv/bin/python scripts/validation/asset_telemetry.py \
+  --asset-id internal-portal \
+  --asset-id finance-share \
+  --asset-id git-internal \
+  --asset-id ops-db \
+  --asset-id redis-cache \
+  --asset-id web-admin-console \
+  --asset-id ftp-archive \
+  --asset-id ssh-canary \
+  --asset-id legacy-telnet \
+  --asset-id mail-relay \
+  --asset-id ics-plc \
+  --asset-id vpn-appliance \
+  --asset-id malware-sink \
+  --require-observed
 ```
 
 Expected: static HTTP assets produce internal HTTP evidence; Git/MySQL/Redis/FTP/SSH/Telnet/SMTP produce `recent_opencanary_observations` and update attacker tactics/techniques.
 
-## 6. Debug
+## 6. High-Interaction Runtime Smoke
+
+Use this after the fixed-port smoke when you want to verify upgraded high-interaction backends. These commands force-unlock the Docker-backed high-interaction assets for the same attacker key, then probe their gateway-managed ports. Vulhub-backed `log4shell-app` and `spring-gateway-app` require an ignored `vendor/vulhub/` checkout and are not required for this smoke.
+
+```bash
+TEST_ATTACKER_KEY="$(
+  curl -s "http://146.169.44.23:8090/api/summary" |
+    jq -r '.recent_entrypoint_observations | .[0].attacker_key // "146.169.44.23"'
+)"
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/unlock_internal_assets_for_test.sh --assets conpot-plc,dionaea-capture,honeytrap-generic
+sleep 10
+jq --arg ip "$TEST_ATTACKER_KEY" '[.routes[] | select(.attacker_key == $ip and (.asset_id == "conpot-plc" or .asset_id == "dionaea-capture" or .asset_id == "honeytrap-generic")) | {asset_id, public_port, backend_host, backend_port}]' data/runtime/asset_gateway_routes.json
+```
+
+Probe the high-interaction routes:
+
+```bash
+# Conpot HMI/ICS ports
+curl -i "http://146.169.44.23:18084/" || true
+printf "\x00\x01\x00\x00\x00\x06\x01\x03\x00\x00\x00\x01" | nc -w 3 146.169.44.23 1502 || true
+printf "\x03\x00\x00\x16\x11\xe0\x00\x00\x00\x01\x00\xc1\x02\x01\x00\xc2\x02\x01\x02\xc0\x01\x0a" | nc -w 3 146.169.44.23 1102 || true
+
+# Dionaea HTTP/SMB/MSSQL/FTP-facing ports
+curl -i "http://146.169.44.23:18085/downloads/agent-update.bin" || true
+printf "\x00\x00\x00\x90" | nc -w 3 146.169.44.23 1445 || true
+printf "\x12\x01\x00\x34" | nc -w 3 146.169.44.23 11433 || true
+printf "USER anonymous\r\nPASS anonymous\r\nQUIT\r\n" | nc -w 3 146.169.44.23 12122 || true
+
+# Generic Honeytrap port
+printf "payload upload test\r\n" | nc -w 3 146.169.44.23 19999 || true
+```
+
+Check:
+
+```bash
+sleep 5
+curl -s "http://146.169.44.23:8090/api/summary" | jq '{recent_high_interaction_observations, high_interaction_events: .event_counts.high_interaction, attackers: [.attackers[] | {attacker_key, recent_tactics, recent_techniques, unlocked_assets}]}'
+.venv/bin/python scripts/validation/asset_telemetry.py --asset-id conpot-plc --asset-id dionaea-capture --asset-id honeytrap-generic --require-observed
+```
+
+Expected: the three assets have runtime records, asset-gateway routes, dashboard running state, and either `recent_high_interaction_observations` or raw high-interaction/internal HTTP telemetry. If a third-party image is unavailable, the validation report should show the failed runtime instead of silently passing.
+
+## 7. Debug
 
 ```bash
 docker-compose -p honeynet -f docker-compose.control.yml ps
@@ -192,13 +255,15 @@ docker logs --tail 50 honeynet_public-portal-forwarder_1
 docker logs --tail 50 honeynet_internal-http-forwarder_1
 docker logs --tail 50 honeynet_internal-protocol-forwarder_1
 docker logs --tail 50 honeynet_opencanary-forwarder_1
+docker logs --tail 50 honeynet_high-interaction-forwarder_1
 tail -n 20 deploy/public-portal/logs/access.log
 tail -n 20 data/runtime/internal_http_events.jsonl
 tail -n 20 data/runtime/internal_protocol_events.jsonl
+tail -n 20 data/runtime/high_interaction_events.jsonl
 cat data/runtime/asset_gateway_routes.json | jq
 ```
 
-## 7. Cleanup
+## 8. Cleanup
 
 ```bash
 ./scripts/reset_enterprise_runtime.sh

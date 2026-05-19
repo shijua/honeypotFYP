@@ -136,6 +136,104 @@ def test_tick_uses_public_prior_to_boost_next_technique() -> None:
     assert response.actions[0].asset_id == "asset-explore"
 
 
+def test_tick_scores_parent_and_subtechnique_family_matches() -> None:
+    service = ControllerService(
+        InMemoryAssetRepository(_assets()),
+        InMemoryTechniqueTransitionRepository({"T1552": {"T1046": 0.9}}),
+        config=RuntimeConfig(epsilon=0.0),
+        rng=random.Random(0),
+    )
+
+    response = service.tick(
+        ControllerTickRequest(
+            attacker_key="198.51.100.33",
+            binding_id="binding-family",
+            profile=ProfileSnapshot(
+                attacker_key="198.51.100.33",
+                conf_by_technique={"T1552": 0.9},
+                recent_techniques=["T1552"],
+                recent_evidence_ids=["e-family"],
+            ),
+        )
+    )
+
+    assert response.actions[0].asset_id == "asset-exploit"
+    details = response.decision_events[0].details
+    assert details["technique_match_type"] == "family"
+    assert details["matched_profile_technique"] == "T1552"
+
+
+def test_tick_records_same_port_upgrade_context_for_explicit_catalog_candidate() -> None:
+    assets = [
+        AssetDefinition(
+            asset_id="web-admin-console",
+            asset_name="Web Admin Console",
+            exposure_type="internal",
+            interaction_level="medium",
+            covers_tactics=["Discovery"],
+            dependencies=[],
+            default_settings={
+                "selection_profile": {
+                    "asset_group": "admin-web",
+                    "covered_techniques": ["T1046"],
+                    "telemetry_value": 0.8,
+                    "upgrade_candidates": [
+                        {
+                            "asset_id": "log4shell-app",
+                            "public_port": 18081,
+                            "required_markers": ["any_http_rules:public_http_exploit_probe"],
+                            "reason": "upgrade static admin console to vulnerable Java lab",
+                        }
+                    ],
+                }
+            },
+        ),
+        AssetDefinition(
+            asset_id="log4shell-app",
+            asset_name="Legacy Java App",
+            exposure_type="internal",
+            interaction_level="high",
+            covers_tactics=["Initial Access"],
+            dependencies=[],
+            default_settings={
+                "unlock_signals": {"any_http_rules": ["public_http_exploit_probe"]},
+                "selection_profile": {
+                    "asset_group": "vulnerable-web",
+                    "covered_techniques": ["T1190"],
+                    "telemetry_value": 1.0,
+                },
+            },
+        ),
+    ]
+    service = ControllerService(
+        InMemoryAssetRepository(assets),
+        InMemoryTechniqueTransitionRepository(),
+        config=RuntimeConfig(epsilon=0.0),
+        rng=random.Random(0),
+    )
+
+    response = service.tick(
+        ControllerTickRequest(
+            attacker_key="198.51.100.34",
+            binding_id="binding-upgrade",
+            unlocked_asset_ids=["web-admin-console"],
+            profile=ProfileSnapshot(
+                attacker_key="198.51.100.34",
+                conf_by_technique={"T1190": 0.95},
+                recent_techniques=["T1190"],
+                recent_public_http_rules=["public_http_exploit_probe"],
+                recent_evidence_ids=["e-upgrade"],
+            ),
+        )
+    )
+
+    assert response.actions[0].asset_id == "log4shell-app"
+    upgrade = response.decision_events[0].details["same_port_upgrade"]
+    assert upgrade["previous_backend_asset"] == "web-admin-console"
+    assert upgrade["upgraded_backend_asset"] == "log4shell-app"
+    assert upgrade["public_port"] == 18081
+
+
 def test_tick_can_chain_first_internal_unlock_into_file_gated_asset() -> None:
     # This models the intended dependency chain: the controller first opens the
     # generic internal portal, then immediately opens a more specific asset once

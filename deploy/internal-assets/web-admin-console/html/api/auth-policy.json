@@ -1,0 +1,21 @@
+{
+  "policy_id": "sso-admin-console-2026-04",
+  "realm": "Northbridge Operations",
+  "mfa_required": true,
+  "break_glass_accounts": [
+    {
+      "username": "ops.breakglass",
+      "status": "disabled",
+      "last_reviewed": "2026-04-26"
+    },
+    {
+      "username": "svc.deploy",
+      "status": "maintenance-only",
+      "ticket_required": true
+    }
+  ],
+  "notes": [
+    "Password fallback disabled outside approved maintenance windows.",
+    "Step-up authentication is enforced for worker-token rotation."
+  ]
+}

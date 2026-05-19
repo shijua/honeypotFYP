@@ -23,7 +23,8 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from scripts.data.build_attack_transition_prior import BuildStats, NormalizedEvent, build_prior, load_events
+from libs.common.iterables import dedupe_preserve
+from scripts.data.build_attack_transition_prior import TECHNIQUE_RE, BuildStats, NormalizedEvent, build_prior, load_events
 
 ModelMode = Literal["order1", "order2", "order3", "hybrid"]
 TOP_KS = (3, 5, 10)
@@ -40,10 +41,13 @@ def main() -> int:
     parser.add_argument("--count-mode", choices=("trace-balanced", "event-count"), default="trace-balanced")
     parser.add_argument("--global-fallback-weight", type=float, default=0.05)
     parser.add_argument("--model-mode", choices=("order1", "order2", "order3", "hybrid"), default="hybrid")
+    parser.add_argument("--catalog", default="data/assets/catalog.json", help="Asset catalog used for catalog-filtered and asset-level metrics.")
+    parser.add_argument("--no-catalog", action="store_true", help="Disable catalog-aware metrics.")
     parser.add_argument("--seed", default="honeynet")
     args = parser.parse_args()
 
     events, stats = load_events([Path(item) for item in args.inputs])
+    catalog_coverage = None if args.no_catalog else _load_catalog_coverage(Path(args.catalog))
     report = evaluate_prior(
         events,
         stats=stats,
@@ -54,6 +58,7 @@ def main() -> int:
         count_mode=args.count_mode,
         global_fallback_weight=args.global_fallback_weight,
         model_mode=args.model_mode,
+        catalog_coverage=catalog_coverage,
         seed=args.seed,
     )
     print(json.dumps(report, indent=2, sort_keys=True))
@@ -71,6 +76,7 @@ def evaluate_prior(
     count_mode: str = "trace-balanced",
     global_fallback_weight: float = 0.05,
     model_mode: ModelMode = "hybrid",
+    catalog_coverage: dict[str, list[str]] | None = None,
     seed: str = "honeynet",
 ) -> dict[str, Any]:
     """Train on non-holdout cases and score held-out next-technique edges."""
@@ -99,6 +105,7 @@ def evaluate_prior(
         test_traces,
         top_k=top_k,
         model_mode=model_mode,
+        catalog_coverage=catalog_coverage or {},
     )
     return {
         "schema_version": "v1",
@@ -110,6 +117,7 @@ def evaluate_prior(
         "count_mode": count_mode,
         "global_fallback_weight": global_fallback_weight,
         "model_mode": model_mode,
+        "catalog_metrics_enabled": bool(catalog_coverage),
         "trace_count": len(traces),
         "train_event_count": len(train_events),
         "labelled_events_used": len(events),
@@ -150,11 +158,21 @@ def _evaluate_edges(
     *,
     top_k: int,
     model_mode: ModelMode,
+    catalog_coverage: dict[str, list[str]],
 ) -> dict[str, Any]:
     """Score held-out direct-follow edges with top-k, MRR, NLL, and context rates."""
     evaluated = 0
     top1_hits = 0
     top_hits = {k: 0 for k in TOP_KS}
+    parent_top1_hits = 0
+    parent_top_hits = {k: 0 for k in TOP_KS}
+    catalog_edges = 0
+    catalog_top1_hits = 0
+    catalog_top_hits = {k: 0 for k in TOP_KS}
+    asset_edges = 0
+    asset_top1_hits = 0
+    asset_top_hits = {k: 0 for k in TOP_KS}
+    missing_catalog_techniques: Counter[str] = Counter()
     reciprocal_rank_sum = 0.0
     negative_log_likelihood = 0.0
     unseen_sources = 0
@@ -192,6 +210,14 @@ def _evaluate_edges(
                 order3_used_edges += 1
             source_row = source_metrics[event.source_dataset]
             source_row["evaluated_edges"] = int(source_row["evaluated_edges"]) + 1
+            true_assets = _covered_assets_for_technique(catalog_coverage, event.technique)
+            if true_assets:
+                catalog_edges += 1
+                asset_edges += 1
+                source_row["catalog_edges"] = int(source_row["catalog_edges"]) + 1
+                source_row["asset_edges"] = int(source_row["asset_edges"]) + 1
+            elif catalog_coverage:
+                missing_catalog_techniques[event.technique] += 1
             if not ranked_scores:
                 # No transition exists from this history in the trained prior.
                 # Count it as unseen and assign a tiny probability for NLL.
@@ -204,10 +230,29 @@ def _evaluate_edges(
             if candidates[0] == event.technique:
                 top1_hits += 1
                 source_row["top1_hits"] = int(source_row["top1_hits"]) + 1
+            if _top_technique_hit(candidates, event.technique, 1, family_match=True):
+                parent_top1_hits += 1
+                source_row["parent_top1_hits"] = int(source_row["parent_top1_hits"]) + 1
+            if true_assets and candidates[0] == event.technique:
+                catalog_top1_hits += 1
+                source_row["catalog_top1_hits"] = int(source_row["catalog_top1_hits"]) + 1
+            ranked_assets = _ranked_assets_for_candidates(catalog_coverage, candidates)
+            if true_assets and _top_asset_hit(ranked_assets, true_assets, 1):
+                asset_top1_hits += 1
+                source_row["asset_top1_hits"] = int(source_row["asset_top1_hits"]) + 1
             for k in TOP_KS:
                 if event.technique in candidates[:k]:
                     top_hits[k] += 1
                     source_row[f"top{k}_hits"] = int(source_row[f"top{k}_hits"]) + 1
+                if _top_technique_hit(candidates, event.technique, k, family_match=True):
+                    parent_top_hits[k] += 1
+                    source_row[f"parent_top{k}_hits"] = int(source_row[f"parent_top{k}_hits"]) + 1
+                if true_assets and event.technique in candidates[:k]:
+                    catalog_top_hits[k] += 1
+                    source_row[f"catalog_top{k}_hits"] = int(source_row[f"catalog_top{k}_hits"]) + 1
+                if true_assets and _top_asset_hit(ranked_assets, true_assets, k):
+                    asset_top_hits[k] += 1
+                    source_row[f"asset_top{k}_hits"] = int(source_row[f"asset_top{k}_hits"]) + 1
             if event.technique in candidates:
                 reciprocal_rank_sum += 1.0 / (candidates.index(event.technique) + 1)
             negative_log_likelihood += -math.log(max(probabilities.get(event.technique, 0.0), 1e-12))
@@ -218,8 +263,21 @@ def _evaluate_edges(
     return {
         "evaluated_edges": evaluated,
         "top1_accuracy": _rate(top1_hits, evaluated),
-        **{f"top{k}_accuracy": _rate(top_hits[k], evaluated) for k in TOP_KS},
+        **_topk_rates("top", top_hits, evaluated),
         f"top{top_k}_accuracy": _rate(top1_hits if top_k == 1 else top_hits.get(top_k, 0), evaluated),
+        "parent_top1_accuracy": _rate(parent_top1_hits, evaluated),
+        **_topk_rates("parent_top", parent_top_hits, evaluated),
+        f"parent_top{top_k}_accuracy": _rate(parent_top1_hits if top_k == 1 else parent_top_hits.get(top_k, 0), evaluated),
+        "catalog_filtered_edges": catalog_edges,
+        "catalog_covered_rate": _rate(catalog_edges, evaluated),
+        "coverage_gap_top_techniques": _coverage_gap_rows(missing_catalog_techniques),
+        "catalog_top1_accuracy": _rate(catalog_top1_hits, catalog_edges),
+        **_topk_rates("catalog_top", catalog_top_hits, catalog_edges),
+        f"catalog_top{top_k}_accuracy": _rate(catalog_top1_hits if top_k == 1 else catalog_top_hits.get(top_k, 0), catalog_edges),
+        "asset_evaluated_edges": asset_edges,
+        "asset_top1_accuracy": _rate(asset_top1_hits, asset_edges),
+        **_topk_rates("asset_top", asset_top_hits, asset_edges),
+        f"asset_top{top_k}_accuracy": _rate(asset_top1_hits if top_k == 1 else asset_top_hits.get(top_k, 0), asset_edges),
         "mrr": _rate(reciprocal_rank_sum, evaluated),
         "mean_negative_log_likelihood": _rate(negative_log_likelihood, evaluated),
         "unseen_source_rate": _rate(unseen_sources, evaluated),
@@ -288,11 +346,22 @@ def _source_breakdown(test_traces: list[list[NormalizedEvent]], source_metrics: 
     breakdown: dict[str, dict[str, float | int]] = {}
     for source, metrics in sorted(source_metrics.items()):
         evaluated = int(metrics.get("evaluated_edges", 0) or 0)
+        catalog_edges = int(metrics.get("catalog_edges", 0) or 0)
+        asset_edges = int(metrics.get("asset_edges", 0) or 0)
         breakdown[source] = {
             "test_trace_count": trace_counts[source],
             "evaluated_edges": evaluated,
             "top1_accuracy": _metric_rate(metrics, "top1_hits", evaluated),
-            **{f"top{k}_accuracy": _metric_rate(metrics, f"top{k}_hits", evaluated) for k in TOP_KS},
+            **_metric_topk_rates("top", metrics, evaluated),
+            "parent_top1_accuracy": _metric_rate(metrics, "parent_top1_hits", evaluated),
+            **_metric_topk_rates("parent_top", metrics, evaluated),
+            "catalog_filtered_edges": catalog_edges,
+            "catalog_covered_rate": _rate(catalog_edges, evaluated),
+            "catalog_top1_accuracy": _metric_rate(metrics, "catalog_top1_hits", catalog_edges),
+            **_metric_topk_rates("catalog_top", metrics, catalog_edges),
+            "asset_evaluated_edges": asset_edges,
+            "asset_top1_accuracy": _metric_rate(metrics, "asset_top1_hits", asset_edges),
+            **_metric_topk_rates("asset_top", metrics, asset_edges),
         }
     return breakdown
 
@@ -331,7 +400,19 @@ def _hybrid_scores(
 
 
 def _source_metric_row() -> dict[str, int | float]:
-    return {"evaluated_edges": 0, "top1_hits": 0, **{f"top{k}_hits": 0 for k in TOP_KS}}
+    return {
+        "evaluated_edges": 0,
+        "top1_hits": 0,
+        **{f"top{k}_hits": 0 for k in TOP_KS},
+        "parent_top1_hits": 0,
+        **{f"parent_top{k}_hits": 0 for k in TOP_KS},
+        "catalog_edges": 0,
+        "catalog_top1_hits": 0,
+        **{f"catalog_top{k}_hits": 0 for k in TOP_KS},
+        "asset_edges": 0,
+        "asset_top1_hits": 0,
+        **{f"asset_top{k}_hits": 0 for k in TOP_KS},
+    }
 
 
 def _empty_metrics(top_k: int) -> dict[str, Any]:
@@ -340,6 +421,19 @@ def _empty_metrics(top_k: int) -> dict[str, Any]:
         "top1_accuracy": 0.0,
         **{f"top{k}_accuracy": 0.0 for k in TOP_KS},
         f"top{top_k}_accuracy": 0.0,
+        "parent_top1_accuracy": 0.0,
+        **{f"parent_top{k}_accuracy": 0.0 for k in TOP_KS},
+        f"parent_top{top_k}_accuracy": 0.0,
+        "catalog_filtered_edges": 0,
+        "catalog_covered_rate": 0.0,
+        "coverage_gap_top_techniques": [],
+        "catalog_top1_accuracy": 0.0,
+        **{f"catalog_top{k}_accuracy": 0.0 for k in TOP_KS},
+        f"catalog_top{top_k}_accuracy": 0.0,
+        "asset_evaluated_edges": 0,
+        "asset_top1_accuracy": 0.0,
+        **{f"asset_top{k}_accuracy": 0.0 for k in TOP_KS},
+        f"asset_top{top_k}_accuracy": 0.0,
         "mrr": 0.0,
         "mean_negative_log_likelihood": 0.0,
         "unseen_source_rate": 0.0,
@@ -355,8 +449,132 @@ def _empty_metrics(top_k: int) -> dict[str, Any]:
     }
 
 
+def _load_catalog_coverage(path: Path) -> dict[str, list[str]]:
+    """Load `covered_techniques` -> asset ids from the asset catalog.
+
+    Example:
+        {"T1552.001": ["finance-share", "git-internal"]}
+    """
+    if not path.exists():
+        return {}
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    return _catalog_coverage(payload if isinstance(payload, list) else [])
+
+
+def _coverage_gap_rows(counts: Counter[str], limit: int = 25) -> list[dict[str, Any]]:
+    """Return the most frequent held-out techniques not covered by the catalog.
+
+    This is intentionally factual rather than prescriptive. Earlier versions
+    used a hard-coded suggestion map, but the evaluator should not guess whether
+    a missing technique needs static content, a same-port upgrade, or a new
+    asset without catalog evidence.
+    """
+    return [
+        {
+            "technique": technique,
+            "parent_technique": _parent_technique(technique),
+            "count": count,
+        }
+        for technique, count in counts.most_common(limit)
+    ]
+
+
+def _catalog_coverage(assets: list[Any]) -> dict[str, list[str]]:
+    """Build the technique-to-assets lookup used for reveal-level metrics."""
+    coverage: dict[str, list[str]] = defaultdict(list)
+    for asset in assets:
+        if not isinstance(asset, dict) or not isinstance(asset.get("asset_id"), str):
+            continue
+        selection_profile = asset.get("default_settings", {}).get("selection_profile", {})
+        if not isinstance(selection_profile, dict):
+            continue
+        for technique in selection_profile.get("covered_techniques", []):
+            if isinstance(technique, str) and TECHNIQUE_RE.fullmatch(technique):
+                coverage[technique].append(asset["asset_id"])
+    return {technique: dedupe_preserve(asset_ids) for technique, asset_ids in coverage.items()}
+
+
+def _covered_assets_for_technique(
+    catalog_coverage: dict[str, list[str]],
+    technique: str,
+) -> list[str]:
+    """Return assets covering the technique exactly or at parent/sub-technique level."""
+    asset_ids: list[str] = []
+    for covered_technique, covered_asset_ids in catalog_coverage.items():
+        if _same_technique_family(covered_technique, technique):
+            asset_ids.extend(covered_asset_ids)
+    return dedupe_preserve(asset_ids)
+
+
+def _ranked_assets_for_candidates(
+    catalog_coverage: dict[str, list[str]],
+    candidates: list[str],
+) -> list[str]:
+    """Convert ranked technique candidates into ranked reveal asset candidates."""
+    asset_ids: list[str] = []
+    for candidate in candidates:
+        asset_ids.extend(_covered_assets_for_technique(catalog_coverage, candidate))
+    return dedupe_preserve(asset_ids)
+
+
+def _top_technique_hit(
+    candidates: list[str],
+    expected: str,
+    top_k: int,
+    *,
+    family_match: bool,
+) -> bool:
+    """Return whether expected technique appears in top-k exactly or by parent family."""
+    if family_match:
+        return any(_same_technique_family(candidate, expected) for candidate in candidates[:top_k])
+    return expected in candidates[:top_k]
+
+
+def _top_asset_hit(
+    ranked_assets: list[str],
+    expected_assets: list[str],
+    top_k: int,
+) -> bool:
+    """Return whether any top-k predicted reveal asset covers the true technique."""
+    return bool(set(ranked_assets[:top_k]) & set(expected_assets))
+
+
+def _same_technique_family(left: str, right: str) -> bool:
+    """Treat parent/sub-technique matches as partial hits for evaluation.
+
+    Example:
+        T1552 and T1552.001 match; T1552.001 and T1552.002 also share parent T1552.
+    """
+    return left == right or _parent_technique(left) == _parent_technique(right)
+
+
+def _parent_technique(technique: str) -> str:
+    return technique.split(".", 1)[0]
+
+
 def _metric_rate(metrics: dict[str, int | float], key: str, total: int) -> float:
     return _rate(float(metrics.get(key, 0) or 0), total)
+
+
+def _topk_rates(prefix: str, hits: dict[int, int], total: int) -> dict[str, float]:
+    """Return repeated top-k accuracy fields for one hit counter.
+
+    Example:
+        _topk_rates("top", {3: 2}, 4) -> {"top3_accuracy": 0.5, ...}
+    """
+    return {f"{prefix}{k}_accuracy": _rate(hits[k], total) for k in TOP_KS}
+
+
+def _metric_topk_rates(
+    prefix: str,
+    metrics: dict[str, int | float],
+    total: int,
+) -> dict[str, float]:
+    """Return repeated per-source top-k accuracy fields from source counters."""
+    return {
+        f"{prefix}{k}_accuracy": _metric_rate(metrics, f"{prefix}{k}_hits", total)
+        for k in TOP_KS
+    }
 
 
 def _rate(value: float, total: int) -> float:
