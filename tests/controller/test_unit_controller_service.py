@@ -82,14 +82,9 @@ def test_tick_prefers_exploit_then_secondary_explore() -> None:
     assert response.decision_events[0].details["selected_strategy"] == "exploit"
     assert response.decision_events[0].details["selected_technique"] == "T1552.001"
     assert response.decision_events[0].details["candidate_type"] == "continuation"
-    assert response.decision_events[0].details["ordering"]["rule"] == [
-        "candidate_type_rank",
-        "prior_support_or_observed_confidence",
-        "telemetry_value",
-        "matched_dependency_marker_count",
-        "recent_repeat_penalty",
-        "asset_id",
-    ]
+    assert response.decision_events[0].details["ordering"]["candidate_type_rank"] == 2
+    assert response.decision_events[0].details["ordering"]["technique_signal_score"] == 0.9
+    assert response.decision_events[0].details["ordering"]["telemetry_value"] == 0.8
     assert response.decision_events[0].details["eligible_assets"] == [
         "asset-exploit",
         "asset-explore",
