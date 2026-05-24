@@ -24,4 +24,12 @@ build/
 *.egg-info/
 .codex
 
+[Pp]roposal*.tex
+internal_asset_catalogue_notes.md
+technique_reveal_implementation_notes.md
+[Vv][0-9]_implementation_design.md
+notes.md
+AI_HANDOFF.md
+AGENTS.md
+archive/*
 

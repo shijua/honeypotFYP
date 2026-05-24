@@ -51,7 +51,7 @@ Optional route-level reveal evaluation:
 ```bash
 .venv/bin/python scripts/evaluation/reveal_port_simulation.py \
   --mode live-apply \
-  --scenario-file tests/fixtures/reveal_port_scenarios.jsonl \
+  --scenario-file tests/fixtures/reveal_port_scenarios.json \
   --output data/runtime/reveal_port_simulation_report.json
 jq '.summary, .scenarios[] | {scenario_id, ok, selected_assets, expected_routes, actual_routes, failure_reason}' \
   data/runtime/reveal_port_simulation_report.json

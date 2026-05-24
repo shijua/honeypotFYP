@@ -177,72 +177,17 @@ The Cowrie adapter reads the configured Sigma YAML folder directly at runtime an
 
 Use `ATTACK_TESTING_GUIDE.md` only to test whether live Cowrie commands produce observations and profiler evidence. Rule-source details belong here and in `ARCHITECTURE.md`, not in the testing guide.
 
-## Evaluation
-
-The group prior should be checked separately from live runtime latency. First verify that the generated ATT&CK group prior is present and non-empty:
-
-```bash
-python scripts/validation/attack_group_prior.py
-```
-
-Check recommendation quality on the same replay scenarios:
-
-```bash
-python scripts/evaluation/attack_group_prior_recommendation.py \
-  tests/fixtures/reveal_policy_scenarios.jsonl \
-  --prior data/technique_prior/attack_group_technique_prior.json
-```
-
-Evaluate the reveal policy without Docker by replaying scenario JSONL against deterministic baselines: `passive`, `all-open`, `random-eligible`, `gate-only`, `top-recommendation`, and `controller`. Scenario rows can provide either a ready `profile` object or an `evidence_sequence` that the evaluator folds into a minimal `ProfileSnapshot`.
-
-```bash
-python scripts/evaluation/reveal_policy.py tests/fixtures/reveal_policy_scenarios.jsonl --policy all
-```
-
-The report includes reveal correctness, irrelevant reveal rate, hidden violation rate, opened asset count, useful evidence per reveal, diagnostic-or-useful evidence per reveal, no-reveal correctness, prior influence, profile-to-reveal latency in ticks, and decision trace completeness. This is the offline correctness evidence; live tests below measure runtime overhead only.
-
-Verify that scenario evidence opens the expected fixed ports with the route-level reveal simulation:
-
-```bash
-python scripts/evaluation/reveal_port_simulation.py \
-  --mode controller-only \
-  --scenario-file tests/fixtures/reveal_port_scenarios.jsonl
-```
-
-`controller-only` checks whether the controller selects the expected assets. After the compose stack is running, use `live-apply` to mutate runtime state and assert that `data/runtime/asset_gateway_routes.json` contains the exact `attacker_key + asset_id + public_port` routes:
-
-```bash
-python scripts/evaluation/reveal_port_simulation.py \
-  --mode live-apply \
-  --scenario-file tests/fixtures/reveal_port_scenarios.jsonl \
-  --output data/runtime/reveal_port_simulation_report.json
-jq '.summary, .scenarios[] | {scenario_id, ok, selected_assets, expected_routes, actual_routes, failure_reason}' \
-  data/runtime/reveal_port_simulation_report.json
-```
-
-This evaluation intentionally fails assets whose required runtime is unavailable, for example third-party high-interaction images that cannot be started.
-
-After the compose stack is running, measure live reveal latency with:
-
-```bash
-python scripts/evaluation/runtime_latency.py \
-  --assets internal-portal,finance-share,web-admin-console,ics-plc,vpn-appliance,malware-sink
-```
-
-This measures binding resolve latency, orchestrator apply latency, Docker runtime start as seen by the orchestrator, and the time until `data/runtime/asset_gateway_routes.json` contains the route. Use `--assets internal-portal,finance-share` for a small run or `--dry-run` to list the fixed-port assets that would be measured.
-
 ## Simulation Helpers
 
 Useful helper scripts are kept in `scripts/` and covered by tests:
 
 ```bash
 ./scripts/test_enterprise_compose.sh
-./scripts/run_enterprise_actor_simulation.sh
 python scripts/validation/asset_telemetry.py --asset-id internal-portal
-.venv/bin/python scripts/reports/adaptive_demo.py --write-report data/runtime/adaptive_demo_report.json
+.venv/bin/python scripts/reports/cowrie_commands.py --write-report data/runtime/cowrie_command_coverage.json
 ```
 
-The top-level shell scripts in `scripts/` are the commands you normally run by hand. Python helpers are grouped by role: `scripts/forwarders/` tails service logs into adapters, `scripts/validation/` checks asset telemetry and mappings, `scripts/reports/` builds demo summaries, `scripts/runtime/` holds long-running control loops, and `scripts/data/` stores data-fetch utilities.
+The top-level shell scripts in `scripts/` are the commands you normally run by hand. Python helpers are grouped by role: `scripts/forwarders/` tails service logs into adapters, `scripts/validation/` checks asset telemetry and mappings, `scripts/reports/` builds coverage summaries, `scripts/runtime/` holds long-running control loops, and `scripts/data/` stores data-fetch utilities.
 
 Use the manual flow in `ATTACK_TESTING_GUIDE.md` when you want to drive the attacker actions yourself.
 

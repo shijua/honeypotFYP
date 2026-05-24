@@ -179,7 +179,10 @@ async def _handle_connection(
         await client_writer.wait_closed()
         return
 
+    protocol_observer = _protocol_observer(route, client_ip)
     if initial_client_data:
+        if protocol_observer is not None:
+            protocol_observer(initial_client_data)
         backend_writer.write(initial_client_data)
         await backend_writer.drain()
 
@@ -187,7 +190,7 @@ async def _handle_connection(
         _pipe(
             client_reader,
             backend_writer,
-            observe_data=_protocol_observer(route, client_ip),
+            observe_data=protocol_observer,
         ),
         _pipe(backend_reader, client_writer),
     )
@@ -555,6 +558,8 @@ def _high_interaction_source(asset_id: str) -> str:
 
 def _high_interaction_service(route: AssetRoute) -> str:
     by_port = {
+        18084: "hmi",
+        18085: "http",
         1102: "s7",
         1502: "modbus",
         1445: "smb",

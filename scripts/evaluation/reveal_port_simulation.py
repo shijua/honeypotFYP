@@ -8,7 +8,7 @@ services, applies controller unlock actions, and verifies exact
 `attacker_key + asset_id + public_port` routes in `asset_gateway_routes.json`.
 
 Example:
-    python scripts/evaluation/reveal_port_simulation.py --mode live-apply --scenario-file tests/fixtures/reveal_port_scenarios.jsonl
+    python scripts/evaluation/reveal_port_simulation.py --mode live-apply --scenario-file tests/fixtures/reveal_port_scenarios.json
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ Mode = Literal["controller-only", "live-apply"]
 def main() -> int:
     parser = argparse.ArgumentParser(description="Simulate attacker profiles and verify expected asset-gateway ports.")
     parser.add_argument("--mode", choices=("controller-only", "live-apply"), default="controller-only")
-    parser.add_argument("--scenario-file", type=Path, default=Path("tests/fixtures/reveal_port_scenarios.jsonl"))
+    parser.add_argument("--scenario-file", type=Path, default=Path("tests/fixtures/reveal_port_scenarios.json"))
     parser.add_argument("--catalog", type=Path, default=Path("data/assets/catalog.json"))
     parser.add_argument("--prior", type=Path, default=Path("data/technique_prior/attack_group_technique_prior.json"))
     parser.add_argument("--route-file", type=Path, default=Path("data/runtime/asset_gateway_routes.json"))
@@ -105,7 +105,7 @@ def evaluate_reveal_ports(
 
 
 def validate_scenarios(scenarios: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Validate required JSONL fields before a long live run starts.
+    """Validate required JSON fields before a long live run starts.
 
     Example:
         missing expected_routes -> ValueError("scenario s1 missing expected_routes").

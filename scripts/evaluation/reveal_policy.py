@@ -6,11 +6,11 @@ runtime route table. It answers the evaluation question "would this policy
 reveal reasonable assets, hide implausible assets, or choose no_reveal for this
 evidence sequence?" using the real catalog and controller scoring code.
 
-Example scenario JSONL:
-    {"scenario_id":"backup-probe","profile":{"conf_by_technique":{"T1552.001":0.9},"recent_techniques":["T1552.001"],"recent_evidence_ids":["e1"]},"expected_reasonable_assets":["finance-share"],"expected_hidden_assets":["web-admin-console"],"useful_followup_assets":["finance-share"]}
+Example scenario JSON:
+    [{"scenario_id":"backup-probe","profile":{"conf_by_technique":{"T1552.001":0.9},"recent_techniques":["T1552.001"],"recent_evidence_ids":["e1"]},"expected_reasonable_assets":["finance-share"],"expected_hidden_assets":["web-admin-console"],"useful_followup_assets":["finance-share"]}]
 
 Example command:
-    python scripts/evaluation/reveal_policy.py tests/fixtures/reveal_policy.jsonl --policy all
+    python scripts/evaluation/reveal_policy.py tests/fixtures/reveal_policy_scenarios.json --policy all
 """
 
 from __future__ import annotations
@@ -69,7 +69,7 @@ NO_REVEAL_TRACE_KEYS = {
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Evaluate reveal policy choices on scripted offline scenarios.")
-    parser.add_argument("scenario_file", type=Path, help="JSONL scenarios with profiles or evidence_sequence records.")
+    parser.add_argument("scenario_file", type=Path, help="JSON array or JSONL scenarios with profiles or evidence_sequence records.")
     parser.add_argument("--catalog", type=Path, default=Path("data/assets/catalog.json"))
     parser.add_argument("--prior", type=Path, default=Path("data/technique_prior/attack_group_technique_prior.json"))
     parser.add_argument("--policy", choices=(*ALL_POLICIES, "all"), default="all")
@@ -140,13 +140,24 @@ def evaluate_reveal_policies(
 
 
 def load_scenarios(path: Path) -> list[dict[str, Any]]:
-    """Read JSONL scenarios, skipping blank/comment lines.
+    """Read JSON array or JSONL scenarios, skipping blank/comment lines for JSONL.
 
     Example:
-        line '{"scenario_id":"s1"}' -> [{"scenario_id": "s1"}]
+        [{"scenario_id":"s1"}] -> [{"scenario_id": "s1"}]
     """
+    text = path.read_text(encoding="utf-8")
+    stripped_text = text.strip()
+    if stripped_text.startswith("["):
+        payload = json.loads(stripped_text)
+        if not isinstance(payload, list):
+            raise ValueError(f"{path} must contain a JSON array")
+        for index, item in enumerate(payload, start=1):
+            if not isinstance(item, dict):
+                raise ValueError(f"{path}:{index} must be a JSON object")
+        return payload
+
     scenarios: list[dict[str, Any]] = []
-    for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+    for line_number, line in enumerate(text.splitlines(), start=1):
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue

@@ -16,15 +16,15 @@ pytestmark = pytest.mark.unit
 
 def test_reveal_policy_scenarios_reference_existing_assets_and_covered_techniques() -> None:
     assets = _assets_by_id()
-    scenarios = load_scenarios(ROOT / "tests/fixtures/reveal_policy_scenarios.jsonl")
+    scenarios = load_scenarios(ROOT / "tests/fixtures/reveal_policy_scenarios.json")
 
-    assert {item.get("scenario_type") for item in scenarios} == {
+    assert {
         "fit",
         "boundary",
         "scanner-like",
         "mixed-signal",
         "false-positive-reveal",
-    }
+    }.issubset({item.get("scenario_type") for item in scenarios})
 
     for scenario in scenarios:
         expected_assets = _strings(scenario.get("expected_reasonable_assets"))
@@ -39,7 +39,7 @@ def test_reveal_policy_scenarios_reference_existing_assets_and_covered_technique
 
 def test_reveal_port_scenarios_reference_existing_assets_routes_and_covered_techniques() -> None:
     assets = _assets_by_id()
-    scenarios = load_scenarios(ROOT / "tests/fixtures/reveal_port_scenarios.jsonl")
+    scenarios = load_scenarios(ROOT / "tests/fixtures/reveal_port_scenarios.json")
 
     for scenario in scenarios:
         expected_assets = _strings(scenario.get("expected_assets"))

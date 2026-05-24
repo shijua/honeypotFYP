@@ -5,13 +5,14 @@ from pathlib import Path
 
 import pytest
 
+from libs.common.config import RuntimeConfig
 from scripts.evaluation.attack_group_prior_recommendation import evaluate_prior_recommendations
 
 
 pytestmark = pytest.mark.unit
 
 
-def test_attack_group_prior_recommendation_reports_recall_precision_and_stability(
+def test_attack_group_prior_recommendation_reports_default_paper_metrics(
     tmp_path: Path,
 ) -> None:
     prior = tmp_path / "prior.json"
@@ -22,9 +23,17 @@ def test_attack_group_prior_recommendation_reports_recall_precision_and_stabilit
                 "method": "attack_group_technique_collaborative_filtering",
                 "groups": [
                     {
-                        "group_id": "G0001",
-                        "name": "Fixture Group",
+                        "group_id": f"G000{index}",
+                        "name": f"Fixture Group {index}",
                         "techniques": ["T1190", "T1105", "T1608"],
+                    }
+                    for index in range(1, 5)
+                ]
+                + [
+                    {
+                        "group_id": "G0099",
+                        "name": "Unrelated Group",
+                        "techniques": ["T1046"],
                     }
                 ],
             }
@@ -50,16 +59,25 @@ def test_attack_group_prior_recommendation_reports_recall_precision_and_stabilit
     report = evaluate_prior_recommendations(
         scenario_file=scenarios,
         prior_path=prior,
-        top_k=5,
-        thresholds=(0.0,),
+        config=RuntimeConfig(),
     )
 
-    metrics = report["metrics_by_threshold"]["0.0"]
+    metrics = report["metrics"]
     assert report["ok"] is True
+    assert report["top_k"] == 40
+    assert report["support_threshold"] == 0.15
+    assert report["evaluation_match"] == "technique_family"
+    assert report["technique_family_universe_size"] == 4
     assert metrics["prefix_count"] == 2
-    assert metrics["recall_at_k"] == 1.0
-    assert metrics["precision_at_k"] == 1.0
-    assert metrics["stability"] is not None
+    assert metrics["true_positive"] == 3
+    assert metrics["false_positive"] == 0
+    assert metrics["true_negative"] == 2
+    assert metrics["false_negative"] == 0
+    assert metrics["hit_rate_at_k"] == 1.0
+    assert metrics["recall"] == 1.0
+    assert metrics["specificity"] == 1.0
+    assert metrics["accuracy"] == 1.0
+    assert metrics["source_breakdown"][0]["recall"] == 1.0
 
 
 def test_attack_group_prior_recommendation_reports_degraded_missing_prior(
@@ -83,17 +101,16 @@ def test_attack_group_prior_recommendation_reports_degraded_missing_prior(
     report = evaluate_prior_recommendations(
         scenario_file=scenarios,
         prior_path=tmp_path / "missing.json",
-        top_k=5,
-        thresholds=(0.0,),
+        config=RuntimeConfig(),
     )
 
-    metrics = report["metrics_by_threshold"]["0.0"]
+    metrics = report["metrics"]
     assert report["ok"] is False
     assert metrics["prefix_count"] == 1
     assert "missing" in metrics["degraded_reason"]
 
 
-def test_attack_group_prior_recommendation_threshold_sensitivity_and_singletons(
+def test_attack_group_prior_recommendation_ignores_singleton_traces(
     tmp_path: Path,
 ) -> None:
     prior = tmp_path / "prior.json"
@@ -104,10 +121,11 @@ def test_attack_group_prior_recommendation_threshold_sensitivity_and_singletons(
                 "method": "attack_group_technique_collaborative_filtering",
                 "groups": [
                     {
-                        "group_id": "G0001",
-                        "name": "Fixture Group",
+                        "group_id": f"G000{index}",
+                        "name": f"Fixture Group {index}",
                         "techniques": ["T1190", "T1105"],
                     }
+                    for index in range(1, 4)
                 ],
             }
         ),
@@ -143,14 +161,119 @@ def test_attack_group_prior_recommendation_threshold_sensitivity_and_singletons(
     report = evaluate_prior_recommendations(
         scenario_file=scenarios,
         prior_path=prior,
-        top_k=5,
-        thresholds=(0.0, 0.99),
+        config=RuntimeConfig(),
     )
 
-    loose = report["metrics_by_threshold"]["0.0"]
-    strict = report["metrics_by_threshold"]["0.99"]
+    metrics = report["metrics"]
     assert report["ok"] is True
-    assert loose["prefix_count"] == 1
-    assert loose["recall_at_k"] == 1.0
-    assert strict["recall_at_k"] == 0.0
-    assert strict["precision_at_k"] == 0.0
+    assert metrics["prefix_count"] == 1
+    assert metrics["recall"] == 1.0
+
+
+def test_attack_group_prior_recommendation_matches_subtechnique_family(
+    tmp_path: Path,
+) -> None:
+    prior = tmp_path / "prior.json"
+    prior.write_text(
+        json.dumps(
+            {
+                "schema_version": "v1",
+                "method": "attack_group_technique_collaborative_filtering",
+                "groups": [
+                    {
+                        "group_id": f"G000{index}",
+                        "name": f"Fixture Group {index}",
+                        "techniques": ["T1083", "T1548"],
+                    }
+                    for index in range(1, 4)
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    scenarios = tmp_path / "scenarios.jsonl"
+    scenarios.write_text(
+        json.dumps(
+            {
+                "scenario_id": "family-chain",
+                "evidence_sequence": [
+                    {"technique": "T1083", "evidence_id": "e1"},
+                    {"technique": "T1548.003", "evidence_id": "e2"},
+                ],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    report = evaluate_prior_recommendations(
+        scenario_file=scenarios,
+        prior_path=prior,
+        config=RuntimeConfig(),
+    )
+
+    metrics = report["metrics"]
+    assert metrics["true_positive"] == 1
+    assert metrics["false_negative"] == 0
+    assert metrics["recall"] == 1.0
+
+
+def test_attack_group_prior_recommendation_excludes_no_reveal_scenarios(
+    tmp_path: Path,
+) -> None:
+    prior = tmp_path / "prior.json"
+    prior.write_text(
+        json.dumps(
+            {
+                "schema_version": "v1",
+                "method": "attack_group_technique_collaborative_filtering",
+                "groups": [
+                    {
+                        "group_id": f"G000{index}",
+                        "name": f"Fixture Group {index}",
+                        "techniques": ["T1190", "T1105"],
+                    }
+                    for index in range(1, 3)
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    scenarios = tmp_path / "scenarios.jsonl"
+    scenarios.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "scenario_id": "fit-chain",
+                        "evidence_sequence": [
+                            {"technique": "T1190", "evidence_id": "e1"},
+                            {"technique": "T1105", "evidence_id": "e2"},
+                        ],
+                    }
+                ),
+                json.dumps(
+                    {
+                        "scenario_id": "scanner-no-reveal",
+                        "expected_no_reveal": True,
+                        "profile": {"recent_techniques": ["T1190", "T1105"]},
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    report = evaluate_prior_recommendations(
+        scenario_file=scenarios,
+        prior_path=prior,
+        config=RuntimeConfig(),
+    )
+
+    metrics = report["metrics"]
+    assert report["trace_count"] == 1
+    assert report["excluded_scenarios"] == [
+        {"scenario_id": "scanner-no-reveal", "reason": "no-reveal scenario"}
+    ]
+    assert metrics["prefix_count"] == 1

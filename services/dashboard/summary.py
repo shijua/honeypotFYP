@@ -26,7 +26,7 @@ class DockerStatusProbe:
 
 
 def summarize_demo(state_dir: Path) -> dict[str, Any]:
-    """Build a deterministic report from adaptive demo runtime files."""
+    """Build a deterministic dashboard report from runtime JSON files."""
     cowrie_observations = list_records(
         state_dir / "cowrie_observations.json",
         "observations",

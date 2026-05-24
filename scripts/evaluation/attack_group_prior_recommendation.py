@@ -3,10 +3,10 @@
 
 The evaluator treats each scenario's ordered techniques as a small validation
 trace. For every prefix, it asks the active prior for recommendations and checks
-whether later scenario techniques appear in the top-K list.
+paper-style recall, specificity, and accuracy over ATT&CK technique families.
 
 Example:
-    python scripts/evaluation/attack_group_prior_recommendation.py tests/fixtures/reveal_policy_scenarios.jsonl
+    python scripts/evaluation/attack_group_prior_recommendation.py tests/fixtures/reveal_policy_scenarios.json
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+from libs.common.config import RuntimeConfig
 from scripts.evaluation.reveal_policy import load_scenarios
 from services.controller.repository import FileAttackGroupTechniquePriorRepository
 
@@ -29,16 +30,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Evaluate ATT&CK group prior recommendations on scenario traces.")
     parser.add_argument("scenario_file", type=Path)
     parser.add_argument("--prior", type=Path, default=Path("data/technique_prior/attack_group_technique_prior.json"))
-    parser.add_argument("--top-k", type=int, default=10)
-    parser.add_argument("--threshold", type=float, action="append", dest="thresholds")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
 
     report = evaluate_prior_recommendations(
         scenario_file=args.scenario_file,
         prior_path=args.prior,
-        top_k=args.top_k,
-        thresholds=tuple(args.thresholds or (0.10, 0.15, 0.20)),
     )
     text = json.dumps(report, indent=2, sort_keys=True)
     if args.output:
@@ -53,92 +50,178 @@ def evaluate_prior_recommendations(
     *,
     scenario_file: Path,
     prior_path: Path,
-    top_k: int = 10,
-    thresholds: tuple[float, ...] = (0.10, 0.15, 0.20),
+    config: RuntimeConfig | None = None,
 ) -> dict[str, Any]:
-    """Return Recall@K, Precision@K, and stability for scenario technique traces.
+    """Return family-aware paper-style recall, specificity, and accuracy.
 
     Example:
-        observed prefix ["T1190"] and future ["T1105"] with T1105 recommended -> recall hit.
+        future T1548.003 and recommended T1548 -> recall hit because both share family T1548.
     """
     scenarios = load_scenarios(scenario_file)
-    traces = [
-        {"scenario_id": str(item.get("scenario_id", "scenario")), "techniques": _scenario_techniques(item)}
-        for item in scenarios
-    ]
-    results = {
-        str(threshold): _evaluate_threshold(traces, prior_path, top_k=top_k, threshold=threshold)
-        for threshold in thresholds
-    }
+    traces: list[dict[str, Any]] = []
+    excluded: list[dict[str, Any]] = []
+    for item in scenarios:
+        scenario_id = str(item.get("scenario_id", "scenario"))
+        reason = _prior_eval_exclusion_reason(item)
+        if reason is not None:
+            excluded.append({"scenario_id": scenario_id, "reason": reason})
+            continue
+        traces.append({"scenario_id": scenario_id, "techniques": _scenario_techniques(item)})
+    runtime_config = config or RuntimeConfig.from_env()
+    metrics = _evaluate_trace_prefixes(
+        traces,
+        prior_path,
+        top_k=runtime_config.recommendation_top_k,
+        support_threshold=runtime_config.recommendation_support_threshold,
+    )
+    technique_universe = _family_set(_technique_universe_from_prior(prior_path))
     return {
         "schema_version": "v1",
-        "ok": any(
-            result["prefix_count"] > 0 and result["degraded_reason"] is None
-            for result in results.values()
-        ),
+        "ok": metrics["prefix_count"] > 0 and metrics["degraded_reason"] is None,
         "scenario_file": str(scenario_file),
         "prior": str(prior_path),
-        "top_k": top_k,
+        "top_k": runtime_config.recommendation_top_k,
+        "support_threshold": runtime_config.recommendation_support_threshold,
+        "evaluation_match": "technique_family",
+        "technique_family_universe_size": len(technique_universe),
         "trace_count": len(traces),
-        "metrics_by_threshold": results,
+        "excluded_scenarios": excluded,
+        "metrics": metrics,
     }
 
 
-def _evaluate_threshold(
+def _evaluate_trace_prefixes(
     traces: list[dict[str, Any]],
     prior_path: Path,
     *,
     top_k: int,
-    threshold: float,
+    support_threshold: float,
 ) -> dict[str, Any]:
     repository = FileAttackGroupTechniquePriorRepository(prior_path)
+    technique_universe = _family_set(_technique_universe_from_prior(prior_path))
     prefix_count = 0
-    future_total = 0
-    recommendation_total = 0
-    hit_total = 0
-    stability_scores: list[float] = []
+    true_positive_total = 0
+    false_positive_total = 0
+    true_negative_total = 0
+    false_negative_total = 0
+    prefix_hit_total = 0
     source_rows: list[dict[str, Any]] = []
 
     for trace in traces:
         techniques = trace["techniques"]
-        previous_recommendations: set[str] | None = None
         scenario_prefixes = 0
-        scenario_hits = 0
+        scenario_tp = 0
+        scenario_fp = 0
+        scenario_tn = 0
+        scenario_fn = 0
         for index in range(1, len(techniques)):
-            observed = set(techniques[:index])
-            future = set(techniques[index:])
-            recommendations = repository.recommend(observed, top_k=top_k, support_threshold=threshold)
-            recommended = set(recommendations)
-            hits = recommended & future
+            observed = _family_set(techniques[:index])
+            future = _family_set(techniques[index:])
+            recommendations = repository.recommend(
+                set(techniques[:index]),
+                top_k=top_k,
+                support_threshold=support_threshold,
+            )
+            recommended = _family_set(recommendations)
+            evaluation_universe = technique_universe | observed | future | recommended
+            relevant_universe = evaluation_universe - observed
+            positives = future & relevant_universe
+            negatives = relevant_universe - positives
+            true_positives = len(recommended & positives)
+            false_positives = len(recommended & negatives)
+            false_negatives = len(positives - recommended)
+            true_negatives = len(negatives - recommended)
 
             prefix_count += 1
             scenario_prefixes += 1
-            future_total += len(future)
-            recommendation_total += len(recommended)
-            hit_total += len(hits)
-            scenario_hits += len(hits)
-            if previous_recommendations is not None:
-                stability_scores.append(_jaccard(previous_recommendations, recommended))
-            previous_recommendations = recommended
+            true_positive_total += true_positives
+            false_positive_total += false_positives
+            true_negative_total += true_negatives
+            false_negative_total += false_negatives
+            scenario_tp += true_positives
+            scenario_fp += false_positives
+            scenario_tn += true_negatives
+            scenario_fn += false_negatives
+            if true_positives:
+                prefix_hit_total += 1
 
         source_rows.append(
             {
                 "scenario_id": trace["scenario_id"],
                 "technique_count": len(techniques),
                 "prefix_count": scenario_prefixes,
-                "hit_count": scenario_hits,
+                "true_positive": scenario_tp,
+                "false_positive": scenario_fp,
+                "true_negative": scenario_tn,
+                "false_negative": scenario_fn,
+                "recall": _ratio(scenario_tp, scenario_tp + scenario_fn),
+                "specificity": _ratio(scenario_tn, scenario_tn + scenario_fp),
+                "accuracy": _ratio(
+                    scenario_tp + scenario_tn,
+                    scenario_tp + scenario_fp + scenario_tn + scenario_fn,
+                ),
             }
         )
 
     return {
-        "threshold": threshold,
+        "evaluation_match": "technique_family",
+        "support_threshold": support_threshold,
         "degraded_reason": repository.degraded_reason,
         "prefix_count": prefix_count,
-        "recall_at_k": _ratio(hit_total, future_total),
-        "precision_at_k": _ratio(hit_total, recommendation_total),
-        "stability": round(sum(stability_scores) / len(stability_scores), 6) if stability_scores else None,
+        "true_positive": true_positive_total,
+        "false_positive": false_positive_total,
+        "true_negative": true_negative_total,
+        "false_negative": false_negative_total,
+        "hit_rate_at_k": _ratio(prefix_hit_total, prefix_count),
+        "recall": _ratio(true_positive_total, true_positive_total + false_negative_total),
+        "specificity": _ratio(true_negative_total, true_negative_total + false_positive_total),
+        "accuracy": _ratio(
+            true_positive_total + true_negative_total,
+            true_positive_total + false_positive_total + true_negative_total + false_negative_total,
+        ),
         "source_breakdown": source_rows,
     }
+
+
+def _technique_universe_from_prior(path: Path) -> set[str]:
+    """Return all known ATT&CK techniques from the prior file.
+
+    Example:
+        groups=[{"techniques":["T1190", "T1105"]}] -> {"T1190", "T1105"}
+    """
+    if not path.exists():
+        return set()
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return set()
+    groups = payload.get("groups") if isinstance(payload, dict) else None
+    if not isinstance(groups, list):
+        return set()
+    return {
+        technique
+        for group in groups
+        if isinstance(group, dict)
+        for technique in group.get("techniques", [])
+        if isinstance(technique, str) and technique
+    }
+
+
+def _family_set(techniques: Any) -> set[str]:
+    """Return parent technique families for ATT&CK technique ids.
+
+    Example:
+        ["T1548.003", "T1105"] -> {"T1548", "T1105"}
+    """
+    return {
+        _technique_family(item)
+        for item in techniques
+        if isinstance(item, str) and item
+    }
+
+
+def _technique_family(technique: str) -> str:
+    return technique.split(".", 1)[0]
 
 
 def _scenario_techniques(scenario: dict[str, Any]) -> list[str]:
@@ -155,6 +238,19 @@ def _scenario_techniques(scenario: dict[str, Any]) -> list[str]:
     )
 
 
+def _prior_eval_exclusion_reason(scenario: dict[str, Any]) -> str | None:
+    """Return why a scenario is not suitable for prior recommendation scoring.
+
+    Example:
+        {"expected_no_reveal": true} -> "no-reveal scenario"
+    """
+    if scenario.get("expected_no_reveal") is True:
+        return "no-reveal scenario"
+    if scenario.get("boundary") is True:
+        return "boundary scenario"
+    return None
+
+
 def _dedupe_strings(values: Any) -> list[str]:
     items: list[str] = []
     seen: set[str] = set()
@@ -166,12 +262,6 @@ def _dedupe_strings(values: Any) -> list[str]:
             items.append(value)
             seen.add(value)
     return items
-
-
-def _jaccard(left: set[str], right: set[str]) -> float:
-    if not left and not right:
-        return 1.0
-    return len(left & right) / len(left | right)
 
 
 def _ratio(numerator: int, denominator: int) -> float:

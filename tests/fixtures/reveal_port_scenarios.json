@@ -1,0 +1,635 @@
+[
+  {
+    "attacker_key": "198.51.100.210",
+    "expected_assets": [
+      "internal-portal"
+    ],
+    "expected_routes": [
+      {
+        "asset_id": "internal-portal",
+        "public_port": 18080
+      }
+    ],
+    "initial_unlocked_assets": [],
+    "profile": {
+      "conf_by_technique": {
+        "T1083": 0.8
+      },
+      "recent_evidence_ids": [
+        "sim-bootstrap"
+      ],
+      "recent_techniques": [
+        "T1083"
+      ]
+    },
+    "scenario_id": "bootstrap-internal-portal"
+  },
+  {
+    "attacker_key": "198.51.100.211",
+    "expected_assets": [
+      "git-internal"
+    ],
+    "expected_routes": [
+      {
+        "asset_id": "git-internal",
+        "public_port": 19418
+      }
+    ],
+    "initial_unlocked_assets": [
+      "internal-portal"
+    ],
+    "profile": {
+      "conf_by_technique": {
+        "T1083": 0.95
+      },
+      "recent_evidence_ids": [
+        "sim-git"
+      ],
+      "recent_public_http_indicators": [
+        "path:.map"
+      ],
+      "recent_public_http_paths": [
+        "/assets/app.js.map"
+      ],
+      "recent_techniques": [
+        "T1083"
+      ]
+    },
+    "scenario_id": "git-env-breadcrumb"
+  },
+  {
+    "attacker_key": "198.51.100.212",
+    "expected_assets": [
+      "redis-cache"
+    ],
+    "expected_routes": [
+      {
+        "asset_id": "redis-cache",
+        "public_port": 16379
+      }
+    ],
+    "initial_unlocked_assets": [
+      "internal-portal",
+      "git-internal"
+    ],
+    "profile": {
+      "conf_by_technique": {
+        "T1046": 0.95
+      },
+      "recent_evidence_ids": [
+        "sim-redis"
+      ],
+      "recent_public_http_indicators": [
+        "combined:.env"
+      ],
+      "recent_public_http_paths": [
+        "/.env.old"
+      ],
+      "recent_techniques": [
+        "T1046"
+      ]
+    },
+    "scenario_id": "redis-env-breadcrumb"
+  },
+  {
+    "attacker_key": "198.51.100.213",
+    "expected_assets": [
+      "mail-relay"
+    ],
+    "expected_routes": [
+      {
+        "asset_id": "mail-relay",
+        "public_port": 2525
+      }
+    ],
+    "initial_unlocked_assets": [
+      "internal-portal"
+    ],
+    "profile": {
+      "conf_by_technique": {
+        "T1114": 0.95
+      },
+      "recent_evidence_ids": [
+        "sim-mail"
+      ],
+      "recent_public_http_indicators": [
+        "combined:.env"
+      ],
+      "recent_public_http_paths": [
+        "/.env.old"
+      ],
+      "recent_techniques": [
+        "T1114"
+      ]
+    },
+    "scenario_id": "mail-env-breadcrumb"
+  },
+  {
+    "attacker_key": "198.51.100.214",
+    "expected_assets": [
+      "finance-share"
+    ],
+    "expected_routes": [
+      {
+        "asset_id": "finance-share",
+        "public_port": 18082
+      }
+    ],
+    "initial_unlocked_assets": [
+      "internal-portal"
+    ],
+    "profile": {
+      "conf_by_technique": {
+        "T1213": 0.95
+      },
+      "recent_evidence_ids": [
+        "sim-finance"
+      ],
+      "recent_public_http_indicators": [
+        "path:.bak",
+        "combined:backup"
+      ],
+      "recent_public_http_paths": [
+        "/backup/db_backup_2024.sql.bak"
+      ],
+      "recent_techniques": [
+        "T1213"
+      ]
+    },
+    "scenario_id": "finance-backup-breadcrumb"
+  },
+  {
+    "attacker_key": "198.51.100.215",
+    "expected_assets": [
+      "ftp-archive"
+    ],
+    "expected_routes": [
+      {
+        "asset_id": "ftp-archive",
+        "public_port": 12121
+      }
+    ],
+    "initial_unlocked_assets": [
+      "internal-portal"
+    ],
+    "profile": {
+      "conf_by_technique": {
+        "T1567.002": 0.95
+      },
+      "recent_evidence_ids": [
+        "sim-ftp"
+      ],
+      "recent_public_http_indicators": [
+        "path:.bak",
+        "combined:backup"
+      ],
+      "recent_public_http_paths": [
+        "/backup/db_backup_2024.sql.bak"
+      ],
+      "recent_techniques": [
+        "T1567.002"
+      ]
+    },
+    "scenario_id": "ftp-backup-breadcrumb"
+  },
+  {
+    "attacker_key": "198.51.100.216",
+    "expected_assets": [
+      "ops-db"
+    ],
+    "expected_routes": [
+      {
+        "asset_id": "ops-db",
+        "public_port": 13306
+      }
+    ],
+    "initial_unlocked_assets": [
+      "internal-portal",
+      "git-internal"
+    ],
+    "profile": {
+      "conf_by_technique": {
+        "T1552.001": 0.98
+      },
+      "recent_evidence_ids": [
+        "sim-ops-db"
+      ],
+      "recent_public_http_indicators": [
+        "path:.bak",
+        "combined:backup"
+      ],
+      "recent_public_http_paths": [
+        "/backup/db_backup_2024.sql.bak"
+      ],
+      "recent_techniques": [
+        "T1552.001"
+      ]
+    },
+    "scenario_id": "ops-db-backup-breadcrumb"
+  },
+  {
+    "attacker_key": "198.51.100.217",
+    "expected_assets": [
+      "ssh-canary"
+    ],
+    "expected_routes": [
+      {
+        "asset_id": "ssh-canary",
+        "public_port": 12222
+      }
+    ],
+    "initial_unlocked_assets": [
+      "internal-portal"
+    ],
+    "profile": {
+      "conf_by_technique": {
+        "T1021.004": 0.95
+      },
+      "recent_evidence_ids": [
+        "sim-ssh"
+      ],
+      "recent_public_http_indicators": [
+        "combined:password"
+      ],
+      "recent_public_http_paths": [
+        "/backup/passwords_internal.txt"
+      ],
+      "recent_techniques": [
+        "T1021.004"
+      ]
+    },
+    "scenario_id": "ssh-password-breadcrumb"
+  },
+  {
+    "attacker_key": "198.51.100.218",
+    "expected_assets": [
+      "legacy-telnet"
+    ],
+    "expected_routes": [
+      {
+        "asset_id": "legacy-telnet",
+        "public_port": 12323
+      }
+    ],
+    "initial_unlocked_assets": [
+      "internal-portal",
+      "ssh-canary"
+    ],
+    "profile": {
+      "conf_by_technique": {
+        "T1021": 0.95
+      },
+      "recent_evidence_ids": [
+        "sim-telnet"
+      ],
+      "recent_public_http_indicators": [
+        "combined:password"
+      ],
+      "recent_public_http_paths": [
+        "/backup/passwords_internal.txt"
+      ],
+      "recent_techniques": [
+        "T1021"
+      ]
+    },
+    "scenario_id": "telnet-password-breadcrumb"
+  },
+  {
+    "attacker_key": "198.51.100.219",
+    "expected_assets": [
+      "web-admin-console"
+    ],
+    "expected_routes": [
+      {
+        "asset_id": "web-admin-console",
+        "public_port": 18081
+      }
+    ],
+    "initial_unlocked_assets": [
+      "internal-portal"
+    ],
+    "profile": {
+      "conf_by_technique": {
+        "T1654": 0.95
+      },
+      "recent_evidence_ids": [
+        "sim-web-admin"
+      ],
+      "recent_public_http_indicators": [
+        "path:/admin"
+      ],
+      "recent_public_http_paths": [
+        "/admin"
+      ],
+      "recent_techniques": [
+        "T1654"
+      ]
+    },
+    "scenario_id": "web-admin-probe"
+  },
+  {
+    "attacker_key": "198.51.100.220",
+    "expected_assets": [
+      "vpn-appliance"
+    ],
+    "expected_routes": [
+      {
+        "asset_id": "vpn-appliance",
+        "public_port": 18443
+      }
+    ],
+    "initial_unlocked_assets": [
+      "internal-portal"
+    ],
+    "profile": {
+      "conf_by_technique": {
+        "T1133": 0.95
+      },
+      "recent_evidence_ids": [
+        "sim-vpn"
+      ],
+      "recent_public_http_indicators": [
+        "path:/admin"
+      ],
+      "recent_public_http_paths": [
+        "/admin"
+      ],
+      "recent_techniques": [
+        "T1133"
+      ]
+    },
+    "scenario_id": "vpn-admin-probe"
+  },
+  {
+    "attacker_key": "198.51.100.221",
+    "expected_assets": [
+      "ics-plc"
+    ],
+    "expected_routes": [
+      {
+        "asset_id": "ics-plc",
+        "public_port": 18084
+      }
+    ],
+    "initial_unlocked_assets": [
+      "internal-portal"
+    ],
+    "profile": {
+      "conf_by_technique": {
+        "T1125": 0.95
+      },
+      "recent_evidence_ids": [
+        "sim-ics"
+      ],
+      "recent_public_http_indicators": [
+        "path:/internal-api"
+      ],
+      "recent_public_http_paths": [
+        "/internal-api/status"
+      ],
+      "recent_techniques": [
+        "T1125"
+      ]
+    },
+    "scenario_id": "ics-status-probe"
+  },
+  {
+    "attacker_key": "198.51.100.222",
+    "expected_assets": [
+      "malware-sink"
+    ],
+    "expected_routes": [
+      {
+        "asset_id": "malware-sink",
+        "public_port": 18085
+      }
+    ],
+    "initial_unlocked_assets": [
+      "internal-portal"
+    ],
+    "profile": {
+      "conf_by_technique": {
+        "T1608": 0.95
+      },
+      "recent_evidence_ids": [
+        "sim-malware"
+      ],
+      "recent_public_http_indicators": [
+        "combined:php://filter"
+      ],
+      "recent_public_http_rules": [
+        "public_http_exploit_probe"
+      ],
+      "recent_techniques": [
+        "T1608"
+      ]
+    },
+    "scenario_id": "malware-exploit-probe"
+  },
+  {
+    "attacker_key": "198.51.100.223",
+    "expected_assets": [
+      "admin-jumpbox"
+    ],
+    "expected_routes": [
+      {
+        "asset_id": "admin-jumpbox",
+        "public_port": 2222
+      }
+    ],
+    "initial_unlocked_assets": [
+      "git-internal"
+    ],
+    "profile": {
+      "conf_by_technique": {
+        "T1548.003": 0.95
+      },
+      "recent_evidence_ids": [
+        "sim-admin-jumpbox"
+      ],
+      "recent_techniques": [
+        "T1548.003"
+      ]
+    },
+    "scenario_id": "admin-jumpbox-after-git"
+  },
+  {
+    "attacker_key": "198.51.100.224",
+    "expected_assets": [
+      "conpot-plc"
+    ],
+    "expected_routes": [
+      {
+        "asset_id": "conpot-plc",
+        "public_port": 18084
+      },
+      {
+        "asset_id": "conpot-plc",
+        "public_port": 1502
+      },
+      {
+        "asset_id": "conpot-plc",
+        "public_port": 1102
+      }
+    ],
+    "initial_unlocked_assets": [
+      "ics-plc"
+    ],
+    "profile": {
+      "conf_by_technique": {
+        "T1040": 0.95
+      },
+      "recent_evidence_ids": [
+        "sim-conpot"
+      ],
+      "recent_internal_http_indicators": [
+        "path:.txt"
+      ],
+      "recent_internal_http_paths": [
+        "/captures/plant-span-summary.txt"
+      ],
+      "recent_techniques": [
+        "T1040"
+      ]
+    },
+    "scenario_id": "conpot-plc-upgrade"
+  },
+  {
+    "attacker_key": "198.51.100.225",
+    "expected_assets": [
+      "dionaea-capture"
+    ],
+    "expected_routes": [
+      {
+        "asset_id": "dionaea-capture",
+        "public_port": 18085
+      },
+      {
+        "asset_id": "dionaea-capture",
+        "public_port": 1445
+      },
+      {
+        "asset_id": "dionaea-capture",
+        "public_port": 11433
+      },
+      {
+        "asset_id": "dionaea-capture",
+        "public_port": 12122
+      }
+    ],
+    "initial_unlocked_assets": [
+      "malware-sink"
+    ],
+    "profile": {
+      "conf_by_technique": {
+        "T1204.002": 0.95
+      },
+      "recent_evidence_ids": [
+        "sim-dionaea"
+      ],
+      "recent_internal_http_indicators": [
+        "path:.bin"
+      ],
+      "recent_internal_http_paths": [
+        "/downloads/agent-update.bin"
+      ],
+      "recent_techniques": [
+        "T1204.002"
+      ]
+    },
+    "scenario_id": "dionaea-malware-upgrade"
+  },
+  {
+    "attacker_key": "198.51.100.226",
+    "expected_assets": [
+      "honeytrap-generic"
+    ],
+    "expected_routes": [
+      {
+        "asset_id": "honeytrap-generic",
+        "public_port": 19999
+      }
+    ],
+    "initial_unlocked_assets": [
+      "malware-sink"
+    ],
+    "profile": {
+      "conf_by_technique": {
+        "T1046": 0.95
+      },
+      "recent_evidence_ids": [
+        "sim-honeytrap"
+      ],
+      "recent_internal_http_indicators": [
+        "path:/upload"
+      ],
+      "recent_techniques": [
+        "T1046"
+      ]
+    },
+    "scenario_id": "honeytrap-generic-probe"
+  },
+  {
+    "attacker_key": "198.51.100.227",
+    "expected_assets": [
+      "malware-sink"
+    ],
+    "expected_routes": [
+      {
+        "asset_id": "malware-sink",
+        "public_port": 18085
+      }
+    ],
+    "initial_unlocked_assets": [
+      "internal-portal"
+    ],
+    "profile": {
+      "conf_by_technique": {
+        "T1190": 0.95
+      },
+      "recent_evidence_ids": [
+        "sim-web-exploit-payload"
+      ],
+      "recent_public_http_indicators": [
+        "combined:php://filter"
+      ],
+      "recent_public_http_rules": [
+        "public_http_exploit_probe"
+      ],
+      "recent_techniques": [
+        "T1190"
+      ]
+    },
+    "scenario_id": "web-exploit-payload-probe"
+  },
+  {
+    "attacker_key": "198.51.100.228",
+    "expected_assets": [
+      "honeytrap-generic"
+    ],
+    "expected_routes": [
+      {
+        "asset_id": "honeytrap-generic",
+        "public_port": 19999
+      }
+    ],
+    "initial_unlocked_assets": [
+      "malware-sink"
+    ],
+    "profile": {
+      "conf_by_technique": {
+        "T1046": 0.95
+      },
+      "recent_evidence_ids": [
+        "sim-generic-transfer"
+      ],
+      "recent_internal_http_indicators": [
+        "path:/upload"
+      ],
+      "recent_techniques": [
+        "T1046"
+      ]
+    },
+    "scenario_id": "generic-transfer-honeytrap"
+  }
+]

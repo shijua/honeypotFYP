@@ -149,7 +149,6 @@ write_state "$STATE_DIR/asset_runtime.json" '{"records": []}'
 write_state "$STATE_DIR/decision_trace.json" '{"records": []}'
 write_state "$STATE_DIR/adaptive_loop_state.json" '{"processed_evidence_ids_by_attacker": {}}'
 write_state "$STATE_DIR/reveal_feedback.json" '{"schema_version": "v1", "contexts": {}, "pending": []}'
-write_state "$STATE_DIR/adaptive_demo_report.json" '{"schema_version": "v1", "attackers": []}'
 truncate_log "$STATE_DIR/internal_http_events.jsonl"
 truncate_log "$STATE_DIR/internal_protocol_events.jsonl"
 truncate_log "$STATE_DIR/high_interaction_events.jsonl"

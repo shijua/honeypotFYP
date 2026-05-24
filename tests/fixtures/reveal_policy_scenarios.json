@@ -1,0 +1,371 @@
+[
+  {
+    "diagnostic_followup_assets": [
+      "malware-sink"
+    ],
+    "evidence_sequence": [
+      {
+        "evidence_id": "fit-e1",
+        "public_http_indicator": "combined:php://filter",
+        "public_http_rule": "public_http_exploit_probe",
+        "tactic": "Initial Access",
+        "technique": "T1190",
+        "weight": 0.9
+      },
+      {
+        "evidence_id": "fit-e2",
+        "public_http_indicator": "combined:php://filter",
+        "public_http_rule": "public_http_exploit_probe",
+        "tactic": "Resource Development",
+        "technique": "T1608",
+        "weight": 0.9
+      },
+      {
+        "evidence_id": "fit-e3",
+        "public_http_indicator": "combined:ldap://",
+        "public_http_rule": "public_http_exploit_probe",
+        "tactic": "Command and Control",
+        "technique": "T1105",
+        "weight": 0.7
+      }
+    ],
+    "expected_hidden_assets": [
+      "finance-share",
+      "ops-db"
+    ],
+    "expected_reasonable_assets": [
+      "malware-sink"
+    ],
+    "initial_unlocked_assets": [
+      "internal-portal"
+    ],
+    "scenario_id": "fit-web-exploit-download",
+    "scenario_type": "fit",
+    "useful_followup_assets": [
+      "malware-sink"
+    ]
+  },
+  {
+    "boundary": true,
+    "diagnostic_followup_assets": [],
+    "expected_hidden_assets": [
+      "finance-share",
+      "web-admin-console",
+      "malware-sink"
+    ],
+    "expected_no_reveal": true,
+    "expected_reasonable_assets": [],
+    "initial_unlocked_assets": [
+      "internal-portal"
+    ],
+    "profile": {
+      "conf_by_technique": {
+        "T1003": 0.9,
+        "T1021.002": 0.8
+      },
+      "recent_evidence_ids": [
+        "boundary-e1"
+      ],
+      "recent_techniques": [
+        "T1003",
+        "T1021.002"
+      ]
+    },
+    "scenario_id": "boundary-enterprise-ad-lateral",
+    "scenario_type": "boundary",
+    "useful_followup_assets": []
+  },
+  {
+    "diagnostic_followup_assets": [],
+    "evidence_sequence": [
+      {
+        "evidence_id": "scanner-e1",
+        "tactic": "Initial Access",
+        "technique": "T1190",
+        "weight": 0.6
+      }
+    ],
+    "expected_hidden_assets": [
+      "internal-portal",
+      "web-admin-console",
+      "malware-sink"
+    ],
+    "expected_no_reveal": true,
+    "expected_reasonable_assets": [],
+    "initial_unlocked_assets": [],
+    "scenario_id": "scanner-one-shot-web-probe",
+    "scenario_type": "scanner-like",
+    "useful_followup_assets": []
+  },
+  {
+    "diagnostic_followup_assets": [
+      "git-internal",
+      "malware-sink"
+    ],
+    "evidence_sequence": [
+      {
+        "evidence_id": "mixed-e1",
+        "public_http_indicator": "path:.map",
+        "public_http_path": "/assets/app.js.map",
+        "tactic": "Discovery",
+        "technique": "T1083",
+        "weight": 0.9
+      },
+      {
+        "evidence_id": "mixed-e2",
+        "public_http_indicator": "combined:php://filter",
+        "public_http_rule": "public_http_exploit_probe",
+        "tactic": "Resource Development",
+        "technique": "T1608",
+        "weight": 0.9
+      },
+      {
+        "evidence_id": "mixed-e3",
+        "tactic": "Privilege Escalation",
+        "technique": "T1548.003",
+        "weight": 0.7
+      }
+    ],
+    "expected_hidden_assets": [
+      "ops-db"
+    ],
+    "expected_reasonable_assets": [
+      "git-internal",
+      "malware-sink"
+    ],
+    "initial_unlocked_assets": [
+      "internal-portal"
+    ],
+    "scenario_id": "mixed-discovery-download-persistence",
+    "scenario_type": "mixed-signal",
+    "useful_followup_assets": [
+      "git-internal",
+      "malware-sink"
+    ]
+  },
+  {
+    "diagnostic_followup_assets": [],
+    "expected_hidden_assets": [
+      "malware-sink",
+      "ops-db"
+    ],
+    "expected_reasonable_assets": [
+      "git-internal"
+    ],
+    "initial_unlocked_assets": [
+      "internal-portal"
+    ],
+    "profile": {
+      "conf_by_technique": {
+        "T1083": 0.75
+      },
+      "recent_evidence_ids": [
+        "false-positive-e1"
+      ],
+      "recent_public_http_indicators": [
+        "path:.map"
+      ],
+      "recent_public_http_paths": [
+        "/assets/app.js.map"
+      ],
+      "recent_techniques": [
+        "T1083"
+      ]
+    },
+    "scenario_id": "false-positive-short-enumeration",
+    "scenario_type": "false-positive-reveal",
+    "useful_followup_assets": []
+  },
+  {
+    "diagnostic_followup_assets": [
+      "git-internal"
+    ],
+    "evidence_sequence": [
+      {
+        "evidence_id": "normal-git-e1",
+        "public_http_indicator": "path:.map",
+        "public_http_path": "/assets/app.js.map",
+        "tactic": "Discovery",
+        "technique": "T1083",
+        "weight": 0.9
+      },
+      {
+        "evidence_id": "normal-git-e2",
+        "public_http_indicator": "path:.map",
+        "public_http_path": "/assets/app.js.map",
+        "tactic": "Collection",
+        "technique": "T1213",
+        "weight": 0.7
+      }
+    ],
+    "expected_hidden_assets": [
+      "ops-db",
+      "malware-sink"
+    ],
+    "expected_reasonable_assets": [
+      "git-internal",
+      "admin-jumpbox"
+    ],
+    "initial_unlocked_assets": [
+      "internal-portal"
+    ],
+    "scenario_id": "normal-source-map-git-discovery",
+    "scenario_type": "normal",
+    "useful_followup_assets": [
+      "git-internal"
+    ]
+  },
+  {
+    "diagnostic_followup_assets": [
+      "finance-share"
+    ],
+    "evidence_sequence": [
+      {
+        "evidence_id": "normal-finance-e1",
+        "public_http_indicator": "path:.bak",
+        "public_http_path": "/backup/db_backup_2024.sql.bak",
+        "tactic": "Collection",
+        "technique": "T1213",
+        "weight": 0.9
+      },
+      {
+        "evidence_id": "normal-finance-e2",
+        "public_http_indicator": "combined:backup",
+        "public_http_path": "/backup/db_backup_2024.sql.bak",
+        "tactic": "Collection",
+        "technique": "T1005",
+        "weight": 0.7
+      }
+    ],
+    "expected_hidden_assets": [
+      "web-admin-console",
+      "malware-sink"
+    ],
+    "expected_reasonable_assets": [
+      "finance-share"
+    ],
+    "initial_unlocked_assets": [
+      "internal-portal"
+    ],
+    "scenario_id": "normal-backup-finance-share",
+    "scenario_type": "normal",
+    "useful_followup_assets": [
+      "finance-share"
+    ]
+  },
+  {
+    "diagnostic_followup_assets": [
+      "web-admin-console"
+    ],
+    "evidence_sequence": [
+      {
+        "evidence_id": "normal-admin-e1",
+        "public_http_indicator": "path:/admin",
+        "public_http_path": "/admin",
+        "tactic": "Discovery",
+        "technique": "T1654",
+        "weight": 0.9
+      },
+      {
+        "evidence_id": "normal-admin-e2",
+        "public_http_indicator": "path:/admin",
+        "public_http_path": "/admin",
+        "tactic": "Discovery",
+        "technique": "T1046",
+        "weight": 0.7
+      }
+    ],
+    "expected_hidden_assets": [
+      "finance-share",
+      "ops-db"
+    ],
+    "expected_reasonable_assets": [
+      "web-admin-console"
+    ],
+    "initial_unlocked_assets": [
+      "internal-portal"
+    ],
+    "scenario_id": "normal-admin-console-probe",
+    "scenario_type": "normal",
+    "useful_followup_assets": [
+      "web-admin-console"
+    ]
+  },
+  {
+    "diagnostic_followup_assets": [
+      "ics-plc"
+    ],
+    "evidence_sequence": [
+      {
+        "evidence_id": "normal-ics-e1",
+        "public_http_indicator": "path:/internal-api",
+        "public_http_path": "/internal-api/status",
+        "tactic": "Collection",
+        "technique": "T1125",
+        "weight": 0.9
+      },
+      {
+        "evidence_id": "normal-ics-e2",
+        "public_http_indicator": "path:/internal-api",
+        "public_http_path": "/internal-api/status",
+        "tactic": "Discovery",
+        "technique": "T1046",
+        "weight": 0.7
+      }
+    ],
+    "expected_hidden_assets": [
+      "finance-share",
+      "malware-sink"
+    ],
+    "expected_reasonable_assets": [
+      "ics-plc"
+    ],
+    "initial_unlocked_assets": [
+      "internal-portal"
+    ],
+    "scenario_id": "normal-ics-status-probe",
+    "scenario_type": "normal",
+    "useful_followup_assets": [
+      "ics-plc"
+    ]
+  },
+  {
+    "diagnostic_followup_assets": [
+      "ssh-canary"
+    ],
+    "evidence_sequence": [
+      {
+        "evidence_id": "normal-ssh-e1",
+        "public_http_indicator": "combined:password",
+        "public_http_path": "/backup/passwords_internal.txt",
+        "tactic": "Credential Access",
+        "technique": "T1552.001",
+        "weight": 0.9
+      },
+      {
+        "evidence_id": "normal-ssh-e2",
+        "public_http_indicator": "combined:password",
+        "public_http_path": "/backup/passwords_internal.txt",
+        "tactic": "Lateral Movement",
+        "technique": "T1021.004",
+        "weight": 0.7
+      }
+    ],
+    "expected_hidden_assets": [
+      "ops-db",
+      "malware-sink"
+    ],
+    "expected_reasonable_assets": [
+      "finance-share",
+      "ssh-canary"
+    ],
+    "initial_unlocked_assets": [
+      "internal-portal"
+    ],
+    "scenario_id": "normal-password-ssh-canary",
+    "scenario_type": "normal",
+    "useful_followup_assets": [
+      "ssh-canary"
+    ]
+  }
+]

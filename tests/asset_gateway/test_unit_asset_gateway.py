@@ -10,6 +10,7 @@ from services.asset_gateway.app import (
     _internal_portal_session_result,
     _parse_http_request,
     _parse_smtp_commands,
+    _protocol_observer,
     _with_auth_result,
     load_routes,
     select_route,
@@ -192,3 +193,27 @@ def test_parse_smtp_commands_extracts_command_verbs_only() -> None:
     )
 
     assert commands == ["HELO", "MAIL", "RCPT"]
+
+
+def test_high_interaction_observer_writes_gateway_probe(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    events_file = tmp_path / "high_interaction_events.jsonl"
+    monkeypatch.setenv("HONEYPOT_HIGH_INTERACTION_EVENTS_FILE", str(events_file))
+    route = AssetRoute(
+        attacker_key="198.51.100.10",
+        binding_id="binding-a",
+        asset_id="dionaea-capture",
+        public_port=18085,
+        backend_host="dionaea-capture",
+        backend_port=80,
+    )
+
+    observer = _protocol_observer(route, "198.51.100.10")
+
+    assert observer is not None
+    observer(b"GET /downloads/agent-update.bin HTTP/1.1\r\nHost: sink\r\n\r\n")
+    event = json.loads(events_file.read_text(encoding="utf-8").strip())
+    assert event["source"] == "dionaea"
+    assert event["asset_id"] == "dionaea-capture"
+    assert event["attacker_key"] == "198.51.100.10"
+    assert event["service"] == "http"
+    assert "agent-update.bin" in event["message"]

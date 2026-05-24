@@ -50,7 +50,7 @@ class TechniquePriorRepository(Protocol):
         top_k: int,
         support_threshold: float,
     ) -> dict[str, float]:
-        """Return recommended not-yet-observed techniques and support scores."""
+        """Return supported not-yet-observed techniques from the top-k similar groups."""
         ...
 
 
@@ -102,9 +102,10 @@ class FileAttackGroupTechniquePriorRepository:
         The implementation uses Sørensen-Dice similarity between the current
         binding's strongly observed techniques and each ATT&CK group technique set.
         It follows the ATT&CK behavior forecasting paper's WkNN rule:
-        each top-k group contributes 1 / (1 - similarity), then support is
-        divided by k. Exact-match groups add no unseen techniques, so they do
-        not need a distance weight.
+        each top-k similar group contributes 1 / (1 - similarity), then support
+        is divided by k. K is the number of neighboring groups, not a cap on the
+        number of recommended techniques. Exact-match groups add no unseen
+        techniques, so they do not need a distance weight.
 
         Example:
             observed={"T1190"}, group techniques={"T1190", "T1059"}
@@ -141,9 +142,7 @@ class FileAttackGroupTechniquePriorRepository:
             if (score / denominator) >= support_threshold
         }
         return dict(
-            sorted(normalized.items(), key=lambda item: (-item[1], item[0]))[
-                : max(1, top_k)
-            ]
+            sorted(normalized.items(), key=lambda item: (-item[1], item[0]))
         )
 
     def _load(self) -> None:
