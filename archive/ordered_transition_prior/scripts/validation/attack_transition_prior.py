@@ -15,15 +15,12 @@ import json
 from pathlib import Path
 from typing import Any
 
-from libs.common.config import RuntimeConfig
-
 
 def main() -> int:
     """Print a validation report and return non-zero when the prior is unusable."""
-    config = RuntimeConfig.from_env()
     parser = argparse.ArgumentParser(description="Validate the generated ATT&CK transition prior.")
-    parser.add_argument("--path", default=config.attack_transition_prior_path)
-    parser.add_argument("--min-support", type=int, default=config.transition_min_support)
+    parser.add_argument("--path", default="data/transitions/technique_transition_prior.json")
+    parser.add_argument("--min-support", type=int, default=1)
     args = parser.parse_args()
 
     report = build_report(Path(args.path), min_support=args.min_support)

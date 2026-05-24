@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
-"""Download small public ATT&CK-labelled dataset slices for transition-prior builds.
+"""Download small public ATT&CK-labelled dataset slices for validation work.
 
-The default profile fetches data that is big enough to exercise the real pipeline
-but small enough for a laptop/VM workflow: UWF-ZeekData24 CSV tactic slices and
-CasinoLimit label metadata. Mordor/OTRF can fetch every zip declared by dataset
-metadata, including Host, Network, and Cloud entries. PWNJUTSU is dry-run/index
-only until labelled ordered traces are confirmed. Large raw PCAP/parquet/syslog
-archives remain manual unless they are explicitly listed in metadata.
+The default profile fetches UWF-ZeekData24 CSV tactic slices and CasinoLimit
+label metadata. Mordor/OTRF can fetch every zip declared by dataset metadata,
+including Host, Network, and Cloud entries. These are validation datasets only;
+the runtime prior is built from the local Enterprise ATT&CK STIX bundle.
 
 Example:
     python scripts/data/fetch_public_attack_datasets.py
@@ -15,7 +13,6 @@ Example:
 from __future__ import annotations
 
 import argparse
-import html.parser
 import json
 import re
 import urllib.error
@@ -31,7 +28,6 @@ UWF_BASE_URL = "https://datasets.uwf.edu/data/UWF-ZeekData24/csv"
 ZENODO_CASINOLIMIT_API = "https://zenodo.org/api/records/17256954"
 MORDOR_GITHUB_TREE_API = "https://api.github.com/repos/OTRF/Security-Datasets/git/trees/master?recursive=1"
 MORDOR_RAW_PREFIX = "https://raw.githubusercontent.com/OTRF/Security-Datasets/master/"
-PWNJUTSU_DATASET_INDEX = "https://pwnjutsu.irisa.fr/dataset/"
 DEFAULT_UWF_TACTICS = (
     "Credential_Access",
     "Defense_Evasion",
@@ -53,8 +49,8 @@ def main() -> int:
     parser.add_argument(
         "--dataset",
         action="append",
-        choices=("uwf-zeekdata24", "casinolimit", "mordor", "pwnjutsu"),
-        help="Dataset to fetch. Repeat to fetch several. Defaults to both small profiles.",
+        choices=("uwf-zeekdata24", "casinolimit", "mordor"),
+        help="Dataset to fetch. Repeat to fetch several. Defaults to the small validation profile.",
     )
     parser.add_argument(
         "--uwf-tactic",
@@ -87,13 +83,6 @@ def main() -> int:
         default="all",
         help="Mordor zip filter. all downloads every metadata-declared zip; host keeps only Host zip entries.",
     )
-    parser.add_argument(
-        "--pwnjutsu-section",
-        action="append",
-        dest="pwnjutsu_sections",
-        default=None,
-        help="PWNJUTSU index section to inspect during dry-run, e.g. system, network, reference.",
-    )
     parser.add_argument("--force", action="store_true", help="Redownload files that already exist.")
     parser.add_argument("--dry-run", action="store_true", help="Print planned downloads without writing files.")
     args = parser.parse_args()
@@ -124,14 +113,6 @@ def main() -> int:
                 file_type=args.mordor_file_type,
             )
         )
-    if "pwnjutsu" in selected_datasets:
-        downloads.extend(
-            pwnjutsu_index_items(
-                root / "pwnjutsu",
-                sections=tuple(args.pwnjutsu_sections or ()),
-            )
-        )
-
     completed = []
     for item in downloads:
         url = str(item["url"])
@@ -288,51 +269,6 @@ def mordor_downloads(output_dir: Path, *, sections: Iterable[str], limit: int, f
     return downloads
 
 
-def pwnjutsu_index_items(output_dir: Path, *, sections: Iterable[str]) -> list[dict[str, object]]:
-    """Return PWNJUTSU index entries without downloading large archives.
-
-    Example:
-        Input:
-            output_dir=Path("vendor/datasets/pwnjutsu")
-            sections=("system",)
-        Output:
-            [{"dataset": "pwnjutsu", "role": "index", "manual_only": True, ...}]
-    """
-    section_filter = {section.strip("/") for section in sections if section.strip("/")}
-    root_links = _index_links(PWNJUTSU_DATASET_INDEX)
-    planned: list[dict[str, object]] = []
-    for href in root_links:
-        label = href.rstrip("/").split("/")[-1]
-        if section_filter and label not in section_filter:
-            continue
-        section_url = urllib.parse.urljoin(PWNJUTSU_DATASET_INDEX, href)
-        planned.append(
-            {
-                "dataset": "pwnjutsu",
-                "role": "index",
-                "manual_only": True,
-                "url": section_url,
-                "path": str(output_dir / label / "INDEX.url"),
-                "note": "metadata/index only; raw PWNJUTSU archives are not downloaded automatically",
-            }
-        )
-        for child in _index_links(section_url)[:50]:
-            child_url = urllib.parse.urljoin(section_url, child)
-            planned.append(
-                {
-                    "dataset": "pwnjutsu",
-                    "role": "index-entry",
-                    "manual_only": True,
-                    "url": child_url,
-                    "path": str(output_dir / label / urllib.parse.unquote(child.rstrip("/")).replace("/", "_")),
-                    "note": "inspect manually before adding labelled traces to training",
-                }
-            )
-    if not planned:
-        raise RuntimeError(f"No PWNJUTSU index entries found at {PWNJUTSU_DATASET_INDEX}")
-    return planned
-
-
 def read_url(url: str) -> str:
     """Read a small text response from a public dataset endpoint."""
     request = urllib.request.Request(url, headers={"User-Agent": "honeynet-dataset-fetcher/1.0"})
@@ -350,31 +286,6 @@ def _safe_yaml(text: str) -> Any:
 def _mordor_section_from_path(metadata_path: str) -> str:
     parts = metadata_path.split("/")
     return parts[1] if len(parts) > 2 else "unknown"
-
-
-def _index_links(url: str) -> list[str]:
-    parser = _HrefParser()
-    parser.feed(read_url(url))
-    return [
-        href
-        for href in parser.hrefs
-        if href and not href.startswith(("#", "?")) and href not in {"../", "/"}
-    ]
-
-
-class _HrefParser(html.parser.HTMLParser):
-    """Minimal directory-index link parser used for PWNJUTSU dry-run planning."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.hrefs: list[str] = []
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag.lower() != "a":
-            return
-        for key, value in attrs:
-            if key.lower() == "href" and value:
-                self.hrefs.append(value)
 
 
 def download_file(url: str, output_path: Path) -> None:

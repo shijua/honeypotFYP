@@ -102,21 +102,19 @@ The default local runtime now persists state under `data/runtime/`:
 
 The controller asset catalog is now externalized at `data/assets/catalog.json`. Public HTTP profiling uses Sigma YAML rules in `data/detections/http_sigma`; only matching suspicious public-web requests create profiler evidence. Cowrie event mappings are externalized at `data/cowrie/event_mappings.json`. The profiler resolves tactic/technique relationships from the official MITRE ATT&CK `attack-stix-data` bundle at `data/mitre/enterprise-attack.json`.
 
-## Public Technique Transition Prior
+## ATT&CK Group Technique Prior
 
-The controller uses a public-dataset transition prior as a ranking signal: `P(next ATT&CK technique | recent technique)`. Raw public datasets are intentionally ignored by git and should live under `vendor/datasets/`; only the importer, tests, and generated derived prior schema belong in the repo. The prior is not an asset mapping. It estimates technique order, while `data/assets/catalog.json` decides which honeypot asset can plausibly cover each technique and which dependency signals are required.
+The controller uses an ATT&CK group-technique prior as a ranking signal. The prior is not an asset mapping. It estimates plausible adjacent techniques from public ATT&CK group knowledge, while `data/assets/catalog.json` decides which honeypot asset can plausibly cover each technique and which dependency signals are required.
 
-The repo expects public raw datasets under ignored `vendor/datasets/`. You can keep the default location or pass `--output-root /path/to/datasets` to the fetcher and then pass that same directory to the builder. The generated prior/report under `data/transitions/` are local build artifacts and are ignored except for `.gitkeep`.
+The repo expects optional public raw datasets under ignored `vendor/datasets/`. These datasets are validation material, not the active runtime prior. You can keep the default location or pass `--output-root /path/to/datasets` to the fetcher.
 
 ```bash
 vendor/datasets/mordor/
-vendor/datasets/pwnjutsu/
 vendor/datasets/casinolimit/
-vendor/datasets/windows-apt-2025/
 vendor/datasets/uwf-zeekdata24/
 ```
 
-For a practical first real-data run, fetch lightweight public slices that are small enough for normal development. UWF-ZeekData24 and CasinoLimit are fetched by the default command. Mordor/OTRF is supported through GitHub metadata plus metadata-declared zip files, including Host, Network, and Cloud entries. PWNJUTSU is metadata/index dry-run only by default because the raw archives are large and must be inspected before they are counted as labelled ordered traces.
+For a practical validation-data run, fetch the three supported public sources. UWF-ZeekData24 and CasinoLimit are fetched by the default command. Mordor/OTRF is supported through GitHub metadata plus metadata-declared zip files, including Host, Network, and Cloud entries.
 
 ```bash
 python scripts/data/fetch_public_attack_datasets.py
@@ -136,23 +134,18 @@ python scripts/data/fetch_public_attack_datasets.py --dataset mordor --mordor-li
 
 Use `--mordor-file-type host` if you want only Host zip entries for a lighter local checkout.
 
-Inspect PWNJUTSU without downloading large archives:
+Build the ATT&CK group-technique collaborative-filtering prior from the local Enterprise ATT&CK STIX bundle:
 
 ```bash
-python scripts/data/fetch_public_attack_datasets.py --dataset pwnjutsu --dry-run
+python scripts/data/build_attack_group_prior.py \
+  --stix data/mitre/enterprise-attack.json \
+  --output data/technique_prior/attack_group_technique_prior.json
+python scripts/validation/attack_group_prior.py
 ```
 
-Build the derived prior from one or more local files, directories, or zip archives:
+`data/technique_prior/attack_group_technique_prior.json` is generated local state and is ignored by git. The builder reads `intrusion-set --uses--> attack-pattern` relationships and does not infer missing labels. If the file is missing, the controller still starts but dashboard health marks the group prior as degraded and recommendations fall back to observed-technique continuation only.
 
-```bash
-python scripts/data/build_attack_transition_prior.py \
-  vendor/datasets
-python scripts/validation/attack_transition_prior.py
-```
-
-Use `python scripts/data/fetch_public_attack_datasets.py --dry-run` to inspect planned downloads. Use `--dataset uwf-zeekdata24`, `--dataset casinolimit`, or `--dataset mordor` to fetch one source. Use `--output-root vendor/datasets-lab` if you want to keep a separate local dataset checkout. If you manually download PWNJUTSU, Windows-APT 2025, or larger CasinoLimit/UWF files later, place them under the dataset root and rerun the same builder command.
-
-Supported input shapes are `csv`, `json`, `jsonl`, `ndjson`, `yaml`, `yml`, `zip`, and single-file `json.bz2`/`jsonl.bz2` style payloads. The builder normalizes records into traces with `case_id`, `source_dataset`, and ordered ATT&CK-labelled events, skips records without a technique id, writes `data/transitions/technique_transition_prior.json`, and writes a diagnostic report to `data/transitions/technique_transition_prior_report.json`. The generated prior contains order-1 `transitions` for `P(next | current)`, order-2 `order2_transitions` for `P(next | previous,current)`, and order-3 `order3_transitions` for `P(next | previous2,previous,current)`. Mordor metadata is expanded from ordered `attack_mappings`; raw Network/Cloud/Host zip content only contributes if it has explicit ATT&CK technique labels. PWNJUTSU contributes only when a local file has explicit `case_id`, timestamp/order, and ATT&CK technique ids. Add `--normalized-output data/transitions/normalized_traces.sample.json` only when you explicitly want to inspect the normalized trace schema; do not commit large normalized outputs. If the prior file is missing or empty, the controller still starts with an empty prior and the dashboard reports the transition prior as degraded.
+Use `python scripts/data/fetch_public_attack_datasets.py --dry-run` to inspect optional public datasets for later validation work. Use `--dataset uwf-zeekdata24`, `--dataset casinolimit`, or `--dataset mordor` to fetch one source under ignored `vendor/datasets/`. Those raw datasets are not the active runtime prior; they are kept for offline comparison and future validation experiments.
 
 ## Cowrie Command Detection
 
@@ -186,18 +179,54 @@ Use `ATTACK_TESTING_GUIDE.md` only to test whether live Cowrie commands produce 
 
 ## Evaluation
 
-The public transition prior should be evaluated separately from live runtime latency. More public data helps only when labels are correct, technique ids are present, event order is meaningful, and the source behavior is close enough to the honeynet setting. Use held-out traces to report predictive quality:
+The group prior should be checked separately from live runtime latency. First verify that the generated ATT&CK group prior is present and non-empty:
 
 ```bash
-python scripts/evaluation/technique_prior.py vendor/datasets --holdout-percent 20 --top-k 5
+python scripts/validation/attack_group_prior.py
 ```
 
-Useful report fields are `labelled_events_used`, `skipped_events_without_technique`, `trace_count`, `evaluated_edges`, `top1_accuracy`, `top3_accuracy`, `top5_accuracy`, `top10_accuracy`, `mrr`, `mean_negative_log_likelihood`, `unseen_source_rate`, `order2_context_rate`, `order3_context_rate`, `train_transition_count`, and `source_breakdown`. The runtime default is trace-balanced n-gram training with a small global fallback plus hybrid order-2/order-3 backoff at scoring time: `--count-mode trace-balanced --global-fallback-weight 0.05 --model-mode hybrid`. Use `--model-mode order1` for the old one-step comparison, `--model-mode order3` to test strict third-order context, and `--count-mode event-count --global-fallback-weight 0` for the count baseline.
+Check recommendation quality on the same replay scenarios:
+
+```bash
+python scripts/evaluation/attack_group_prior_recommendation.py \
+  tests/fixtures/reveal_policy_scenarios.jsonl \
+  --prior data/technique_prior/attack_group_technique_prior.json
+```
+
+Evaluate the reveal policy without Docker by replaying scenario JSONL against deterministic baselines: `passive`, `all-open`, `random-eligible`, `gate-only`, `top-recommendation`, and `controller`. Scenario rows can provide either a ready `profile` object or an `evidence_sequence` that the evaluator folds into a minimal `ProfileSnapshot`.
+
+```bash
+python scripts/evaluation/reveal_policy.py tests/fixtures/reveal_policy_scenarios.jsonl --policy all
+```
+
+The report includes reveal correctness, irrelevant reveal rate, hidden violation rate, opened asset count, useful evidence per reveal, diagnostic-or-useful evidence per reveal, no-reveal correctness, prior influence, profile-to-reveal latency in ticks, and decision trace completeness. This is the offline correctness evidence; live tests below measure runtime overhead only.
+
+Verify that scenario evidence opens the expected fixed ports with the route-level reveal simulation:
+
+```bash
+python scripts/evaluation/reveal_port_simulation.py \
+  --mode controller-only \
+  --scenario-file tests/fixtures/reveal_port_scenarios.jsonl
+```
+
+`controller-only` checks whether the controller selects the expected assets. After the compose stack is running, use `live-apply` to mutate runtime state and assert that `data/runtime/asset_gateway_routes.json` contains the exact `attacker_key + asset_id + public_port` routes:
+
+```bash
+python scripts/evaluation/reveal_port_simulation.py \
+  --mode live-apply \
+  --scenario-file tests/fixtures/reveal_port_scenarios.jsonl \
+  --output data/runtime/reveal_port_simulation_report.json
+jq '.summary, .scenarios[] | {scenario_id, ok, selected_assets, expected_routes, actual_routes, failure_reason}' \
+  data/runtime/reveal_port_simulation_report.json
+```
+
+This evaluation intentionally fails assets whose required runtime is unavailable, for example third-party high-interaction images that cannot be started.
 
 After the compose stack is running, measure live reveal latency with:
 
 ```bash
-python scripts/evaluation/runtime_latency.py --attacker-key "$CLIENT_TARGET_HOST"
+python scripts/evaluation/runtime_latency.py \
+  --assets internal-portal,finance-share,web-admin-console,ics-plc,vpn-appliance,malware-sink
 ```
 
 This measures binding resolve latency, orchestrator apply latency, Docker runtime start as seen by the orchestrator, and the time until `data/runtime/asset_gateway_routes.json` contains the route. Use `--assets internal-portal,finance-share` for a small run or `--dry-run` to list the fixed-port assets that would be measured.
@@ -238,7 +267,7 @@ Start the runnable stack without generating attacker traffic:
 ./scripts/start_enterprise_stack.sh
 ```
 
-The enterprise slice includes `public-portal`, a public-portal access-log forwarder, Cowrie, the public website HTTP backend, OpenCanary telemetry plumbing, and adaptive internal assets. The public portal implements the proposalv2 benign-surface breadcrumbs: login/support/status/API pages, `/robots.txt`, legacy backup files, `.env.old`, `phpinfo.php`, and frontend source-map credential breadcrumbs. Public portal nginx access logs are forwarded into the HTTP backend; suspicious requests are classified by `data/detections/http_sigma` and sent to the profiler.
+The enterprise slice includes `public-portal`, a public-portal access-log forwarder, Cowrie, the public website HTTP backend, OpenCanary telemetry plumbing, and adaptive internal assets. The public portal implements benign-surface breadcrumbs: login/support/status/API pages, `/robots.txt`, legacy backup files, `.env.old`, `phpinfo.php`, and frontend source-map credential breadcrumbs. Public portal nginx access logs are forwarded into the HTTP backend; suspicious requests are classified by `data/detections/http_sigma` and sent to the profiler.
 
 Useful public breadcrumb probes after the stack starts:
 
@@ -302,28 +331,14 @@ For manual port/page testing, `scripts/unlock_internal_assets_for_test.sh` can f
 ATTACKER_KEY=$CLIENT_TARGET_HOST ./scripts/unlock_internal_assets_for_test.sh
 ```
 
-Vulnerable internal assets are now represented in the normal asset catalog. Clone Vulhub under the ignored `vendor/vulhub/` path before triggering `log4shell-app`:
-
-```bash
-git clone --depth 1 https://github.com/vulhub/vulhub.git vendor/vulhub
-```
-
-`log4shell-app` points at `vendor/vulhub/log4j/CVE-2021-44228/docker-compose.yml` and is started by the orchestrator through the compose-backed internal asset runtime after its dependency chain is satisfied. If that compose file is missing, the orchestrator records `log4shell-app` as a failed asset so the dashboard shows the missing dependency clearly. Only run Vulhub scenarios in an isolated lab.
-
-The manual Vulhub helper remains available for isolated experiments that should not go through the adaptive path:
-
-```bash
-./scripts/start_vulhub_asset.sh --root vendor/vulhub --scenario spring/CVE-2022-22947
-```
-
 Validate runtime/gateway/dashboard data after opening assets:
 
 ```bash
 python scripts/validation/asset_telemetry.py --require-observed
-python scripts/validation/asset_telemetry.py --asset-id log4shell-app
+python scripts/validation/high_interaction_assets.py --require-observed
 ```
 
-`asset_telemetry.py` validates runtime-enabled catalog assets, including high-interaction paths. If `admin-jumpbox`, Vulhub-backed assets, or other high-interaction assets are selected without their runtime and telemetry being present, the script reports them as missing instead of silently treating them as later-only.
+`asset_telemetry.py` validates runtime-enabled catalog assets, including high-interaction paths. If `admin-jumpbox` or other high-interaction assets are selected without their runtime and telemetry being present, the script reports them as missing instead of silently treating them as later-only.
 
 Live monitoring dashboard:
 

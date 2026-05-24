@@ -271,7 +271,7 @@ def test_docker_template_runtime_starts_catalog_driven_cowrie_asset(
         return Result()
 
     monkeypatch.setattr(template_runtime_module.shutil, "which", lambda name: "/usr/bin/docker")
-    monkeypatch.setattr(template_runtime_module, "_port_is_free", lambda port: True)
+    monkeypatch.setattr(runtime_routes_module, "_port_is_free", lambda port: True)
     monkeypatch.setattr(template_runtime_module.subprocess, "run", fake_run)
     monkeypatch.setattr(template_runtime_module, "_container_status", _missing_then_up_status())
     monkeypatch.setattr(template_runtime_module, "_healthcheck_ready", lambda runtime, settings: True)
@@ -341,7 +341,7 @@ def test_docker_template_runtime_uses_stable_internal_portal_runtime(
         return Result()
 
     monkeypatch.setattr(template_runtime_module.shutil, "which", lambda name: "/usr/bin/docker")
-    monkeypatch.setattr(template_runtime_module, "_port_is_free", lambda port: True)
+    monkeypatch.setattr(runtime_routes_module, "_port_is_free", lambda port: True)
     monkeypatch.setattr(template_runtime_module.subprocess, "run", fake_run)
     monkeypatch.setattr(template_runtime_module, "_container_status", _missing_then_up_status())
     monkeypatch.setattr(template_runtime_module, "_healthcheck_ready", lambda runtime, settings: True)
@@ -417,7 +417,7 @@ def test_docker_template_runtime_writes_asset_gateway_route(
         return Result()
 
     monkeypatch.setattr(template_runtime_module.shutil, "which", lambda name: "/usr/bin/docker")
-    monkeypatch.setattr(template_runtime_module, "_port_is_free", lambda port: True)
+    monkeypatch.setattr(runtime_routes_module, "_port_is_free", lambda port: True)
     monkeypatch.setattr(template_runtime_module.subprocess, "run", fake_run)
     monkeypatch.setattr(template_runtime_module, "_container_status", _missing_then_up_status())
     monkeypatch.setattr(template_runtime_module, "_healthcheck_ready", lambda runtime, settings: True)
@@ -484,7 +484,7 @@ def test_docker_template_runtime_does_not_gateway_manage_external_entrypoint(
         return Result()
 
     monkeypatch.setattr(template_runtime_module.shutil, "which", lambda name: "/usr/bin/docker")
-    monkeypatch.setattr(template_runtime_module, "_port_is_free", lambda port: True)
+    monkeypatch.setattr(runtime_routes_module, "_port_is_free", lambda port: True)
     monkeypatch.setattr(template_runtime_module.subprocess, "run", fake_run)
     monkeypatch.setattr(template_runtime_module, "_container_status", _missing_then_up_status())
     monkeypatch.setattr(template_runtime_module, "_healthcheck_ready", lambda runtime, settings: True)
@@ -537,7 +537,7 @@ def test_docker_template_runtime_starts_internal_opencanary_asset(
         return Result()
 
     monkeypatch.setattr(template_runtime_module.shutil, "which", lambda name: "/usr/bin/docker")
-    monkeypatch.setattr(template_runtime_module, "_port_is_free", lambda port: True)
+    monkeypatch.setattr(runtime_routes_module, "_port_is_free", lambda port: True)
     monkeypatch.setattr(template_runtime_module.subprocess, "run", fake_run)
     monkeypatch.setattr(template_runtime_module, "_container_status", _missing_then_up_status())
     monkeypatch.setattr(template_runtime_module, "_healthcheck_ready", lambda runtime, settings: True)
@@ -594,14 +594,14 @@ def test_docker_template_runtime_starts_internal_opencanary_asset(
     assert record.settings["backend_port"] == 9418
 
 
-def test_compose_template_runtime_starts_catalog_driven_vulhub_asset(
+def test_compose_template_runtime_starts_catalog_driven_compose_asset(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
 ) -> None:
     commands: list[list[str]] = []
-    compose_file = tmp_path / "vendor" / "vulhub" / "log4j" / "CVE-2021-44228" / "docker-compose.yml"
+    compose_file = tmp_path / "vendor" / "optional-web-lab" / "docker-compose.yml"
     compose_file.parent.mkdir(parents=True)
-    compose_file.write_text("version: '2'\nservices:\n  app:\n    image: vulhub/log4j\n", encoding="utf-8")
+    compose_file.write_text("version: '2'\nservices:\n  app:\n    image: example/web-lab\n", encoding="utf-8")
 
     def fake_run(args, **kwargs):
         command = list(args)
@@ -624,7 +624,7 @@ def test_compose_template_runtime_starts_catalog_driven_vulhub_asset(
         if command[:3] == ["docker", "network", "connect"]:
             return Result(stdout="")
         if command[:3] == ["docker", "ps", "-a"]:
-            return Result(stdout="honeynet-binding-log4shell-app-1\tUp 3 seconds\n")
+            return Result(stdout="honeynet-binding-compose-web-lab-1\tUp 3 seconds\n")
         raise AssertionError(f"unexpected subprocess call: {command}")
 
     monkeypatch.setattr(template_runtime_module.shutil, "which", lambda name: "/usr/bin/docker")
@@ -635,23 +635,23 @@ def test_compose_template_runtime_starts_catalog_driven_vulhub_asset(
 
     runtime = ComposeTemplateRuntime(InMemoryTemplateRuntimeRepository())
     asset = AssetDefinition(
-        asset_id="log4shell-app",
-        asset_name="Legacy Java App",
+        asset_id="compose-web-lab",
+        asset_name="Optional Compose Web Lab",
         exposure_type="internal",
         interaction_level="high",
-        template_family="vulnerable-webapp-honeypot",
+        template_family="compose-web-lab",
         protocols=["http"],
         ports=[8080],
-        source_refs=["vulhub:log4j/CVE-2021-44228"],
+        source_refs=["optional:compose-web-lab"],
         default_settings={
             "runtime": {
                 "backend": "compose",
-                "compose_file": "vendor/vulhub/log4j/CVE-2021-44228/docker-compose.yml",
+                "compose_file": "vendor/optional-web-lab/docker-compose.yml",
                 "project_name": "{project_name}-{binding_id_short}-{asset_id}",
                 "runner": "docker_image",
                 "compose_image": "docker/compose:1.29.2",
                 "internal_network": "{project_name}_net_internal",
-                "source": "vulhub/log4j/CVE-2021-44228",
+                "source": "optional-web-lab",
             }
         },
         covers_tactics=["Initial Access", "Execution", "Discovery"],
@@ -661,7 +661,7 @@ def test_compose_template_runtime_starts_catalog_driven_vulhub_asset(
     record = runtime.start_asset("binding-compose", asset)
 
     assert record.settings["runtime_backend"] == "compose"
-    assert record.settings["compose_project"] == "honeynet-binding--log4shell-app"
+    assert record.settings["compose_project"] == "honeynet-binding--compose-web-lab"
     assert record.settings["internal_network"] == "honeynet_net_internal"
     assert record.settings["container_ids"] == ["container-1"]
     assert any("docker/compose:1.29.2" in command for command in commands)
@@ -691,7 +691,7 @@ def test_docker_template_runtime_raises_when_container_exits_immediately(
         raise AssertionError(f"unexpected subprocess call: {args}")
 
     monkeypatch.setattr(template_runtime_module.shutil, "which", lambda name: "/usr/bin/docker")
-    monkeypatch.setattr(template_runtime_module, "_port_is_free", lambda port: True)
+    monkeypatch.setattr(runtime_routes_module, "_port_is_free", lambda port: True)
     monkeypatch.setattr(template_runtime_module.time, "sleep", lambda _: None)
     monkeypatch.setattr(template_runtime_module.subprocess, "run", fake_run)
 
@@ -741,7 +741,7 @@ def test_docker_template_runtime_reuses_running_container(
         raise AssertionError(f"unexpected subprocess call: {args}")
 
     monkeypatch.setattr(template_runtime_module.shutil, "which", lambda name: "/usr/bin/docker")
-    monkeypatch.setattr(template_runtime_module, "_port_is_free", lambda port: True)
+    monkeypatch.setattr(runtime_routes_module, "_port_is_free", lambda port: True)
     monkeypatch.setattr(template_runtime_module, "_container_status", lambda name: "Up 2 seconds")
     monkeypatch.setattr(template_runtime_module, "_healthcheck_ready", lambda runtime, settings: True)
     monkeypatch.setattr(template_runtime_module, "_container_network_ip", lambda name, network: "172.25.0.9")
@@ -823,7 +823,7 @@ def test_orchestrator_gateway_excludes_exited_docker_assets(
     binding = binding_service.resolve(ResolveBindingRequest(attacker_key="198.51.100.88"))
 
     monkeypatch.setattr(template_runtime_module.shutil, "which", lambda name: "/usr/bin/docker")
-    monkeypatch.setattr(template_runtime_module, "_port_is_free", lambda port: True)
+    monkeypatch.setattr(runtime_routes_module, "_port_is_free", lambda port: True)
     monkeypatch.setattr(
         template_runtime_module.subprocess,
         "run",

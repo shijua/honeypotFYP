@@ -574,7 +574,7 @@ class DockerTemplateRuntime:
 
 
 class ComposeTemplateRuntime:
-    """Start a compose-backed internal asset such as one Vulhub scenario."""
+    """Start a compose-backed internal asset declared by the catalog."""
 
     def __init__(
         self,
@@ -1342,7 +1342,7 @@ def _compose_container_name_for_service(compose_project: str, service: str) -> s
     """Ask Docker for the container name behind one compose service label.
 
     Example:
-        project=honeynet-abcd-log4shell, service=app -> honeynet-abcd-log4shell-app-1
+        project=honeynet-abcd-compose-web-lab, service=app -> honeynet-abcd-compose-web-lab-app-1
     """
     result = subprocess.run(
         [
@@ -1422,17 +1422,6 @@ def _host_project_root() -> Path:
     if raw_path:
         return Path(raw_path).resolve()
     return _container_project_root()
-
-
-def _port_is_free(port: int) -> bool:
-    """Return True when localhost:port can be bound right now."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        try:
-            sock.bind(("127.0.0.1", port))
-        except OSError:
-            return False
-    return True
 
 
 def _container_status(container_name: str) -> str:

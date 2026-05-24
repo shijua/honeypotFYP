@@ -249,11 +249,12 @@ def test_reveal_feedback_records_reveal_and_later_useful_touch(tmp_path) -> None
                 {
                     "asset_added": "finance-share",
                     "details": {
-                        "feedback_context_key": "T1552.001|any_http_indicators:path:.bak",
+                        "selected_technique": "T1552.001",
+                        "matched_dependency_markers": ["any_http_indicators:path:.bak"],
                         "asset_group": "data-share",
                     },
                 }
-            ]
+            ],
         },
     )
     evidence_file.write_text(
@@ -261,11 +262,11 @@ def test_reveal_feedback_records_reveal_and_later_useful_touch(tmp_path) -> None
             {
                 "records": {
                     "198.51.100.10": [
-                            {
-                                "attacker_key": "198.51.100.10",
-                                "ts": "2099-01-01T00:00:01Z",
-                                "tech_id": "T1005",
-                                "source_ref": {
+                        {
+                            "attacker_key": "198.51.100.10",
+                            "ts": "2099-01-01T00:00:01Z",
+                            "tech_id": "T1005",
+                            "source_ref": {
                                 "source": "internal_http",
                                 "asset_id": "finance-share",
                                 "http_path": "/finance/archive/2024/payroll-archive.zip",
@@ -319,7 +320,8 @@ def test_reveal_feedback_marks_unclassified_touch_as_shallow(tmp_path) -> None:
                 {
                     "asset_added": "internal-portal",
                     "details": {
-                        "feedback_context_key": "T1046",
+                        "selected_technique": "T1046",
+                        "matched_dependency_markers": [],
                         "asset_group": "portal",
                     },
                 }

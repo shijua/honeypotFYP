@@ -72,7 +72,7 @@ def build_chain_health(
     latest_high_interaction = _latest_record(high_interaction_observations, "ts")
     latest_decision = _latest_record(decision_trace, "ts")
     latest_route = _latest_record(gateway_routes, "updated_at")
-    transition_prior = _transition_prior_stage(Path(RuntimeConfig.from_env().attack_transition_prior_path))
+    technique_prior = _technique_prior_stage(Path(RuntimeConfig.from_env().attack_group_prior_path))
 
     stages = [
         _service_stage(
@@ -170,7 +170,7 @@ def build_chain_health(
                 empty_detail="adapter is up, waiting for Conpot/Dionaea/Honeytrap telemetry",
             ),
             _profile_stage(attackers, bindings, latest_decision),
-            transition_prior,
+            technique_prior,
             _gateway_stage(latest_route),
             _service_stage(
                 project_name,
@@ -360,45 +360,46 @@ def _profile_stage(
     )
 
 
-def _transition_prior_stage(path: Path) -> dict[str, str]:
-    """Report whether the public-dataset technique prior is available.
+def _technique_prior_stage(path: Path) -> dict[str, str]:
+    """Report whether the ATT&CK group-technique prior is available.
 
     Example:
-        missing data/transitions/technique_transition_prior.json -> WARN
+        missing data/technique_prior/attack_group_technique_prior.json -> WARN
     """
     if not path.exists():
         return _health_stage(
-            stage="Technique transition prior",
+            stage="Technique group prior",
             component=str(path),
             status="warn",
             signal="missing",
-            detail="controller will run with an empty public prior until the dataset builder is run",
+            detail="controller will run without ATT&CK group recommendations until the prior builder is run",
         )
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         return _health_stage(
-            stage="Technique transition prior",
+            stage="Technique group prior",
             component=str(path),
             status="bad",
             signal="unreadable",
             detail=str(exc),
         )
-    transitions = payload.get("transitions") if isinstance(payload, dict) else None
-    if not isinstance(transitions, dict) or not transitions:
+    groups = payload.get("groups") if isinstance(payload, dict) else None
+    if not isinstance(groups, list) or not groups:
         return _health_stage(
-            stage="Technique transition prior",
+            stage="Technique group prior",
             component=str(path),
             status="warn",
             signal="empty",
-            detail="prior file exists but contains no transition edges",
+            detail="prior file exists but contains no ATT&CK groups",
         )
+    technique_count = payload.get("technique_count") if isinstance(payload, dict) else None
     return _health_stage(
-        stage="Technique transition prior",
+        stage="Technique group prior",
         component=str(path),
         status="ok",
-        signal=f"{sum(len(value) for value in transitions.values() if isinstance(value, dict))} transitions",
-        detail=_record_detail(payload, ["generated_at", "sources", "min_support"]),
+        signal=f"{len(groups)} groups",
+        detail=f"{technique_count or 'unknown'} techniques from ATT&CK group uses relationships",
     )
 
 

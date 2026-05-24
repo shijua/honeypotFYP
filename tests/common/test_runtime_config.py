@@ -26,23 +26,19 @@ def test_runtime_config_reads_cowrie_mapping_mode_from_env(monkeypatch: pytest.M
     assert config.entrypoint_http_sigma_rules_path == "vendor/custom-sigma/rules/web"
 
 
-def test_runtime_config_reads_transition_and_feedback_settings(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("HONEYPOT_ATTACK_TRANSITION_PRIOR_PATH", "tmp/prior.json")
-    monkeypatch.setenv("HONEYPOT_TRANSITION_TOP_K", "7")
-    monkeypatch.setenv("HONEYPOT_TRANSITION_MIN_SUPPORT", "3")
-    monkeypatch.setenv("HONEYPOT_TRANSITION_ORDER2_MIN_SUPPORT", "4")
-    monkeypatch.setenv("HONEYPOT_TRANSITION_ORDER3_MIN_SUPPORT", "5")
-    monkeypatch.setenv("HONEYPOT_EXPLOIT_LAMBDA", "0.75")
+def test_runtime_config_reads_prior_and_feedback_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HONEYPOT_ATTACK_GROUP_PRIOR_PATH", "tmp/group_prior.json")
+    monkeypatch.setenv("HONEYPOT_RECOMMENDATION_TOP_K", "40")
+    monkeypatch.setenv("HONEYPOT_RECOMMENDATION_SUPPORT_THRESHOLD", "0.15")
+    monkeypatch.setenv("HONEYPOT_STRONG_TECHNIQUE_THRESHOLD", "0.5")
     monkeypatch.setenv("HONEYPOT_FEEDBACK_WINDOW_SECONDS", "120")
     monkeypatch.setenv("HONEYPOT_REVEAL_FEEDBACK_PATH", "tmp/reveal_feedback.json")
 
     config = RuntimeConfig.from_env()
 
-    assert config.attack_transition_prior_path == "tmp/prior.json"
-    assert config.transition_top_k == 7
-    assert config.transition_min_support == 3
-    assert config.transition_order2_min_support == 4
-    assert config.transition_order3_min_support == 5
-    assert config.exploit_lambda == 0.75
+    assert config.attack_group_prior_path == "tmp/group_prior.json"
+    assert config.recommendation_top_k == 40
+    assert config.recommendation_support_threshold == 0.15
+    assert config.strong_technique_threshold == 0.5
     assert config.feedback_window_seconds == 120
     assert config.reveal_feedback_path == "tmp/reveal_feedback.json"

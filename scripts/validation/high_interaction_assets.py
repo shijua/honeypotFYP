@@ -22,8 +22,6 @@ HIGH_INTERACTION_ASSETS = {
     "conpot-plc",
     "dionaea-capture",
     "honeytrap-generic",
-    "log4shell-app",
-    "spring-gateway-app",
 }
 
 
@@ -48,4 +46,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

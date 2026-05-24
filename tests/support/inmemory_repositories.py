@@ -255,81 +255,41 @@ class InMemoryAssetRepository:
         return tuple(self._assets)
 
 
-class InMemoryTechniqueTransitionRepository:
-    """Small test repository for deterministic technique transitions."""
+class InMemoryTechniquePriorRepository:
+    """Small test repository for deterministic technique recommendations."""
 
     def __init__(
         self,
-        transitions: dict[str, dict[str, float]] | None = None,
+        recommendations: dict[str, dict[str, float]] | None = None,
     ) -> None:
-        self._transitions = transitions or {}
+        self._recommendations = recommendations or {}
 
     @property
     def degraded_reason(self) -> str | None:
         return None
 
-    def score_transition(self, current_technique: str, candidate_technique: str) -> float:
-        return float(self._transitions.get(current_technique, {}).get(candidate_technique, 0.0))
-
-    def next_scores(self, recent_techniques: list[str], top_k: int) -> dict[str, float]:
+    def recommend(
+        self,
+        observed_techniques: set[str],
+        *,
+        top_k: int,
+        support_threshold: float,
+    ) -> dict[str, float]:
         scores: dict[str, float] = {}
-        for distance, technique in enumerate(reversed(recent_techniques[-top_k:]), start=1):
-            weight = 1.0 / distance
-            for candidate, probability in self._transitions.get(technique, {}).items():
-                scores[candidate] = max(scores.get(candidate, 0.0), probability * weight)
-        return dict(sorted(scores.items(), key=lambda item: (-item[1], item[0]))[:top_k])
-
-
-class InMemoryRevealFeedbackRepository:
-    """Small feedback repository for controller unit tests."""
-
-    def __init__(self, gaps: dict[tuple[str, str], float] | None = None) -> None:
-        self._gaps = gaps or {}
-        self.reveals: list[dict[str, str]] = []
-        self.outcomes: list[dict[str, str]] = []
-
-    def coverage_gap(self, context_key: str, asset_group: str) -> float:
-        return self._gaps.get((context_key, asset_group), 1.0)
-
-    def preference(self, context_key: str, asset_group: str) -> float:
-        return 0.5
-
-    def record_reveal(
-        self,
-        *,
-        context_key: str,
-        asset_group: str,
-        binding_id: str,
-        attacker_key: str,
-        asset_id: str,
-        available_assets: list[str] | None = None,
-        revealed_assets: list[str] | None = None,
-    ) -> None:
-        self.reveals.append(
-            {
-                "context_key": context_key,
-                "asset_group": asset_group,
-                "binding_id": binding_id,
-                "attacker_key": attacker_key,
-                "asset_id": asset_id,
-                "available_assets": ",".join(available_assets or []),
-                "revealed_assets": ",".join(revealed_assets or [asset_id]),
-            }
-        )
-
-    def record_outcome(
-        self,
-        *,
-        context_key: str,
-        asset_group: str,
-        outcome: str,
-    ) -> None:
-        self.outcomes.append(
-            {
-                "context_key": context_key,
-                "asset_group": asset_group,
-                "outcome": outcome,
-            }
+        for technique in observed_techniques:
+            for candidate, score in self._recommendations.get(technique, {}).items():
+                if candidate in observed_techniques:
+                    continue
+                scores[candidate] = max(scores.get(candidate, 0.0), float(score))
+        return dict(
+            sorted(
+                {
+                    technique: score
+                    for technique, score in scores.items()
+                    if score >= support_threshold
+                }.items(),
+                key=lambda item: (-item[1], item[0]),
+            )[:top_k]
         )
 
 

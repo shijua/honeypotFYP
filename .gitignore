@@ -11,8 +11,8 @@ vendor/sigma/
 vendor/datasets/
 data/cowrie/command_mapping_rules.sigma.json
 data/runtime/
-data/transitions/*
-!data/transitions/.gitkeep
+data/technique_prior/*
+!data/technique_prior/.gitkeep
 data/mitre/enterprise-attack.json
 deploy/cowrie/var/
 deploy/opencanary/var/*
@@ -23,3 +23,5 @@ dist/
 build/
 *.egg-info/
 .codex
+
+

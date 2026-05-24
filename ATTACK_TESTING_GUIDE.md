@@ -43,8 +43,21 @@ Open browser pages with `127.0.0.1` instead of `localhost`, for example `http://
 Quick health check:
 
 ```bash
-curl -s "http://146.169.44.23:8090/api/summary" | jq '.chain_health[] | select(.stage == "Technique transition prior" or .stage == "Profile/controller" or .stage == "Gateway/assets")'
+curl -s "http://146.169.44.23:8090/api/summary" | jq '.chain_health[] | select(.stage == "Technique group prior" or .stage == "Profile/controller" or .stage == "Gateway/assets")'
 ```
+
+Optional route-level reveal evaluation:
+
+```bash
+.venv/bin/python scripts/evaluation/reveal_port_simulation.py \
+  --mode live-apply \
+  --scenario-file tests/fixtures/reveal_port_scenarios.jsonl \
+  --output data/runtime/reveal_port_simulation_report.json
+jq '.summary, .scenarios[] | {scenario_id, ok, selected_assets, expected_routes, actual_routes, failure_reason}' \
+  data/runtime/reveal_port_simulation_report.json
+```
+
+Expected: each passed scenario has the selected asset and the exact asset-gateway route. An unavailable third-party high-interaction image is reported as `failed_runtime_unavailable`, not silently skipped.
 
 ## 2. Public Signals
 
@@ -206,7 +219,7 @@ Expected: static HTTP assets produce internal HTTP evidence; Git/MySQL/Redis/FTP
 
 ## 6. High-Interaction Runtime Smoke
 
-Use this after the fixed-port smoke when you want to verify upgraded high-interaction backends. These commands force-unlock the Docker-backed high-interaction assets for the same attacker key, then probe their gateway-managed ports. Vulhub-backed `log4shell-app` and `spring-gateway-app` require an ignored `vendor/vulhub/` checkout and are not required for this smoke.
+Use this after the fixed-port smoke when you want to verify upgraded high-interaction backends. These commands force-unlock the Docker-backed high-interaction assets for the same attacker key, then probe their gateway-managed ports.
 
 ```bash
 TEST_ATTACKER_KEY="$(

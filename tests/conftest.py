@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import random
 
 import pytest
 from fastapi.testclient import TestClient
@@ -13,7 +12,7 @@ from tests.support.inmemory_repositories import InMemoryBindingRepository
 from services.controller.app import app as controller_app
 from services.controller.app import get_service as get_controller_service
 from services.controller.domain import ControllerService
-from tests.support.inmemory_repositories import InMemoryAssetRepository, InMemoryTechniqueTransitionRepository
+from tests.support.inmemory_repositories import InMemoryAssetRepository, InMemoryTechniquePriorRepository
 from services.cowrie.app import app as cowrie_app
 from services.cowrie.app import get_service as get_cowrie_service
 from services.cowrie.command_mapping import FileCowrieCommandRuleCatalog
@@ -82,9 +81,8 @@ def profiler_client() -> TestClient:
 def controller_client() -> TestClient:
     service = ControllerService(
         InMemoryAssetRepository(),
-        InMemoryTechniqueTransitionRepository(),
-        config=RuntimeConfig(epsilon=0.0),
-        rng=random.Random(0),
+        InMemoryTechniquePriorRepository(),
+        config=RuntimeConfig(),
     )
 
     def _get_service() -> ControllerService:
@@ -180,9 +178,8 @@ def mvp_clients() -> dict[str, TestClient]:
     )
     controller_service = ControllerService(
         InMemoryAssetRepository(),
-        InMemoryTechniqueTransitionRepository(),
-        config=RuntimeConfig(epsilon=0.0),
-        rng=random.Random(0),
+        InMemoryTechniquePriorRepository(),
+        config=RuntimeConfig(),
     )
     gateway_service = GatewayService(InMemoryGatewayRouteRepository())
     orchestrator_service = OrchestratorService(

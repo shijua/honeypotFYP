@@ -515,7 +515,7 @@ def test_dashboard_summary_marks_compose_assets_as_running(
                     "attacker_key": "198.51.100.10",
                     "status": "active",
                     "last_seen_ts": "2026-01-01T00:00:02Z",
-                    "unlocked_assets": ["log4shell-app"],
+                    "unlocked_assets": ["compose-web-lab"],
                 }
             ]
         },
@@ -526,14 +526,14 @@ def test_dashboard_summary_marks_compose_assets_as_running(
             "records": [
                 {
                     "binding_id": "binding-1",
-                    "asset_id": "log4shell-app",
-                    "asset_name": "Legacy Java App",
+                    "asset_id": "compose-web-lab",
+                    "asset_name": "Optional Compose Web Lab",
                     "status": "running",
-                    "template_family": "vulnerable-webapp-honeypot",
+                    "template_family": "compose-web-lab",
                     "settings": {
                         "runtime_backend": "compose",
-                        "compose_project": "honeynet-binding-log4shell-app",
-                        "container_names": ["honeynet-binding-log4shell-app-1"],
+                        "compose_project": "honeynet-binding-compose-web-lab",
+                        "container_names": ["honeynet-binding-compose-web-lab-1"],
                     },
                 }
             ]
@@ -552,12 +552,12 @@ def test_dashboard_summary_marks_compose_assets_as_running(
     monkeypatch.setattr(
         dashboard_summary,
         "_current_compose_statuses",
-        lambda _project_name: {"honeynet-binding-log4shell-app-1": "Up 8 seconds"},
+        lambda _project_name: {"honeynet-binding-compose-web-lab-1": "Up 8 seconds"},
     )
 
     payload = dashboard_summary.summarize_demo(state_dir)
 
     running_assets = payload["attackers"][0]["current_running_assets"]
-    assert running_assets[0]["asset_id"] == "log4shell-app"
+    assert running_assets[0]["asset_id"] == "compose-web-lab"
     assert running_assets[0]["runtime_backend"] == "compose"
-    assert running_assets[0]["compose_project"] == "honeynet-binding-log4shell-app"
+    assert running_assets[0]["compose_project"] == "honeynet-binding-compose-web-lab"

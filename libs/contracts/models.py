@@ -377,7 +377,7 @@ class ControllerTickRequest(VersionedModel):
 
 
 class ControllerAction(VersionedModel):
-    """One action proposed by the controller.
+    """One action returned by the controller.
 
     Example:
         {"action_type": "unlock", "binding_id": "binding-1", "asset_id": "git-internal"}

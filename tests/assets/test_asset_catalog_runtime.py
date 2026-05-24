@@ -227,17 +227,11 @@ def test_internal_asset_covered_techniques_exist_in_enterprise_attack() -> None:
             assert catalog.tactic_for_technique(technique) is not None
 
 
-def test_web_admin_console_declares_same_port_upgrade_candidate() -> None:
+def test_web_admin_console_has_no_default_external_lab_upgrade() -> None:
     assets = _catalog_by_id()
     selection_profile = assets["web-admin-console"].default_settings["selection_profile"]
-    upgrade_candidates = selection_profile["upgrade_candidates"]
 
-    candidates_by_id = {item["asset_id"]: item for item in upgrade_candidates}
-    assert set(candidates_by_id) == {"log4shell-app", "spring-gateway-app"}
-    assert candidates_by_id["log4shell-app"]["public_port"] == 18081
-    assert candidates_by_id["spring-gateway-app"]["public_port"] == 18081
-    assert "any_http_rules:public_http_exploit_probe" in candidates_by_id["log4shell-app"]["required_markers"]
-    assert "any_http_indicators:combined:spring" in candidates_by_id["spring-gateway-app"]["required_markers"]
+    assert "upgrade_candidates" not in selection_profile
 
 
 def test_high_interaction_assets_declare_real_runtime_and_gateway_ports() -> None:
@@ -246,7 +240,6 @@ def test_high_interaction_assets_declare_real_runtime_and_gateway_ports() -> Non
         "conpot-plc": {18084, 1502, 1102},
         "dionaea-capture": {18085, 1445, 11433, 12122},
         "honeytrap-generic": {19999},
-        "spring-gateway-app": {18081},
     }
 
     for asset_id, public_ports in expected_ports.items():
@@ -262,4 +255,3 @@ def test_high_interaction_assets_declare_real_runtime_and_gateway_ports() -> Non
     assert assets["conpot-plc"].dependencies == ["ics-plc"]
     assert assets["dionaea-capture"].dependencies == ["malware-sink"]
     assert assets["honeytrap-generic"].dependencies == ["malware-sink"]
-    assert assets["spring-gateway-app"].dependencies == ["web-admin-console"]

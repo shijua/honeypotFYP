@@ -1,4 +1,4 @@
-"""Shared runtime configuration used by the MVP services.
+"""Shared runtime configuration used by the honeynet services.
 
 Most values here are intentionally simple constants so local runs and tests can
 share the same defaults.
@@ -12,26 +12,23 @@ import os
 
 @dataclass
 class RuntimeConfig:
-    """Small runtime knobs shared by the MVP services.
+    """Small runtime knobs shared by the honeynet services.
 
     Example:
-        RuntimeConfig(epsilon=0.15, asset_catalog_path="data/assets/catalog.json")
+        RuntimeConfig(asset_catalog_path="data/assets/catalog.json", unlock_cap=2)
     """
 
     tick_seconds: int = 30
-    epsilon: float = 0.15
     unlock_cap: int = 100
     chain_window_seconds: int = 600
     level2_threshold: int = 3
     binding_ttl_seconds: int = 7 * 24 * 60 * 60
     state_dir: str = "data/runtime"
     asset_catalog_path: str = "data/assets/catalog.json"
-    attack_transition_prior_path: str = "data/transitions/technique_transition_prior.json"
-    transition_top_k: int = 5
-    transition_min_support: int = 1
-    transition_order2_min_support: int = 2
-    transition_order3_min_support: int = 3
-    exploit_lambda: float = 0.6
+    attack_group_prior_path: str = "data/technique_prior/attack_group_technique_prior.json"
+    recommendation_top_k: int = 40
+    recommendation_support_threshold: float = 0.15
+    strong_technique_threshold: float = 0.5
     feedback_window_seconds: int = 300
     reveal_feedback_path: str = "data/runtime/reveal_feedback.json"
     cowrie_event_mapping_path: str = "data/cowrie/event_mappings.json"
@@ -52,15 +49,15 @@ class RuntimeConfig:
 
         Example:
             Input env:
-                HONEYPOT_TRANSITION_TOP_K=7
-                HONEYPOT_TRANSITION_ORDER2_MIN_SUPPORT=2
-                HONEYPOT_TRANSITION_ORDER3_MIN_SUPPORT=3
-                HONEYPOT_ATTACK_TRANSITION_PRIOR_PATH=tmp/prior.json
+                HONEYPOT_ATTACK_GROUP_PRIOR_PATH=tmp/group_prior.json
+                HONEYPOT_RECOMMENDATION_TOP_K=40
+                HONEYPOT_RECOMMENDATION_SUPPORT_THRESHOLD=0.15
+                HONEYPOT_STRONG_TECHNIQUE_THRESHOLD=0.5
             Output:
-                config.transition_top_k == 7
-                config.transition_order2_min_support == 2
-                config.transition_order3_min_support == 3
-                config.attack_transition_prior_path == "tmp/prior.json"
+                config.attack_group_prior_path == "tmp/group_prior.json"
+                config.recommendation_top_k == 40
+                config.recommendation_support_threshold == 0.15
+                config.strong_technique_threshold == 0.5
         """
         config = cls()
         config.state_dir = os.getenv("HONEYPOT_STATE_DIR", config.state_dir)
@@ -80,29 +77,21 @@ class RuntimeConfig:
             "HONEYPOT_ENTRYPOINT_HTTP_SIGMA_RULES_PATH",
             config.entrypoint_http_sigma_rules_path,
         )
-        config.attack_transition_prior_path = os.getenv(
-            "HONEYPOT_ATTACK_TRANSITION_PRIOR_PATH",
-            config.attack_transition_prior_path,
+        config.attack_group_prior_path = os.getenv(
+            "HONEYPOT_ATTACK_GROUP_PRIOR_PATH",
+            config.attack_group_prior_path,
         )
-        config.transition_top_k = _env_int(
-            "HONEYPOT_TRANSITION_TOP_K",
-            config.transition_top_k,
+        config.recommendation_top_k = _env_int(
+            "HONEYPOT_RECOMMENDATION_TOP_K",
+            config.recommendation_top_k,
         )
-        config.transition_min_support = _env_int(
-            "HONEYPOT_TRANSITION_MIN_SUPPORT",
-            config.transition_min_support,
+        config.recommendation_support_threshold = _env_float(
+            "HONEYPOT_RECOMMENDATION_SUPPORT_THRESHOLD",
+            config.recommendation_support_threshold,
         )
-        config.transition_order2_min_support = _env_int(
-            "HONEYPOT_TRANSITION_ORDER2_MIN_SUPPORT",
-            config.transition_order2_min_support,
-        )
-        config.transition_order3_min_support = _env_int(
-            "HONEYPOT_TRANSITION_ORDER3_MIN_SUPPORT",
-            config.transition_order3_min_support,
-        )
-        config.exploit_lambda = _env_float(
-            "HONEYPOT_EXPLOIT_LAMBDA",
-            config.exploit_lambda,
+        config.strong_technique_threshold = _env_float(
+            "HONEYPOT_STRONG_TECHNIQUE_THRESHOLD",
+            config.strong_technique_threshold,
         )
         config.feedback_window_seconds = _env_int(
             "HONEYPOT_FEEDBACK_WINDOW_SECONDS",
@@ -120,9 +109,9 @@ def _env_int(name: str, default: int) -> int:
 
     Example:
         Input:
-            name="HONEYPOT_TRANSITION_TOP_K", default=5, env value="7"
+            name="HONEYPOT_RECOMMENDATION_TOP_K", default=40, env value="12"
         Output:
-            7
+            12
     """
     value = os.getenv(name)
     if value is None:
@@ -138,9 +127,9 @@ def _env_float(name: str, default: float) -> float:
 
     Example:
         Input:
-            name="HONEYPOT_EXPLOIT_LAMBDA", default=0.6, env value="0.75"
+            name="HONEYPOT_RECOMMENDATION_SUPPORT_THRESHOLD", default=0.15, env value="0.25"
         Output:
-            0.75
+            0.25
     """
     value = os.getenv(name)
     if value is None:

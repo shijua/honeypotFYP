@@ -33,8 +33,8 @@ Options:
   -h, --help                Show this help.
 
 Default behavior unlocks internal Docker assets whose fixed public ports are
-served by asset-gateway. This skips compose-backed Vulhub assets and internal
-assets whose public port is not currently in ASSET_GATEWAY_PORTS.
+served by asset-gateway. This skips internal assets whose public port is not
+currently in ASSET_GATEWAY_PORTS.
 EOF
 }
 

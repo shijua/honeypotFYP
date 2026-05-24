@@ -1,15 +1,15 @@
-"""Technique-first decision logic for choosing the next assets to expose.
+"""Technique-informed decision logic for choosing the next assets to expose.
 
-The controller keeps asset exposure explainable: public profile evidence and a
-dataset-derived ATT&CK transition prior choose techniques, while the catalogue
-decides which concrete assets are eligible to reveal.
+The controller keeps asset exposure explainable: profile evidence creates a
+set of strongly observed ATT&CK techniques, an ATT&CK group prior recommends
+nearby technique directions, and the catalogue decides which concrete assets
+can plausibly test those directions.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-import random
 from typing import Any
 
 from libs.common.config import RuntimeConfig
@@ -26,9 +26,7 @@ from libs.contracts.models import (
 )
 from services.controller.repository import (
     AssetRepository,
-    NoopRevealFeedbackRepository,
-    RevealFeedbackRepository,
-    TransitionRepository,
+    TechniquePriorRepository,
 )
 
 
@@ -37,28 +35,23 @@ class CandidateScore:
     """Controller-local score bundle for one candidate asset.
 
     Example:
-        CandidateScore(asset=git, strategy="exploit", selected_technique="T1213", asset_score=0.84)
+        CandidateScore(asset=git, strategy="exploit", candidate_type="recommended", selected_technique="T1213")
     """
 
     asset: AssetDefinition
     strategy: str
+    candidate_type: str
     selected_technique: str | None
-    technique_score: float
+    technique_signal_score: float
     confidence_score: float
-    prior_score: float
-    asset_score: float
-    soft_dependency_score: float
+    recommendation_support: float
     telemetry_value: float
-    engagement_score: float = 0.5
+    matched_dependency_marker_count: int = 0
+    repeat_count: int = 0
     technique_match_type: str = "none"
     matched_profile_technique: str | None = None
     matched_prior_technique: str | None = None
     upgrade_context: dict[str, Any] = field(default_factory=dict)
-    feedback_preference: float = 0.5
-    contrast_score: float = 0.0
-    uncertainty_score: float = 0.0
-    coverage_gap: float = 1.0
-    context_key: str = ""
     matched_dependency_markers: tuple[str, ...] = field(default_factory=tuple)
     asset_group: str = "unknown"
     covered_techniques: tuple[str, ...] = field(default_factory=tuple)
@@ -105,6 +98,11 @@ class SelectionProfileView:
         return 0.5
 
     @property
+    def implementation_status(self) -> str:
+        value = self.raw.get("implementation_status")
+        return str(value or "ready")
+
+    @property
     def optional_dependency_signals(self) -> dict[str, Any]:
         value = self.raw.get("optional_dependency_signals")
         return value if isinstance(value, dict) else {}
@@ -116,23 +114,17 @@ class SelectionProfileView:
 
 
 class ControllerService:
-    """Exposure controller with public-prior technique scoring."""
+    """Exposure controller with group-prior recommendation plus catalogue gating."""
 
     def __init__(
         self,
         asset_repository: AssetRepository,
-        transition_repository: TransitionRepository,
+        technique_prior_repository: TechniquePriorRepository,
         config: RuntimeConfig | None = None,
-        rng: random.Random | None = None,
-        feedback_repository: RevealFeedbackRepository | None = None,
     ) -> None:
         self._asset_repository = asset_repository
-        self._transition_repository = transition_repository
-        self._feedback_repository = feedback_repository or NoopRevealFeedbackRepository()
+        self._technique_prior_repository = technique_prior_repository
         self._config = config or RuntimeConfig()
-        # Kept for backwards-compatible tests that inject a seeded RNG. The
-        # final controller is deterministic and does not use random exploration.
-        self._rng = rng or random.Random()
 
     def tick(self, request: ControllerTickRequest) -> ControllerTickResponse:
         """Score eligible assets and return unlock/noop actions for one profile tick.
@@ -150,7 +142,13 @@ class ControllerService:
         considered: list[CandidateScore] = []
         rejected: dict[str, str] = {}
 
-        # Run exploit first, then a constrained plausible explore pass.
+        if _scanner_only_profile(request.profile):
+            return self._noop_response(
+                request=request,
+                reason="no_reveal: scanner-like traffic without follow-up context",
+            )
+
+        # Run main reveal first, then a constrained plausible explore pass.
         exploit_context: CandidateScore | None = None
         for strategy in ("exploit", "explore"):
             candidates = []
@@ -175,7 +173,7 @@ class ControllerService:
                 if strategy == "exploit" and not actions:
                     return self._noop_response(
                         request=request,
-                        reason="no eligible asset crossed the technique-first exploit threshold",
+                        reason="no_reveal: no eligible asset for observed or recommended techniques",
                         candidate_asset_ids=self._candidate_asset_ids(considered),
                         rejected=rejected,
                     )
@@ -211,13 +209,13 @@ class ControllerService:
         all_assets: list[AssetDefinition],
         unlocked_asset_ids: list[str],
     ) -> CandidateScore | None:
-        """Calculate exploit or explore score for a single eligible asset.
+        """Classify one eligible asset against observed and recommended techniques.
 
         Example:
             Input:
-                asset covers ["T1213"], profile confidence T1213=0.8, prior T1213=0.4
+                asset covers ["T1213"], profile confidence T1552.001=0.8, prior recommends T1213=0.4
             Output:
-                CandidateScore(selected_technique="T1213", technique_score=0.64, ...)
+                CandidateScore(candidate_type="recommended", selected_technique="T1213", ...)
         """
         profile = request.profile
         selection_profile = SelectionProfileView.from_asset(asset)
@@ -225,175 +223,159 @@ class ControllerService:
         if not covered_techniques:
             return None
 
-        next_scores = self._transition_repository.next_scores(
-            profile.recent_techniques,
-            self._config.transition_top_k,
+        strong_observed = self._strong_observed_techniques(profile)
+        recommendations = self._technique_prior_repository.recommend(
+            strong_observed,
+            top_k=self._config.recommendation_top_k,
+            support_threshold=self._config.recommendation_support_threshold,
         )
         technique_scores = {
-            technique: self._technique_score_parts(
+            technique: self._technique_candidate_parts(
                 technique,
                 profile.conf_by_technique,
-                next_scores,
+                strong_observed,
+                recommendations,
             )
             for technique in covered_techniques
         }
         if _is_bootstrap_asset(asset, request):
-            # The internal portal is the first internal question. It needs some
-            # observed behaviour, but it should not require a prior transition.
+            # The internal portal is the first internal question. It needs
+            # concrete evidence, but it should not require a CF recommendation.
             technique_scores = {
                 technique: {
                     **parts,
-                    "score": max(float(parts["score"]), 0.55),
+                    "signal_score": 1.0,
+                    "candidate_type": "bootstrap",
                 }
                 for technique, parts in technique_scores.items()
             }
+        technique_scores = {
+            technique: parts
+            for technique, parts in technique_scores.items()
+            if str(parts["candidate_type"]) != "none" and float(parts["signal_score"]) > 0
+        }
+        if not technique_scores:
+            return None
 
         selected_technique, selected_parts = max(
             technique_scores.items(),
-            key=lambda item: (float(item[1]["score"]), item[0]),
+            key=lambda item: (
+                _candidate_type_rank(str(item[1]["candidate_type"])),
+                float(item[1]["signal_score"]),
+                -_repeat_count(profile.recent_techniques, item[0]),
+                item[0],
+            ),
         )
-        technique_score = float(selected_parts["score"])
+        technique_signal_score = float(selected_parts["signal_score"])
         confidence_score = float(selected_parts["confidence"])
-        prior_score = float(selected_parts["prior"])
+        recommendation_support = float(selected_parts["recommendation_support"])
+        candidate_type = str(selected_parts["candidate_type"])
         technique_match_type = str(selected_parts["match_type"])
         matched_profile_technique = _optional_string(selected_parts.get("matched_profile_technique"))
         matched_prior_technique = _optional_string(selected_parts.get("matched_prior_technique"))
-        if technique_score <= 0:
+        if technique_signal_score <= 0:
             return None
 
         matched_markers = self._matched_dependency_markers(asset, request)
-        soft_dependency_score = self._soft_dependency_score(asset, request)
         telemetry_value = selection_profile.telemetry_value
         asset_group = selection_profile.asset_group
-        context_key = _feedback_context_key(selected_technique, matched_markers)
-        feedback_preference = self._feedback_repository.preference(context_key, asset_group)
         upgrade_context = _upgrade_context(
             asset,
             all_assets,
             unlocked_asset_ids=unlocked_asset_ids,
             matched_markers=matched_markers,
         )
-        engagement_score = self._engagement_score(
-            asset,
-            all_assets,
-            request,
-            unlocked_asset_ids=unlocked_asset_ids,
-            matched_markers=matched_markers,
-            upgrade_context=upgrade_context,
-        )
+        repeat_count = _repeat_count(profile.recent_techniques, selected_technique)
 
-        if strategy == "exploit":
-            asset_score = (
-                (0.45 * technique_score)
-                + (0.25 * soft_dependency_score)
-                + (0.20 * telemetry_value)
-                + (0.10 * engagement_score)
-            )
-            return CandidateScore(
-                asset=asset,
-                strategy=strategy,
-                selected_technique=selected_technique,
-                technique_score=round(technique_score, 4),
-                confidence_score=round(confidence_score, 4),
-                prior_score=round(prior_score, 4),
-                asset_score=round(asset_score, 4),
-                soft_dependency_score=round(soft_dependency_score, 4),
-                telemetry_value=round(telemetry_value, 4),
-                engagement_score=round(engagement_score, 4),
-                technique_match_type=technique_match_type,
-                matched_profile_technique=matched_profile_technique,
-                matched_prior_technique=matched_prior_technique,
-                upgrade_context=upgrade_context,
-                feedback_preference=round(feedback_preference, 4),
-                context_key=context_key,
-                matched_dependency_markers=tuple(matched_markers),
-                asset_group=asset_group,
-                covered_techniques=tuple(covered_techniques),
-            )
+        if strategy == "explore":
+            if exploit_context is None:
+                return None
+            if _same_technique_family(str(selected_technique), str(exploit_context.selected_technique)):
+                return None
+            if any(
+                _same_technique_family(str(selected_technique), covered)
+                for covered in exploit_context.covered_techniques
+            ):
+                return None
+            if len({_parent_technique(item) for item in strong_observed}) < 2:
+                return None
+            if not (matched_markers or upgrade_context):
+                return None
 
-        if exploit_context is None:
-            return None
-        if asset_group == exploit_context.asset_group:
-            return None
-        contrast = self._contrast_score(
-            matched_markers,
-            asset_group,
-            exploit_context,
-        )
-        uncertainty = 1 - abs((2 * technique_score) - 1)
-        coverage_gap = self._feedback_repository.coverage_gap(context_key, asset_group)
-        asset_score = (
-            (0.40 * technique_score)
-            + (0.30 * contrast)
-            + (0.15 * uncertainty)
-            + (0.10 * coverage_gap)
-            + (0.05 * engagement_score)
-        )
         return CandidateScore(
             asset=asset,
             strategy=strategy,
+            candidate_type=candidate_type,
             selected_technique=selected_technique,
-            technique_score=round(technique_score, 4),
+            technique_signal_score=round(technique_signal_score, 4),
             confidence_score=round(confidence_score, 4),
-            prior_score=round(prior_score, 4),
-            asset_score=round(asset_score, 4),
-            soft_dependency_score=round(soft_dependency_score, 4),
+            recommendation_support=round(recommendation_support, 4),
             telemetry_value=round(telemetry_value, 4),
-            engagement_score=round(engagement_score, 4),
+            matched_dependency_marker_count=len(matched_markers),
+            repeat_count=repeat_count,
             technique_match_type=technique_match_type,
             matched_profile_technique=matched_profile_technique,
             matched_prior_technique=matched_prior_technique,
             upgrade_context=upgrade_context,
-            feedback_preference=round(feedback_preference, 4),
-            contrast_score=round(contrast, 4),
-            uncertainty_score=round(uncertainty, 4),
-            coverage_gap=round(coverage_gap, 4),
-            context_key=context_key,
             matched_dependency_markers=tuple(matched_markers),
             asset_group=asset_group,
             covered_techniques=tuple(covered_techniques),
         )
 
-    def _technique_score_parts(
+    def _technique_candidate_parts(
         self,
         technique: str,
         confidences: dict[str, float],
-        next_scores: dict[str, float],
-    ) -> dict[str, float]:
-        """Combine observed profile confidence with public transition prior.
+        strong_observed: set[str],
+        recommendations: dict[str, float],
+    ) -> dict[str, Any]:
+        """Classify one technique as recommended, continuation, or unsupported.
 
         Example:
             Input:
-                confidence=0.8, prior=0.4, exploit_lambda=0.6
+                technique="T1059", recommendations={"T1059": 0.4}
             Output:
-                {"score": 0.64, "confidence": 0.8, "prior": 0.4}
+                {"candidate_type": "recommended", "signal_score": 0.4, ...}
         """
         current_confidence = float(confidences.get(technique, 0.0))
-        sequence_prior = float(next_scores.get(technique, 0.0))
+        recommendation_support = float(recommendations.get(technique, 0.0))
         matched_profile_technique = technique if current_confidence > 0 else None
-        matched_prior_technique = technique if sequence_prior > 0 else None
-        match_type = "family" if current_confidence > 0 or sequence_prior > 0 else "none"
+        matched_prior_technique = technique if recommendation_support > 0 else None
+        match_type = "exact" if current_confidence > 0 or recommendation_support > 0 else "none"
         family_confidence, family_confidence_technique = _best_family_score(technique, confidences)
-        family_prior, family_prior_technique = _best_family_score(technique, next_scores)
+        family_prior, family_prior_technique = _best_family_score(technique, recommendations)
         if family_confidence > current_confidence:
             current_confidence = family_confidence
             matched_profile_technique = family_confidence_technique
             match_type = "family"
-        if family_prior > sequence_prior:
-            sequence_prior = family_prior
+        if family_prior > recommendation_support:
+            recommendation_support = family_prior
             matched_prior_technique = family_prior_technique
             match_type = "family"
-        score = (
-            self._config.exploit_lambda * current_confidence
-            + (1 - self._config.exploit_lambda) * sequence_prior
-        )
+        strongly_observed = any(_same_technique_family(technique, item) for item in strong_observed)
+        candidate_type = "none"
+        signal_score = 0.0
+        if strongly_observed:
+            candidate_type = "continuation"
+            signal_score = min(1.0, current_confidence)
+        elif recommendation_support > 0:
+            candidate_type = "recommended"
+            signal_score = recommendation_support
         return {
-            "score": score,
+            "signal_score": signal_score,
             "confidence": current_confidence,
-            "prior": sequence_prior,
+            "recommendation_support": recommendation_support,
+            "candidate_type": candidate_type,
             "match_type": match_type,
             "matched_profile_technique": matched_profile_technique,
             "matched_prior_technique": matched_prior_technique,
+        }
+
+    def _strong_observed_techniques(self, profile) -> set[str]:
+        return {
+            technique
+            for technique, confidence in profile.conf_by_technique.items()
+            if float(confidence) >= self._config.strong_technique_threshold
         }
 
     def _eligibility(
@@ -412,6 +394,8 @@ class ControllerService:
         """
         if asset.exposure_type != "internal":
             return False, "not an internal asset"
+        if SelectionProfileView.from_asset(asset).implementation_status not in {"ready", "prototype"}:
+            return False, "asset not ready"
         if asset.asset_id in unlocked_asset_ids:
             return False, "already unlocked"
         if len(unlocked_asset_ids) >= self._config.unlock_cap:
@@ -498,91 +482,6 @@ class ControllerService:
                         markers.append(f"{key}:{value}")
         return dedupe_preserve(markers)
 
-    def _soft_dependency_score(
-        self,
-        asset: AssetDefinition,
-        request: ControllerTickRequest,
-    ) -> float:
-        """Return the fraction of optional dependency signals seen in the profile.
-
-        Example:
-            Input:
-                optional signals ["path:.bak", "path:admin"], observed {"path:.bak"}
-            Output:
-                0.5
-        """
-        optional_signals = SelectionProfileView.from_asset(asset).optional_dependency_signals
-        if not isinstance(optional_signals, dict) or not optional_signals:
-            optional_signals = asset.default_settings.get("unlock_signals")
-        if not isinstance(optional_signals, dict) or not optional_signals:
-            return 0.0
-
-        observed = _observed_signal_sets(request)
-        total = 0
-        matched = 0
-        for key, values in optional_signals.items():
-            if key not in observed or not isinstance(values, list):
-                continue
-            string_values = [value for value in values if isinstance(value, str)]
-            total += len(string_values)
-            matched += sum(1 for value in string_values if _signals_match(observed[key], {value}, key))
-        return matched / total if total else 0.0
-
-    def _contrast_score(
-        self,
-        markers: list[str],
-        asset_group: str,
-        exploit_context: CandidateScore,
-    ) -> float:
-        """Score how plausible-but-different an explore asset is from exploit.
-
-        Example:
-            Input:
-                same dependency marker, different asset_group
-            Output:
-                1.0
-        """
-        marker_overlap = _jaccard(set(markers), set(exploit_context.matched_dependency_markers))
-        if not markers and not exploit_context.matched_dependency_markers:
-            marker_overlap = 0.5
-        group_overlap = 1.0 if asset_group == exploit_context.asset_group else 0.0
-        return marker_overlap * (1 - group_overlap)
-
-    def _engagement_score(
-        self,
-        asset: AssetDefinition,
-        all_assets: list[AssetDefinition],
-        request: ControllerTickRequest,
-        *,
-        unlocked_asset_ids: list[str],
-        matched_markers: list[str],
-        upgrade_context: dict[str, Any],
-    ) -> float:
-        """Prefer reveals that feel like the same investigation thread.
-
-        Example:
-            already unlocked admin-web + candidate vulnerable-web with exploit marker -> high score.
-        """
-        if not unlocked_asset_ids:
-            return 1.0
-        if upgrade_context:
-            return 1.0
-        asset_group = SelectionProfileView.from_asset(asset).asset_group
-        unlocked_groups = {
-            SelectionProfileView.from_asset(item).asset_group
-            for item in all_assets
-            if item.asset_id in unlocked_asset_ids
-        }
-        if asset_group in unlocked_groups:
-            return 0.9
-        if _is_vulnerable_asset(asset) and not _has_exploit_marker(matched_markers, request):
-            return 0.1
-        if any(_asset_groups_are_adjacent(asset_group, group) for group in unlocked_groups):
-            return 0.7
-        if matched_markers:
-            return 0.5
-        return 0.25
-
     def _candidate_asset_ids(
         self,
         candidates: list[CandidateScore],
@@ -596,18 +495,7 @@ class ControllerService:
     ) -> CandidateScore | None:
         if not candidates:
             return None
-        ranked = sorted(
-            candidates,
-            key=lambda candidate: (
-                candidate.asset_score,
-                candidate.technique_score,
-                candidate.soft_dependency_score,
-                candidate.asset.asset_id,
-            ),
-            reverse=True,
-        )
-        threshold = 0.25 if strategy == "exploit" else 0.20
-        return ranked[0] if ranked[0].asset_score >= threshold else None
+        return sorted(candidates, key=_candidate_order_key)[0]
 
     def _build_unlock_action(
         self,
@@ -621,8 +509,8 @@ class ControllerService:
             reason=(
                 f"{candidate.strategy} selected {candidate.asset.asset_id} "
                 f"for technique {candidate.selected_technique}: "
-                f"asset_score={candidate.asset_score}, technique_score={candidate.technique_score}, "
-                f"soft_dependency={candidate.soft_dependency_score}, telemetry={candidate.telemetry_value}"
+                f"candidate_type={candidate.candidate_type}, "
+                f"signal={candidate.technique_signal_score}, telemetry={candidate.telemetry_value}"
             ),
         )
 
@@ -637,28 +525,25 @@ class ControllerService:
         details = {
             "strategy": candidate.strategy,
             "selected_strategy": candidate.strategy,
+            "candidate_type": candidate.candidate_type,
             "selected_technique": candidate.selected_technique,
-            "technique_score": candidate.technique_score,
+            "technique_signal_score": candidate.technique_signal_score,
             "confidence_score": candidate.confidence_score,
-            "prior_score": candidate.prior_score,
+            "recommendation_support": candidate.recommendation_support,
             "technique_match_type": candidate.technique_match_type,
             "matched_profile_technique": candidate.matched_profile_technique,
-            "matched_prior_technique": candidate.matched_prior_technique,
-            "asset_score": candidate.asset_score,
-            "soft_dependency_score": candidate.soft_dependency_score,
+            "matched_recommended_technique": candidate.matched_prior_technique,
             "telemetry_value": candidate.telemetry_value,
-            "engagement_score": candidate.engagement_score,
-            "feedback_preference": candidate.feedback_preference,
             "asset_group": candidate.asset_group,
             "covered_techniques": list(candidate.covered_techniques),
             "matched_dependency_markers": list(candidate.matched_dependency_markers),
-            "feedback_context_key": candidate.context_key,
-            "contrast_score": candidate.contrast_score,
-            "uncertainty_score": candidate.uncertainty_score,
-            "coverage_gap": candidate.coverage_gap,
-            "dataset_prior_degraded": self._transition_repository.degraded_reason,
+            "matched_dependency_marker_count": candidate.matched_dependency_marker_count,
+            "repeat_count": candidate.repeat_count,
+            "prior_degraded": self._technique_prior_repository.degraded_reason,
+            "observed_techniques": sorted(self._strong_observed_techniques(request.profile)),
             "eligible_assets": eligible_asset_ids,
             "rejected_assets": rejected,
+            "ordering": _controller_ordering_details(candidate),
         }
         if candidate.upgrade_context:
             details["same_port_upgrade"] = candidate.upgrade_context
@@ -699,7 +584,9 @@ class ControllerService:
                     reason=reason,
                     trigger_evidence_ids=request.profile.recent_evidence_ids,
                     details={
-                        "dataset_prior_degraded": self._transition_repository.degraded_reason,
+                        "prior_degraded": self._technique_prior_repository.degraded_reason,
+                        "reveal_action": "no_reveal",
+                        "no_reveal_reason": reason,
                         "rejected_assets": rejected or {},
                     },
                 )
@@ -737,8 +624,65 @@ def _parent_technique(technique: str) -> str:
     return technique.split(".", 1)[0]
 
 
+def _repeat_count(recent_techniques: list[str], technique: str) -> int:
+    """Return repeated recent evidence count for the same technique family.
+
+    Example:
+        recent=["T1083", "T1083", "T1046"], technique="T1083" -> 1.
+    """
+    matches = sum(1 for item in recent_techniques if _same_technique_family(item, technique))
+    return max(0, matches - 1)
+
+
 def _optional_string(value: Any) -> str | None:
     return string_or_none(value)
+
+
+def _controller_ordering_details(candidate: CandidateScore) -> dict[str, Any]:
+    """Return the deterministic ordering tuple used for an asset choice.
+
+    Example:
+        continuation T1083 from concrete profile evidence sorts before a
+        weaker prior-only recommendation because candidate type is first.
+    """
+    return {
+        "candidate_type_rank": _candidate_type_rank(candidate.candidate_type),
+        "technique_signal_score": candidate.technique_signal_score,
+        "telemetry_value": candidate.telemetry_value,
+        "matched_dependency_marker_count": candidate.matched_dependency_marker_count,
+        "repeat_count": candidate.repeat_count,
+        "asset_id": candidate.asset.asset_id,
+    }
+
+
+def _candidate_order_key(candidate: CandidateScore) -> tuple[int, float, float, int, int, str]:
+    """Sort key for deterministic candidate ordering.
+
+    Example:
+        sorted(candidates, key=_candidate_order_key)[0] returns the highest
+        ranked candidate while keeping asset_id as an ascending tie-break.
+    """
+    return (
+        -_candidate_type_rank(candidate.candidate_type),
+        -candidate.technique_signal_score,
+        -candidate.telemetry_value,
+        -candidate.matched_dependency_marker_count,
+        candidate.repeat_count,
+        candidate.asset.asset_id,
+    )
+
+
+def _candidate_type_rank(candidate_type: str) -> int:
+    """Rank candidate classes from strongest to weakest.
+
+    Example:
+        bootstrap first, then observed continuation, then prior recommendations.
+    """
+    return {
+        "bootstrap": 3,
+        "continuation": 2,
+        "recommended": 1,
+    }.get(candidate_type, 0)
 
 
 def _observed_signal_sets(request: ControllerTickRequest) -> dict[str, set[str]]:
@@ -774,6 +718,28 @@ def _is_bootstrap_asset(asset: AssetDefinition, request: ControllerTickRequest) 
     return bool(profile.recent_evidence_ids or profile.recent_techniques or profile.recent_tactics)
 
 
+def _scanner_only_profile(profile) -> bool:
+    """Return True when the short window only shows scanner-style probes.
+
+    Example:
+        recent technique T1190 plus no concrete breadcrumbs -> no_reveal.
+    """
+    techniques = set(profile.recent_techniques)
+    if not techniques:
+        return False
+    scanner_techniques = {"T1190", "T1189", "T1046", "T1595", "T1595.001", "T1595.002", "T1595.003"}
+    if not techniques.issubset(scanner_techniques):
+        return False
+    concrete_breadcrumbs = (
+        profile.recent_public_http_indicators
+        or profile.recent_public_http_rules
+        or profile.recent_internal_http_indicators
+        or profile.recent_internal_http_paths
+        or profile.recent_internal_http_rules
+    )
+    return not bool(concrete_breadcrumbs)
+
+
 def _upgrade_context(
     candidate: AssetDefinition,
     all_assets: list[AssetDefinition],
@@ -784,7 +750,7 @@ def _upgrade_context(
     """Return explicit same-port upgrade metadata when catalog allows it.
 
     Example:
-        unlocked web-admin-console declares upgrade candidate log4shell-app -> context for log4shell-app.
+        unlocked ics-plc declares upgrade candidate conpot-plc -> context for conpot-plc.
     """
     for source_asset in all_assets:
         if source_asset.asset_id not in unlocked_asset_ids:
@@ -811,59 +777,3 @@ def _upgrade_context(
 
 def _upgrade_candidates(asset: AssetDefinition) -> list[dict[str, Any]]:
     return SelectionProfileView.from_asset(asset).upgrade_candidates
-
-
-def _is_vulnerable_asset(asset: AssetDefinition) -> bool:
-    asset_group = SelectionProfileView.from_asset(asset).asset_group
-    return asset_group.startswith("vulnerable") or bool(asset.default_settings.get("real_vulnerability"))
-
-
-def _has_exploit_marker(
-    markers: list[str],
-    request: ControllerTickRequest,
-) -> bool:
-    marker_text = " ".join(markers).lower()
-    if any(token in marker_text for token in ("exploit", "jndi", "log4j", "ldap://")):
-        return True
-    observed = _observed_signal_sets(request)
-    return bool(
-        observed["any_http_rules"].intersection({"public_http_exploit_probe"})
-        or any("jndi" in item.lower() or "log4j" in item.lower() for item in observed["any_http_indicators"])
-    )
-
-
-def _asset_groups_are_adjacent(left: str, right: str) -> bool:
-    if left == right:
-        return True
-    adjacent_groups = {
-        "portal": {"admin-web", "developer", "data-share", "remote-access", "operations"},
-        "admin-web": {"portal", "developer", "remote-access", "vulnerable-web", "admin-access"},
-        "developer": {"portal", "admin-web", "database", "cache", "vulnerable-web"},
-        "database": {"developer", "cache", "data-share"},
-        "cache": {"developer", "database", "admin-web"},
-        "data-share": {"portal", "database", "archive", "mail"},
-        "archive": {"data-share", "mail"},
-        "mail": {"archive", "data-share", "portal"},
-        "remote-access": {"portal", "admin-web", "admin-access"},
-        "admin-access": {"remote-access", "admin-web", "developer"},
-        "operations": {"portal", "remote-access", "admin-web"},
-        "payload-transfer": {"developer", "admin-web", "vulnerable-web"},
-        "vulnerable-web": {"admin-web", "developer", "payload-transfer"},
-    }
-    return right in adjacent_groups.get(left, set()) or left in adjacent_groups.get(right, set())
-
-
-def _jaccard(left: set[str], right: set[str]) -> float:
-    if not left and not right:
-        return 0.0
-    return len(left & right) / len(left | right)
-
-
-def _feedback_context_key(technique: str | None, markers: list[str]) -> str:
-    """Build the stable feedback bucket key for one reveal context.
-
-    Example:
-        ("T1552.001", ["any_http_indicators:path:.bak"]) -> "T1552.001|any_http_indicators:path:.bak"
-    """
-    parts = [technique or "unknown", *sorted(markers)]
-    return "|".join(parts)

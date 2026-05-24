@@ -432,7 +432,7 @@
             "T1552.001"
           ]
         },
-        "telemetry_value": 0.85
+        "telemetry_value": 0.9
       },
       "telemetry_validation": {
         "kind": "opencanary",
@@ -862,29 +862,6 @@
             "T1136"
           ]
         },
-        "upgrade_candidates": [
-          {
-            "asset_id": "log4shell-app",
-            "public_port": 18081,
-            "required_markers": [
-              "any_http_rules:public_http_exploit_probe",
-              "any_http_indicators:combined:${jndi:",
-              "any_http_indicators:combined:log4j"
-            ],
-            "reason": "Java admin-console exploit evidence can replace the static console backend with the vulnerable Log4Shell lab on the same observed port."
-          },
-          {
-            "asset_id": "spring-gateway-app",
-            "public_port": 18081,
-            "required_markers": [
-              "any_http_rules:public_http_exploit_probe",
-              "any_http_indicators:combined:spring",
-              "any_http_indicators:combined:actuator",
-              "any_http_indicators:combined:spel"
-            ],
-            "reason": "Spring gateway or actuator exploit evidence can replace the static admin console with a vulnerable Spring Cloud Gateway lab on the same port."
-          }
-        ],
         "telemetry_value": 0.8
       },
       "telemetry_validation": {
@@ -1479,114 +1456,6 @@
     ]
   },
   {
-    "asset_id": "log4shell-app",
-    "asset_name": "Legacy Java App",
-    "exposure_type": "internal",
-    "interaction_level": "high",
-    "description": "A Vulhub-backed legacy Java service used as the first real vulnerable internal asset after web or credential-oriented profiling.",
-    "template_family": "vulnerable-webapp",
-    "protocols": [
-      "http"
-    ],
-    "ports": [
-      8080
-    ],
-    "source_refs": [
-      "vulhub:log4j/CVE-2021-44228",
-      "proposalv2:adaptive-vulnerable-asset"
-    ],
-    "telemetry_source": "high_interaction",
-    "default_settings": {
-      "runtime": {
-        "backend": "compose",
-        "compose_file": "vendor/vulhub/log4j/CVE-2021-44228/docker-compose.yml",
-        "project_name": "{project_name}-{binding_id_short}-{asset_id}",
-        "runner": "docker_image",
-        "compose_image": "docker/compose:1.29.2",
-        "internal_network": "{project_name}_net_internal",
-        "gateway_target_service": "app",
-        "port_mappings": [
-          {
-            "host": "127.0.0.1",
-            "requested_host_port": 18081,
-            "container_port": 8080
-          }
-        ],
-        "source": "vulhub/log4j/CVE-2021-44228"
-      },
-      "vulnerability_family": "log4shell",
-      "real_vulnerability": true,
-      "isolation_required": true,
-      "telemetry_expectations": [
-        "asset_runtime",
-        "gateway_route",
-        "dashboard_health"
-      ],
-      "image_references": [
-        "vulhub/log4j/CVE-2021-44228"
-      ],
-      "unlock_signals": {
-        "any_http_rules": [
-          "public_http_exploit_probe"
-        ],
-        "any_http_indicators": [
-          "combined:${jndi:",
-          "combined:ldap://",
-          "combined:log4j"
-        ]
-      },
-      "selection_profile": {
-        "tactic_difficulties": {
-          "Initial Access": 4,
-          "Execution": 5,
-          "Discovery": 3
-        },
-        "reveal_outputs": [
-          "vulnerable endpoint behaviour",
-          "stack-trace style context",
-          "exploit telemetry"
-        ],
-        "selection_notes": "Use only after Java, JNDI, Log4j, or exploit-payload evidence.",
-        "asset_group": "vulnerable-web",
-        "covered_techniques": [
-          "T1190",
-          "T1059",
-          "T1105"
-        ],
-        "optional_dependency_signals": {
-          "any_http_rules": [
-            "public_http_exploit_probe"
-          ],
-          "any_http_indicators": [
-            "combined:${jndi:",
-            "combined:ldap://",
-            "combined:log4j"
-          ],
-          "any_techniques": [
-            "T1190",
-            "T1059"
-          ]
-        },
-        "telemetry_value": 1.0
-      },
-      "telemetry_validation": {
-        "kind": "high_interaction",
-        "event_file": "high_interaction_observations.json",
-        "match": "asset_id",
-        "source": "vulhub",
-        "expected_trigger": "TCP/HTTP probe through upgraded high-interaction asset-gateway route"
-      }
-    },
-    "covers_tactics": [
-      "Initial Access",
-      "Execution",
-      "Discovery"
-    ],
-    "dependencies": [
-      "web-admin-console"
-    ]
-  },
-  {
     "asset_id": "vpn-appliance",
     "asset_name": "VPN Appliance",
     "exposure_type": "internal",
@@ -1793,7 +1662,8 @@
           "Collection": 4,
           "Exfiltration": 4,
           "Lateral Movement": 4,
-          "Resource Development": 3
+          "Resource Development": 3,
+          "Initial Access": 3
         },
         "reveal_outputs": [
           "download paths",
@@ -1806,6 +1676,7 @@
         "selection_notes": "Use after downloader, payload, traversal, or command-and-control shaped behaviour.",
         "asset_group": "payload-transfer",
         "covered_techniques": [
+          "T1190",
           "T1105",
           "T1059",
           "T1567",
@@ -1829,6 +1700,7 @@
             "combined:ldap://"
           ],
           "any_techniques": [
+            "T1190",
             "T1105",
             "T1059",
             "T1567",
@@ -1875,6 +1747,7 @@
       }
     },
     "covers_tactics": [
+      "Initial Access",
       "Command and Control",
       "Defense Evasion",
       "Execution",
@@ -2339,122 +2212,6 @@
     ],
     "dependencies": [
       "malware-sink"
-    ]
-  },
-  {
-    "asset_id": "spring-gateway-app",
-    "asset_name": "Spring Gateway App",
-    "exposure_type": "internal",
-    "interaction_level": "high",
-    "description": "A Vulhub-backed Spring Cloud Gateway target used as a same-port upgrade for Spring exploit-shaped admin console traffic.",
-    "template_family": "vulnerable-webapp",
-    "protocols": [
-      "http"
-    ],
-    "ports": [
-      8080
-    ],
-    "source_refs": [
-      "vulhub:spring/CVE-2022-22947"
-    ],
-    "telemetry_source": "high_interaction",
-    "default_settings": {
-      "runtime": {
-        "backend": "compose",
-        "compose_file": "vendor/vulhub/spring/CVE-2022-22947/docker-compose.yml",
-        "project_name": "{project_name}-{binding_id_short}-{asset_id}",
-        "runner": "docker_image",
-        "compose_image": "docker/compose:1.29.2",
-        "internal_network": "{project_name}_net_internal",
-        "gateway_target_service": "app",
-        "port_mappings": [
-          {
-            "host": "127.0.0.1",
-            "requested_host_port": 18081,
-            "container_port": 8080
-          }
-        ],
-        "source": "vulhub/spring/CVE-2022-22947"
-      },
-      "vulnerability_family": "spring-cloud-gateway",
-      "real_vulnerability": true,
-      "isolation_required": true,
-      "telemetry_expectations": [
-        "asset_runtime",
-        "gateway_route",
-        "dashboard_health",
-        "internal_http"
-      ],
-      "image_references": [
-        "vulhub/spring/CVE-2022-22947"
-      ],
-      "unlock_signals": {
-        "any_http_rules": [
-          "public_http_exploit_probe"
-        ],
-        "any_http_indicators": [
-          "combined:spring",
-          "combined:actuator",
-          "combined:spel"
-        ],
-        "any_techniques": [
-          "T1190",
-          "T1203",
-          "T1059"
-        ]
-      },
-      "selection_profile": {
-        "tactic_difficulties": {
-          "Execution": 5,
-          "Initial Access": 4,
-          "Command and Control": 4
-        },
-        "reveal_outputs": [
-          "Spring gateway endpoint behaviour",
-          "exploit-shaped HTTP telemetry",
-          "command execution follow-up context"
-        ],
-        "selection_notes": "Use only after Spring, actuator, SpEL, or generic exploit evidence against the admin-console story.",
-        "asset_group": "vulnerable-web",
-        "upgrade_source": "web-admin-console",
-        "covered_techniques": [
-          "T1190",
-          "T1203",
-          "T1059",
-          "T1105"
-        ],
-        "optional_dependency_signals": {
-          "any_http_rules": [
-            "public_http_exploit_probe"
-          ],
-          "any_http_indicators": [
-            "combined:spring",
-            "combined:actuator",
-            "combined:spel"
-          ],
-          "any_techniques": [
-            "T1190",
-            "T1203",
-            "T1059"
-          ]
-        },
-        "telemetry_value": 1
-      },
-      "telemetry_validation": {
-        "kind": "high_interaction",
-        "event_file": "high_interaction_observations.json",
-        "match": "asset_id",
-        "source": "vulhub",
-        "expected_trigger": "TCP/HTTP probe through upgraded high-interaction asset-gateway route"
-      }
-    },
-    "covers_tactics": [
-      "Execution",
-      "Initial Access",
-      "Command and Control"
-    ],
-    "dependencies": [
-      "web-admin-console"
     ]
   }
 ]

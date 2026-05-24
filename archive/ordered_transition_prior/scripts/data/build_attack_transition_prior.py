@@ -27,7 +27,6 @@ from typing import Any, Iterable, Literal
 
 import yaml
 
-from libs.common.config import RuntimeConfig
 from libs.common.iterables import dedupe_preserve
 
 
@@ -84,14 +83,13 @@ def main() -> None:
     Example:
         python scripts/data/build_attack_transition_prior.py vendor/datasets/mordor --output data/transitions/technique_transition_prior.json
     """
-    config = RuntimeConfig.from_env()
     parser = argparse.ArgumentParser(
         description="Build P(next ATT&CK technique | current technique) from local public datasets.",
     )
     parser.add_argument("inputs", nargs="+", help="Dataset files, directories, or zip archives.")
     parser.add_argument(
         "--output",
-        default=config.attack_transition_prior_path,
+        default="data/transitions/technique_transition_prior.json",
         help="Output JSON path for the derived transition prior.",
     )
     parser.add_argument(

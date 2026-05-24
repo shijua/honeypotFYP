@@ -214,10 +214,11 @@ def record_reveal_feedback(
     controller_response: dict[str, Any],
     applied_actions: list[dict[str, Any]],
 ) -> None:
-    """Persist which applied reveals were available for later usefulness checks.
+    """Persist applied reveal choices for later evaluation.
 
     Example:
-        applied action git-internal with decision details asset_group=developer increments the developer reveal bucket.
+        action asset_id="git-internal" plus details selected_technique="T1213"
+        records one pending reveal in `data/runtime/reveal_feedback.json`.
     """
     applied_asset_ids = {
         action.get("asset_id")
@@ -242,10 +243,13 @@ def record_reveal_feedback(
         details = decision.get("details", {})
         if not isinstance(details, dict):
             continue
-        context_key = details.get("feedback_context_key")
         asset_group = details.get("asset_group")
-        if not isinstance(context_key, str) or not isinstance(asset_group, str):
+        if not isinstance(asset_group, str):
             continue
+        context_key = _reveal_context_key(
+            details.get("selected_technique"),
+            string_items(details.get("matched_dependency_markers", [])),
+        )
         repository.record_reveal(
             context_key=context_key,
             asset_group=asset_group,
@@ -263,10 +267,11 @@ def update_reveal_feedback_from_evidence(
     evidence_file: Path,
     feedback_window_seconds: int,
 ) -> None:
-    """Mark pending reveals useful when later evidence touches their asset.
+    """Resolve pending reveal feedback from later profiler evidence.
 
     Example:
-        pending finance-share + later internal_http evidence source_ref.asset_id=finance-share -> useful.
+        pending finance-share + later evidence source_ref.asset_id=finance-share
+        with tech_id="T1005" marks the reveal `useful`.
     """
     payload = read_json_object(feedback_file, {"schema_version": "v1", "contexts": {}, "pending": []})
     pending = payload.get("pending", [])
@@ -287,7 +292,7 @@ def update_reveal_feedback_from_evidence(
         context_key = item.get("context_key")
         asset_group = item.get("asset_group")
         if isinstance(context_key, str) and isinstance(asset_group, str):
-            group = _feedback_group(payload, context_key, asset_group)
+            group = mutable_nested_dict(payload, ("contexts", context_key, "asset_groups", asset_group))
             group[outcome] = int(group.get(outcome, 0) or 0) + 1
         item["status"] = outcome
         item["resolved_at"] = now.isoformat().replace("+00:00", "Z")
@@ -299,24 +304,17 @@ def update_reveal_feedback_from_evidence(
             handle.write("\n")
 
 
-def _feedback_group(
-    payload: dict[str, Any],
-    context_key: str,
-    asset_group: str,
-) -> dict[str, Any]:
-    """Return the mutable feedback counter bucket for context/asset_group."""
-    return mutable_nested_dict(payload, ("contexts", context_key, "asset_groups", asset_group))
+def _reveal_context_key(technique: object, markers: list[str]) -> str:
+    """Build a stable feedback context from controller decision details."""
+    selected = technique if isinstance(technique, str) and technique else "unknown"
+    return "|".join([selected, *sorted(markers)])
 
 
 def _pending_reveal_outcome(
     pending: dict[str, Any],
     evidence_records: list[dict[str, Any]],
 ) -> str | None:
-    """Return useful/shallow if later evidence explicitly references the pending asset.
-
-    Example:
-        source_ref.asset_id=finance-share plus technique T1005 -> "useful"; same asset with no technique/tactic -> "shallow".
-    """
+    """Return useful/shallow if later evidence explicitly references the asset."""
     asset_id = pending.get("asset_id")
     attacker_key = pending.get("attacker_key")
     pending_ts = parse_iso_datetime(pending.get("ts"))
@@ -578,7 +576,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--feedback-file",
         type=Path,
         default=Path("data/runtime/reveal_feedback.json"),
-        help="Reveal feedback JSON file used for exploration coverage gaps.",
+        help="Reveal feedback JSON file used for evaluation traces.",
     )
     parser.add_argument(
         "--feedback-window-seconds",

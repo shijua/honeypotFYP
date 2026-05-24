@@ -36,9 +36,8 @@ def evidence_records(path: Path, *, include_bucket_attacker: bool = False) -> li
     """Flatten profiler evidence buckets from `data/runtime/evidence.json`.
 
     The evidence store is keyed by attacker. Dashboard views often need the
-    attacker key copied into each record, while feedback matching only needs the
-    stored evidence body. Use `include_bucket_attacker=True` for dashboard-style
-    summaries.
+    attacker key copied into each record. Use `include_bucket_attacker=True` for
+    dashboard-style summaries.
 
     Example:
         File:

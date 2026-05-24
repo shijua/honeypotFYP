@@ -217,7 +217,6 @@ echo "Finance Share:   http://${CLIENT_TARGET_HOST:-127.0.0.1}:${FINANCE_SHARE_P
 echo "ICS Panel:       http://${CLIENT_TARGET_HOST:-127.0.0.1}:${ICS_PLC_PORT:-18084}/ after ics-plc unlock"
 echo "VPN Appliance:   http://${CLIENT_TARGET_HOST:-127.0.0.1}:${VPN_APPLIANCE_PORT:-18443}/ after vpn-appliance unlock"
 echo "Malware Sink:    http://${CLIENT_TARGET_HOST:-127.0.0.1}:${MALWARE_SINK_PORT:-18085}/ after malware-sink unlock"
-echo "Vulhub asset:    log4shell-app requires vendor/vulhub/log4j/CVE-2021-44228/docker-compose.yml"
 echo
 echo "For local browser access over SSH tunnel:"
 echo "  ssh -N -L 18090:127.0.0.1:${DASHBOARD_PORT:-8090} vm"
