@@ -86,7 +86,7 @@ def route_attacker_key(
     """Return the attacker key for exactly one matching asset-gateway route.
 
     Example:
-        route_attacker_key(routes, asset_id="conpot-plc", backend_host="172.1.0.2", backend_port=502) -> "198.51.100.10"
+        route_attacker_key(routes, asset_id="dionaea-capture", backend_host="172.1.0.2", backend_port=80) -> "198.51.100.10"
     """
     matches = [
         route for route in routes

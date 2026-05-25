@@ -1,6 +1,6 @@
 """Sigma-backed matcher for normalized high-interaction honeypot events.
 
-The high-interaction forwarder turns Conpot, Dionaea, and Honeytrap logs into
+The high-interaction forwarder turns Dionaea and Honeytrap logs into
 one `HighInteractionLogEvent` shape. This module then applies a small Sigma
 subset to that normalized shape and returns profiler-ready ATT&CK tags.
 """
@@ -125,7 +125,7 @@ class FileHighInteractionSigmaRuleMatcher:
         """Return full rule matches for debugging and decision traces.
 
         Example:
-            Conpot modbus read -> match name + ATT&CK tags + indicators that
+            Dionaea download event -> match name + ATT&CK tags + indicators that
             explain which normalized fields caused the match.
         """
         fields = _normalize_event_fields(event)

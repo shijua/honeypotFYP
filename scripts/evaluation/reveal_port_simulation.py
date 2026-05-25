@@ -4,7 +4,7 @@
 This is the route-level evaluation companion to `reveal_policy.py`. In
 `controller-only` mode it checks whether a scripted attacker profile selects the
 expected assets. In `live-apply` mode it also calls the running control-plane
-services, applies controller unlock actions, and verifies exact
+services, applies controller reveal actions, and verifies exact
 `attacker_key + asset_id + public_port` routes in `asset_gateway_routes.json`.
 
 Example:
@@ -223,17 +223,18 @@ def _live_apply_scenario(
     request_payload["binding_id"] = binding_id
     request_payload["unlocked_asset_ids"] = binding.get("unlocked_assets", initial_assets)
     controller_response = control_client.post_json("controller:8003", "/v1/controller/tick", request_payload)
-    unlock_actions = [
+    reveal_actions = [
         action
         for action in controller_response.get("actions", [])
-        if isinstance(action, dict) and action.get("action_type") == ActionType.unlock.value
+        if isinstance(action, dict)
+        and action.get("action_type") in {ActionType.unlock.value, ActionType.configure.value}
     ]
     apply_response = {"binding": binding, "runtime_events": [], "route_updates": []}
-    if unlock_actions:
+    if reveal_actions:
         apply_response = control_client.post_json(
             "orchestrator:8005",
             "/v1/orchestration/apply",
-            {"binding_id": binding_id, "actions": unlock_actions},
+            {"binding_id": binding_id, "actions": reveal_actions},
         )
     gateway_state = control_client.get_json("gateway:8004", f"/v1/gateway/bindings/{binding_id}")
     all_routes = _load_route_items(route_path)
@@ -319,13 +320,17 @@ def _load_route_items(path: Path) -> list[dict[str, Any]]:
 
 
 def _selected_assets(controller_response: dict[str, Any]) -> list[str]:
-    return [
-        str(action.get("asset_id"))
-        for action in controller_response.get("actions", [])
-        if isinstance(action, dict)
-        and action.get("action_type") == ActionType.unlock.value
-        and isinstance(action.get("asset_id"), str)
-    ]
+    selected: list[str] = []
+    for action in controller_response.get("actions", []):
+        if not isinstance(action, dict):
+            continue
+        if action.get("action_type") == ActionType.unlock.value and isinstance(action.get("asset_id"), str):
+            selected.append(str(action["asset_id"]))
+        if action.get("action_type") == ActionType.configure.value:
+            exposed_asset = action.get("target_asset_id") or action.get("asset_id")
+            if isinstance(exposed_asset, str):
+                selected.append(exposed_asset)
+    return selected
 
 
 def _decision_details(controller_response: dict[str, Any]) -> list[dict[str, Any]]:
@@ -376,8 +381,8 @@ def _runtime_rejected_failure(
     """Return a clear failure when controller rejected an expected runtime asset.
 
     Example:
-        rejected_assets={"conpot-plc": "runtime unavailable on this host"}
-        -> "failed_runtime_unavailable: conpot-plc".
+        rejected_assets={"dionaea-capture": "runtime unavailable on this host"}
+        -> "failed_runtime_unavailable: dionaea-capture".
     """
     for details in decision_details:
         rejected = details.get("rejected_assets", {})

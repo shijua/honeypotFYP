@@ -19,7 +19,6 @@ from scripts.validation.asset_telemetry import build_report
 
 HIGH_INTERACTION_ASSETS = {
     "admin-jumpbox",
-    "conpot-plc",
     "dionaea-capture",
     "honeytrap-generic",
 }

@@ -125,6 +125,27 @@ class MockTemplateRuntime:
         """Persist an updated runtime record back into the mock repository."""
         return self._repository.upsert(record)
 
+    def apply_configuration(
+        self,
+        binding_id: str,
+        asset_id: str,
+        configuration_id: str,
+        configuration: dict[str, object],
+    ) -> AssetRuntimeRecord | None:
+        """Record an A.2 configuration reveal on an already-running asset.
+
+        Example:
+            git-internal + git-db-credential-clue updates runtime settings with
+            active_configurations={"git-db-credential-clue": {...}}.
+        """
+        return _apply_configuration_to_record(
+            self._repository,
+            binding_id,
+            asset_id,
+            configuration_id,
+            configuration,
+        )
+
     def list_accessible_asset_ids(self, binding_id: str) -> list[str]:
         """Return currently reachable mock assets for one binding."""
         asset_ids: list[str] = []
@@ -767,6 +788,21 @@ class HybridTemplateRuntime:
         """Return a lifecycle event for either Docker or mock records."""
         return _monitoring_event_for_record(record, lifecycle="started")
 
+    def apply_configuration(
+        self,
+        binding_id: str,
+        asset_id: str,
+        configuration_id: str,
+        configuration: dict[str, object],
+    ) -> AssetRuntimeRecord | None:
+        """Record an A.2 configuration reveal on the source asset runtime."""
+        return self._mock_runtime.apply_configuration(
+            binding_id,
+            asset_id,
+            configuration_id,
+            configuration,
+        )
+
     def stop_binding_assets(self, binding_id: str) -> list[AssetRuntimeRecord]:
         """Stop Docker-backed records and then stop any remaining mock records."""
         stopped: list[AssetRuntimeRecord] = []
@@ -825,13 +861,35 @@ def _existing_running_record(
     """Return the existing running runtime for an idempotent asset start.
 
     Example:
-        repository has running asset_id="conpot-plc" for binding b1 -> that
+        repository has running asset_id="dionaea-capture" for binding b1 -> that
         record is reused instead of starting another container.
     """
     for record in repository.list_by_binding(binding_id):
         if record.asset_id == asset_id and record.status == "running":
             return record
     return None
+
+
+def _apply_configuration_to_record(
+    repository: TemplateRuntimeRepository,
+    binding_id: str,
+    asset_id: str,
+    configuration_id: str,
+    configuration: dict[str, object],
+) -> AssetRuntimeRecord | None:
+    """Attach a follow-on configuration reveal to the source runtime record."""
+    record = _existing_running_record(repository, binding_id, asset_id)
+    if record is None:
+        return None
+    active = record.settings.get("active_configurations", {})
+    active_configurations = dict(active) if isinstance(active, dict) else {}
+    active_configurations[configuration_id] = configuration
+    updated_settings = {
+        **record.settings,
+        "active_configurations": active_configurations,
+    }
+    updated = record.model_copy(update={"settings": updated_settings})
+    return repository.upsert(updated)
 
 
 def _monitoring_event_for_record(

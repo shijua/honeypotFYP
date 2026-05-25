@@ -278,15 +278,15 @@ def test_validate_asset_telemetry_requires_high_interaction_asset_id(
         catalog_path,
         [
             {
-                "asset_id": "conpot-plc",
+                "asset_id": "dionaea-capture",
                 "telemetry_source": "high_interaction",
                 "default_settings": {
                     "runtime": {"backend": "docker"},
                     "telemetry_validation": {
                         "kind": "high_interaction",
-                        "source": "conpot",
+                        "source": "dionaea",
                         "match": "asset_id",
-                        "expected_trigger": "conpot probe",
+                        "expected_trigger": "dionaea probe",
                     },
                 },
             }
@@ -294,21 +294,21 @@ def test_validate_asset_telemetry_requires_high_interaction_asset_id(
     )
     _write_json(
         state_dir / "asset_runtime.json",
-        {"records": [{"asset_id": "conpot-plc"}]},
+        {"records": [{"asset_id": "dionaea-capture"}]},
     )
     _write_json(
         state_dir / "asset_gateway_routes.json",
-        {"routes": [{"asset_id": "conpot-plc"}]},
+        {"routes": [{"asset_id": "dionaea-capture"}]},
     )
     _write_json(
         state_dir / "high_interaction_observations.json",
-        {"observations": [{"source": "conpot", "service": "modbus"}]},
+        {"observations": [{"source": "dionaea", "service": "http"}]},
     )
     monkeypatch.setattr(
         validate_asset_telemetry,
         "summarize_demo",
         lambda _state_dir: {
-            "attackers": [{"current_running_assets": [{"asset_id": "conpot-plc"}]}]
+            "attackers": [{"current_running_assets": [{"asset_id": "dionaea-capture"}]}]
         },
     )
 

@@ -136,10 +136,11 @@ The mode is selected by `HONEYPOT_COWRIE_COMMAND_MAPPING_MODE` and loaded throug
   - load a file-backed ATT&CK group-technique prior from `data/technique_prior/attack_group_technique_prior.json`
   - filter assets by hard dependencies, unlock signals, runtime availability, unlock state, and unlock cap
   - classify candidates as `recommended` when the group prior suggests an unseen technique, `continuation` when the asset enriches a strongly observed technique, or `bootstrap` for the first internal portal reveal
+  - score follow-on `configuration` candidates for assets that are already visible, using catalog `configuration_variants` and the same profile/dependency gates
   - order eligible assets by candidate type, technique score, telemetry value, matched dependency markers, repeat penalty, and asset id
-  - keep family matching and same-port upgrade context explicit in decision details
+  - keep family matching, configuration reveal context, and same-port upgrade context explicit in decision details
   - allow `internal-portal` as the first bootstrap discovery surface when profile evidence exists
-  - emit `unlock` or `noop` actions plus structured `DecisionEvent.details` containing selected technique, candidate type, scores, rejected reasons, and group-prior status
+  - emit `unlock`, `configure`, or `noop` actions plus structured `DecisionEvent.details` containing selected technique, candidate type, scores, rejected reasons, configuration ids, and group-prior status
 
 #### ATT&CK group prior
 The runtime prior is derived from local Enterprise ATT&CK STIX by `scripts/data/build_attack_group_prior.py`. It parses active `intrusion-set --uses--> attack-pattern` relationships into group technique sets and uses a small collaborative-filtering lookup at runtime: compare the binding's strongly observed techniques to ATT&CK group technique sets, then recommend not-yet-observed techniques with normalized support. The builder does not fetch data or infer missing labels. `data/technique_prior/attack_group_technique_prior.json` is generated local state and ignored by git; missing files are allowed at startup but health reports the prior as degraded. Optional public datasets under `vendor/datasets/` remain useful for offline validation, but they are not the active runtime prior.
@@ -147,6 +148,8 @@ The runtime prior is derived from local Enterprise ATT&CK STIX by `scripts/data/
 #### Technique-aware catalogue metadata
 The shared `AssetDefinition` API does not add new top-level fields for selection metadata. Instead, each runtime internal asset declares `default_settings.selection_profile` with `asset_group`, `covered_techniques`, `optional_dependency_signals`, `telemetry_value`, `tactic_difficulties`, `reveal_outputs`, and `selection_notes`. `covered_techniques` must be valid Enterprise ATT&CK technique or sub-technique ids. Older fields such as `covers_tactics`, `dependencies`, and `unlock_signals` remain compatibility and hard-gate fields.
 `telemetry_value` is a 0-1 catalog priority used only as a deterministic tie-break after candidate type and technique signal; it says how useful that asset is expected to be once it is otherwise eligible, not how likely the attacker is to choose it.
+
+Assets may also declare `default_settings.configuration_variants`. These are follow-on reveals for an asset that is already open: for example adding a database credential clue to `git-internal`, or upgrading `malware-sink` to a Dionaea backend while keeping the same public download port. The binding state stores applied variants under `revealed_configurations`, so the controller does not repeat the same configuration reveal for the same attacker.
 
 #### Reveal feedback storage
 

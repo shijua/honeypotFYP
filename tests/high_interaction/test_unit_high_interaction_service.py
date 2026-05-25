@@ -25,29 +25,6 @@ def _service() -> tuple[HighInteractionService, InMemoryHighInteractionObservati
     return service, repository
 
 
-def test_conpot_modbus_probe_updates_profile_with_asset_reference() -> None:
-    service, repository = _service()
-
-    response = service.ingest(
-        HighInteractionIngestRequest(
-            event=HighInteractionLogEvent(
-                source="conpot",
-                asset_id="conpot-plc",
-                attacker_key="198.51.100.44",
-                service="modbus",
-                event_type="modbus.read",
-                logdata={"function": "Read Holding Registers"},
-            )
-        )
-    )
-
-    observations = tuple(repository.list_recent())
-    assert observations[0].asset_id == "conpot-plc"
-    assert "T1046" in response.profile.recent_techniques
-    assert "T1005" in response.profile.recent_techniques
-    assert response.observation.profiler_evidence_ids
-
-
 def test_dionaea_download_maps_to_transfer_and_execution() -> None:
     service, _repository = _service()
 
@@ -88,4 +65,3 @@ def test_honeytrap_payload_probe_maps_to_generic_capture() -> None:
     assert "T1046" in response.profile.recent_techniques
     assert "T1190" in response.profile.recent_techniques
     assert "T1105" in response.profile.recent_techniques
-

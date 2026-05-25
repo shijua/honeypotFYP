@@ -55,9 +55,6 @@ ASSET_GATEWAY_PORTS="$(
     "${LEGACY_TELNET_PORT:-12323}" \
     "${MAIL_RELAY_PORT:-2525}" \
     "${FINANCE_SHARE_PORT:-18082}" \
-    "${ICS_PLC_PORT:-18084}" \
-    "${CONPOT_MODBUS_PORT:-1502}" \
-    "${CONPOT_S7_PORT:-1102}" \
     "${VPN_APPLIANCE_PORT:-18443}" \
     "${MALWARE_SINK_PORT:-18085}" \
     "${DIONAEA_SMB_PORT:-1445}" \
@@ -214,7 +211,6 @@ echo "Adaptive SSH:    ssh -p ${SSH_CANARY_PORT:-12222} root@${CLIENT_TARGET_HOS
 echo "Adaptive Telnet: telnet ${CLIENT_TARGET_HOST:-127.0.0.1} ${LEGACY_TELNET_PORT:-12323} after legacy-telnet unlock"
 echo "Adaptive SMTP:   ${CLIENT_TARGET_HOST:-127.0.0.1}:${MAIL_RELAY_PORT:-2525} after mail-relay unlock"
 echo "Finance Share:   http://${CLIENT_TARGET_HOST:-127.0.0.1}:${FINANCE_SHARE_PORT:-18082}/ after finance-share unlock"
-echo "ICS Panel:       http://${CLIENT_TARGET_HOST:-127.0.0.1}:${ICS_PLC_PORT:-18084}/ after ics-plc unlock"
 echo "VPN Appliance:   http://${CLIENT_TARGET_HOST:-127.0.0.1}:${VPN_APPLIANCE_PORT:-18443}/ after vpn-appliance unlock"
 echo "Malware Sink:    http://${CLIENT_TARGET_HOST:-127.0.0.1}:${MALWARE_SINK_PORT:-18085}/ after malware-sink unlock"
 echo

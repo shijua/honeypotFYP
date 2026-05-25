@@ -97,7 +97,7 @@ def tick_once(
     feedback_window_seconds: int = 300,
     max_actions_per_trigger: int = 1,
 ) -> int:
-    """Run one adaptive control pass and return number of unlock actions sent."""
+    """Run one adaptive control pass and return number of reveal actions sent."""
     bindings_by_attacker = load_bindings_by_attacker(state_dir)
     profiles = load_profiles(state_dir)
     if feedback_file is not None:
@@ -111,7 +111,7 @@ def tick_once(
         if loop_state_file is not None
         else {"processed_evidence_ids_by_attacker": {}}
     )
-    applied_unlocks = 0
+    applied_reveals = 0
 
     for attacker_key, profile in profiles.items():
         if not isinstance(profile, dict):
@@ -130,10 +130,13 @@ def tick_once(
 
         binding_id = binding.get("binding_id")
         unlocked_assets = binding.get("unlocked_assets", [])
+        revealed_configurations = binding.get("revealed_configurations", {})
         if not isinstance(binding_id, str):
             continue
         if not isinstance(unlocked_assets, list):
             unlocked_assets = []
+        if not isinstance(revealed_configurations, dict):
+            revealed_configurations = {}
 
         controller_response = post_json(
             f"{controller_url}/v1/controller/tick",
@@ -142,6 +145,7 @@ def tick_once(
                 "binding_id": binding_id,
                 "profile": profile,
                 "unlocked_asset_ids": unlocked_assets,
+                "revealed_configurations": revealed_configurations,
             },
             timeout_seconds=timeout_seconds,
         )
@@ -149,22 +153,22 @@ def tick_once(
         if not isinstance(actions, list):
             continue
 
-        unlock_actions = [
+        reveal_actions = [
             action
             for action in actions
-            if isinstance(action, dict) and action.get("action_type") == "unlock"
+            if isinstance(action, dict) and _is_reveal_action(action)
         ]
-        if not unlock_actions:
+        if not reveal_actions:
             _mark_evidence_processed(loop_state, attacker_key, recent_evidence_ids)
             if loop_state_file is not None:
                 save_loop_state(loop_state_file, loop_state)
             continue
 
-        actions_to_apply = _limit_unlock_actions(actions, max_actions_per_trigger)
-        applied_unlock_actions = [
+        actions_to_apply = _limit_reveal_actions(actions, max_actions_per_trigger)
+        applied_reveal_actions = [
             action
             for action in actions_to_apply
-            if isinstance(action, dict) and action.get("action_type") == "unlock"
+            if isinstance(action, dict) and _is_reveal_action(action)
         ]
         orchestrator_response = post_json(
             f"{orchestrator_url}/v1/orchestration/apply",
@@ -180,9 +184,9 @@ def tick_once(
                 attacker_key=attacker_key,
                 binding_id=binding_id,
                 controller_response=controller_response,
-                applied_actions=applied_unlock_actions,
+                applied_actions=applied_reveal_actions,
             )
-        applied_unlocks += len(applied_unlock_actions)
+        applied_reveals += len(applied_reveal_actions)
         _mark_evidence_processed(loop_state, attacker_key, recent_evidence_ids)
         if loop_state_file is not None:
             save_loop_state(loop_state_file, loop_state)
@@ -203,7 +207,7 @@ def tick_once(
             )
         print_apply_summary(attacker_key, orchestrator_response)
 
-    return applied_unlocks
+    return applied_reveals
 
 
 def record_reveal_feedback(
@@ -221,19 +225,23 @@ def record_reveal_feedback(
         records one pending reveal in `data/runtime/reveal_feedback.json`.
     """
     applied_asset_ids = {
-        action.get("asset_id")
+        asset_id
         for action in applied_actions
-        if isinstance(action.get("asset_id"), str)
+        for asset_id in (action.get("asset_id"), action.get("target_asset_id"))
+        if isinstance(asset_id, str)
     }
     if not applied_asset_ids:
         return
     repository = FileRevealFeedbackRepository(feedback_file)
     available_assets = string_items(controller_response.get("candidate_asset_ids", []))
-    revealed_assets = [
-        str(action.get("asset_id"))
-        for action in applied_actions
-        if isinstance(action.get("asset_id"), str)
-    ]
+    revealed_assets = dedupe_preserve(
+        [
+            asset_id
+            for action in applied_actions
+            for asset_id in (action.get("asset_id"), action.get("target_asset_id"))
+            if isinstance(asset_id, str)
+        ]
+    )
     for decision in controller_response.get("decision_events", []):
         if not isinstance(decision, dict):
             continue
@@ -377,25 +385,29 @@ def _mark_evidence_processed(
     processed[attacker_key] = dedupe_preserve([*previous_ids, *recent_evidence_ids])
 
 
-def _limit_unlock_actions(
+def _limit_reveal_actions(
     actions: list[Any],
     max_actions_per_trigger: int,
 ) -> list[Any]:
-    """Keep at most N unlock actions while preserving non-unlock actions."""
+    """Keep at most N unlock/configure actions while preserving other actions."""
     if max_actions_per_trigger <= 0:
         return []
 
     limited: list[Any] = []
-    unlock_count = 0
+    reveal_count = 0
     for action in actions:
-        if not isinstance(action, dict) or action.get("action_type") != "unlock":
+        if not isinstance(action, dict) or not _is_reveal_action(action):
             limited.append(action)
             continue
-        if unlock_count >= max_actions_per_trigger:
+        if reveal_count >= max_actions_per_trigger:
             continue
         limited.append(action)
-        unlock_count += 1
+        reveal_count += 1
     return limited
+
+
+def _is_reveal_action(action: dict[str, Any]) -> bool:
+    return action.get("action_type") in {"unlock", "configure"}
 
 
 def _dropped_actions(
@@ -431,6 +443,7 @@ def build_trace_record(
         "recent_techniques": profile.get("recent_techniques", []),
         "recent_evidence_ids": profile.get("recent_evidence_ids", []),
         "unlocked_assets_before": binding.get("unlocked_assets", []),
+        "revealed_configurations_before": binding.get("revealed_configurations", {}),
         "candidate_asset_ids": controller_response.get("candidate_asset_ids", []),
         "actions": controller_response.get("actions", []),
         "dropped_actions": controller_response.get("dropped_actions", []),
@@ -440,6 +453,7 @@ def build_trace_record(
             orchestrator_response.get("runtime_events", [])
         ),
         "unlocked_assets_after": binding_after.get("unlocked_assets", []),
+        "revealed_configurations_after": binding_after.get("revealed_configurations", {}),
     }
 
 

@@ -8,19 +8,14 @@ honeynet.rule_name: high_interaction_service_discovery
 detection:
   selection_source:
     honeynet.source:
-      - conpot
       - dionaea
       - honeytrap
   selection_service:
     honeynet.service|contains:
       - ftp
-      - hmi
       - http
-      - modbus
       - mssql
-      - s7
       - smb
-      - snmp
       - tcp
   condition: selection_source and selection_service
 tags:

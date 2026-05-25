@@ -231,7 +231,7 @@ Current service roles:
 | `public-portal-forwarder` | telemetry bridge | none | Tails public portal nginx access logs and posts them to `entrypoint-observer` |
 | `entrypoint-observer` | public website backend + direct HTTP test entrypoint | `8083` | Receives public portal breadcrumbs and handles explicit low-interaction HTTP probes |
 | `cowrie` | attacker-facing entrypoint | `2222` | SSH interaction and command telemetry |
-| `asset-gateway` | adaptive asset data plane | `18080`, `19418`, `13306`, `16379`, `18081`, `12121`, `12222`, `12323`, `2525`, `18082`, `18084`, `18443`, `18085` | Owns fixed external ports, forwards each attacker to the backend selected by source IP, and writes internal HTTP artifact events to JSONL |
+| `asset-gateway` | adaptive asset data plane | `18080`, `19418`, `13306`, `16379`, `18081`, `12121`, `12222`, `12323`, `2525`, `18082`, `18443`, `18085` | Owns fixed external ports, forwards each attacker to the backend selected by source IP, and writes internal HTTP artifact events to JSONL |
 | `internal-http-forwarder` | telemetry bridge | none | Tails `data/runtime/internal_http_events.jsonl` and posts internal HTTP asset events to `entrypoint-observer` |
 | `opencanary-adapter` + `opencanary-forwarder` | adaptive asset telemetry | none | Collect logs from OpenCanary-backed internal assets after they are unlocked |
 | `internal-portal` | internal baseline service | internal only; reached through `asset-gateway` on `18080` when dynamically unlocked | First internal asset in the adaptive path |
@@ -241,7 +241,7 @@ Adaptive internal Docker assets no longer publish host ports themselves. The orc
 
 OpenCanary is no longer an always-on attacker-facing entrypoint. OpenCanary telemetry is collected through `scripts/forwarders/opencanary_json.py`, which tails `deploy/opencanary/var/opencanary.log` and posts events into `services/opencanary`. Adaptive internal OpenCanary assets mount that shared log directory, so their Git/MySQL/Redis/HTTP/FTP/SSH/Telnet events flow into the dashboard after the controller unlocks them.
 
-The adaptive internal catalog includes standalone OpenCanary assets for Git, MySQL, Redis, FTP, SSH, and Telnet, plus lightweight static Docker assets for finance-share, ICS panel, VPN appliance, and malware-drop-sink services. The static assets include backup/config/archive breadcrumbs such as `.bak`, `.cfg`, `.ovpn`, and package-download paths. They are not enabled by changing one shared OpenCanary configuration; the orchestrator starts a separate container per asset when the controller unlocks it. Default host ports can be overridden with shell environment variables:
+The adaptive internal catalog includes standalone OpenCanary assets for Git, MySQL, Redis, FTP, SSH, and Telnet, plus lightweight static Docker assets for finance-share, VPN appliance, and malware-drop-sink services. The static assets include backup/config/archive breadcrumbs such as `.bak`, `.ovpn`, and package-download paths. They are not enabled by changing one shared OpenCanary configuration; the orchestrator starts a separate container per asset when the controller unlocks it. Default host ports can be overridden with shell environment variables:
 
 The controller now treats public-file exploration as part of the dependency model. For example, probing `/.env.old`, `/backup/db_backup_2024.sql.bak`, `/backup/passwords_internal.txt`, `/assets/app.js.map`, `/admin`, or SQL-injection-looking API requests creates public HTTP evidence in the profile. Catalog assets can declare `default_settings.unlock_signals` so they only become eligible after the matching public path, rule, or indicator has been seen.
 
@@ -255,17 +255,15 @@ SSH_CANARY_PORT=12222
 LEGACY_TELNET_PORT=12323
 MAIL_RELAY_PORT=2525
 FINANCE_SHARE_PORT=18082
-ICS_PLC_PORT=18084
 VPN_APPLIANCE_PORT=18443
 MALWARE_SINK_PORT=18085
-ASSET_GATEWAY_PORTS=18080,19418,13306,16379,18081,12121,12222,12323,2525,18082,18084,18443,18085
+ASSET_GATEWAY_PORTS=18080,19418,13306,16379,18081,12121,12222,12323,2525,18082,18443,18085
 ```
 
 Static internal breadcrumb examples after the matching source IP has unlocked the relevant asset:
 
 ```bash
 curl -i http://$CLIENT_TARGET_HOST:${FINANCE_SHARE_PORT:-18082}/exports/db_backup_2024.sql.bak
-curl -i http://$CLIENT_TARGET_HOST:${ICS_PLC_PORT:-18084}/config/plc-backup-2026-04.cfg
 curl -i http://$CLIENT_TARGET_HOST:${VPN_APPLIANCE_PORT:-18443}/backup/ra-config-2026-04.bak
 curl -i http://$CLIENT_TARGET_HOST:${MALWARE_SINK_PORT:-18085}/downloads/agent-update.bin
 ```

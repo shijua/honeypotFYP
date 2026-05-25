@@ -55,6 +55,34 @@ class CandidateScore:
     matched_dependency_markers: tuple[str, ...] = field(default_factory=tuple)
     asset_group: str = "unknown"
     covered_techniques: tuple[str, ...] = field(default_factory=tuple)
+    action_type: ActionType = ActionType.unlock
+    configuration_id: str | None = None
+    configuration_kind: str | None = None
+    target_asset_id: str | None = None
+    configuration: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class RevealOption:
+    """Unified controller input for either an asset unlock or configuration reveal.
+
+    Example:
+        unlock git-internal and configure git-internal with git-db-credential-clue
+        both become RevealOption objects before technique scoring.
+    """
+
+    asset: AssetDefinition
+    action_type: ActionType
+    covered_techniques: tuple[str, ...]
+    telemetry_value: float
+    matched_dependency_markers: tuple[str, ...] = field(default_factory=tuple)
+    asset_group: str = "unknown"
+    candidate_type_override: str | None = None
+    upgrade_context: dict[str, Any] = field(default_factory=dict)
+    configuration_id: str | None = None
+    configuration_kind: str | None = None
+    target_asset_id: str | None = None
+    configuration: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -141,6 +169,12 @@ class ControllerService:
         decisions: list[DecisionEvent] = []
         considered: list[CandidateScore] = []
         rejected: dict[str, str] = {}
+        strong_observed = self._strong_observed_techniques(request.profile)
+        recommendations = self._technique_prior_repository.recommend(
+            strong_observed,
+            top_k=self._config.recommendation_top_k,
+            support_threshold=self._config.recommendation_support_threshold,
+        )
 
         if _scanner_only_profile(request.profile):
             return self._noop_response(
@@ -151,24 +185,26 @@ class ControllerService:
         # Run main reveal first, then a constrained plausible explore pass.
         exploit_context: CandidateScore | None = None
         for strategy in ("exploit", "explore"):
+            options = self._reveal_options(
+                assets,
+                request,
+                planned_unlocked_asset_ids=planned_unlocked_asset_ids,
+                rejected=rejected,
+            )
             candidates = []
-            for asset in assets:
-                eligible, reason = self._eligibility(asset, request, planned_unlocked_asset_ids)
-                if not eligible:
-                    rejected[asset.asset_id] = reason
-                    continue
-                candidate = self._score_asset(
-                    asset,
+            for option in options:
+                candidate = self._score_reveal_option(
+                    option,
                     request,
                     strategy=strategy,
                     exploit_context=exploit_context,
-                    all_assets=assets,
-                    unlocked_asset_ids=planned_unlocked_asset_ids,
+                    strong_observed=strong_observed,
+                    recommendations=recommendations,
                 )
                 if candidate is not None:
                     candidates.append(candidate)
             considered.extend(candidates)
-            selected = self._pick_best(candidates, strategy)
+            selected = min(candidates, key=_candidate_order_key) if candidates else None
             if selected is None:
                 if strategy == "exploit" and not actions:
                     return self._noop_response(
@@ -179,7 +215,7 @@ class ControllerService:
                     )
                 continue
 
-            actions.append(self._build_unlock_action(request.binding_id, selected))
+            actions.append(self._build_action(request.binding_id, selected))
             decisions.append(
                 self._build_decision_event(
                     request,
@@ -188,7 +224,10 @@ class ControllerService:
                     eligible_asset_ids=self._candidate_asset_ids(candidates),
                 )
             )
-            planned_unlocked_asset_ids.append(selected.asset.asset_id)
+            if selected.action_type == ActionType.unlock:
+                planned_unlocked_asset_ids.append(selected.asset.asset_id)
+            elif selected.target_asset_id:
+                planned_unlocked_asset_ids.append(selected.target_asset_id)
             if strategy == "exploit":
                 exploit_context = selected
 
@@ -199,36 +238,171 @@ class ControllerService:
             candidate_asset_ids=self._candidate_asset_ids(considered),
         )
 
-    def _score_asset(
+    def _reveal_options(
+        self,
+        assets: list[AssetDefinition],
+        request: ControllerTickRequest,
+        *,
+        planned_unlocked_asset_ids: list[str],
+        rejected: dict[str, str],
+    ) -> list[RevealOption]:
+        """Return every reveal candidate before technique scoring.
+
+        Asset unlocks and follow-on configuration reveals share the same scoring
+        path after this point; only the final action type differs.
+        """
+        options: list[RevealOption] = []
+        for asset in assets:
+            eligible, reason = self._eligibility(asset, request, planned_unlocked_asset_ids)
+            if not eligible:
+                rejected[asset.asset_id] = reason
+                continue
+            option = self._asset_reveal_option(
+                asset,
+                request,
+                all_assets=assets,
+                unlocked_asset_ids=planned_unlocked_asset_ids,
+            )
+            if option is not None:
+                options.append(option)
+        options.extend(
+            self._configuration_reveal_options(
+                assets,
+                request,
+                planned_unlocked_asset_ids=planned_unlocked_asset_ids,
+            )
+        )
+        return options
+
+    def _asset_reveal_option(
         self,
         asset: AssetDefinition,
         request: ControllerTickRequest,
         *,
-        strategy: str,
-        exploit_context: CandidateScore | None,
         all_assets: list[AssetDefinition],
         unlocked_asset_ids: list[str],
-    ) -> CandidateScore | None:
-        """Classify one eligible asset against observed and recommended techniques.
-
-        Example:
-            Input:
-                asset covers ["T1213"], profile confidence T1552.001=0.8, prior recommends T1213=0.4
-            Output:
-                CandidateScore(candidate_type="recommended", selected_technique="T1213", ...)
-        """
-        profile = request.profile
+    ) -> RevealOption | None:
         selection_profile = SelectionProfileView.from_asset(asset)
         covered_techniques = selection_profile.covered_techniques
         if not covered_techniques:
             return None
-
-        strong_observed = self._strong_observed_techniques(profile)
-        recommendations = self._technique_prior_repository.recommend(
-            strong_observed,
-            top_k=self._config.recommendation_top_k,
-            support_threshold=self._config.recommendation_support_threshold,
+        matched_markers = self._matched_dependency_markers(asset, request)
+        return RevealOption(
+            asset=asset,
+            action_type=ActionType.unlock,
+            covered_techniques=tuple(covered_techniques),
+            telemetry_value=selection_profile.telemetry_value,
+            matched_dependency_markers=tuple(matched_markers),
+            asset_group=selection_profile.asset_group,
+            upgrade_context=_upgrade_context(
+                asset,
+                all_assets,
+                unlocked_asset_ids=unlocked_asset_ids,
+                matched_markers=matched_markers,
+            ),
         )
+
+    def _configuration_reveal_options(
+        self,
+        assets: list[AssetDefinition],
+        request: ControllerTickRequest,
+        *,
+        planned_unlocked_asset_ids: list[str],
+    ) -> list[RevealOption]:
+        """Return explicit follow-on configuration options for opened assets.
+
+        Configuration variants are catalog-owned. They only appear here when
+        their source asset is already open and the current profile matches an
+        exact required marker.
+        """
+        asset_by_id = {asset.asset_id: asset for asset in assets}
+        observed = _observed_signal_sets(request)
+        options: list[RevealOption] = []
+
+        for source_asset in assets:
+            if source_asset.asset_id not in request.unlocked_asset_ids:
+                continue
+            revealed_for_asset = set(
+                request.revealed_configurations.get(source_asset.asset_id, [])
+            )
+            for variant in _configuration_variants(source_asset):
+                configuration_id = string_or_none(variant.get("configuration_id"))
+                if configuration_id is None or configuration_id in revealed_for_asset:
+                    continue
+                matched_markers = _matched_variant_markers(variant, observed)
+                if _variant_required_markers(variant) and not matched_markers:
+                    continue
+
+                target_asset_id = string_or_none(variant.get("target_asset_id"))
+                target_asset = asset_by_id.get(target_asset_id) if target_asset_id else None
+                if target_asset_id and (
+                    target_asset is None or target_asset_id in planned_unlocked_asset_ids
+                ):
+                    continue
+                if target_asset is not None and not self._runtime_is_available(target_asset):
+                    continue
+
+                covered_techniques = _variant_covered_techniques(
+                    variant,
+                    target_asset or source_asset,
+                )
+                target_public_port = variant.get("public_port")
+                upgrade_context = {}
+                if target_asset is not None:
+                    upgrade_context = {
+                        "previous_backend_asset": source_asset.asset_id,
+                        "upgraded_backend_asset": target_asset.asset_id,
+                        "public_port": target_public_port,
+                        "matched_markers": matched_markers,
+                        "reason": variant.get("reason", ""),
+                    }
+
+                telemetry_value = _variant_telemetry_value(
+                    variant,
+                    target_asset or source_asset,
+                )
+                options.append(
+                    RevealOption(
+                        asset=source_asset,
+                        action_type=ActionType.configure,
+                        covered_techniques=tuple(covered_techniques),
+                        telemetry_value=telemetry_value,
+                        matched_dependency_markers=tuple(matched_markers),
+                        asset_group=SelectionProfileView.from_asset(
+                            target_asset or source_asset
+                        ).asset_group,
+                        candidate_type_override="configuration",
+                        upgrade_context=upgrade_context,
+                        configuration_id=configuration_id,
+                        configuration_kind=string_or_none(variant.get("kind")),
+                        target_asset_id=target_asset_id,
+                        configuration=dict(variant),
+                    )
+                )
+        return options
+
+    def _score_reveal_option(
+        self,
+        option: RevealOption,
+        request: ControllerTickRequest,
+        *,
+        strategy: str,
+        exploit_context: CandidateScore | None,
+        strong_observed: set[str],
+        recommendations: dict[str, float],
+    ) -> CandidateScore | None:
+        """Classify one reveal option against observed and recommended techniques.
+
+        Example:
+            Input:
+                option covers ["T1213"], prior recommends T1213=0.4
+            Output:
+                CandidateScore(candidate_type="recommended", selected_technique="T1213", ...)
+        """
+        profile = request.profile
+        if not option.covered_techniques:
+            return None
+
         technique_scores = {
             technique: self._technique_candidate_parts(
                 technique,
@@ -236,9 +410,9 @@ class ControllerService:
                 strong_observed,
                 recommendations,
             )
-            for technique in covered_techniques
+            for technique in option.covered_techniques
         }
-        if _is_bootstrap_asset(asset, request):
+        if option.action_type == ActionType.unlock and _is_bootstrap_asset(option.asset, request):
             # The internal portal is the first internal question. It needs
             # concrete evidence, but it should not require a CF recommendation.
             technique_scores = {
@@ -269,26 +443,19 @@ class ControllerService:
         technique_signal_score = float(selected_parts["signal_score"])
         confidence_score = float(selected_parts["confidence"])
         recommendation_support = float(selected_parts["recommendation_support"])
-        candidate_type = str(selected_parts["candidate_type"])
+        candidate_type = option.candidate_type_override or str(selected_parts["candidate_type"])
         technique_match_type = str(selected_parts["match_type"])
-        matched_profile_technique = _optional_string(selected_parts.get("matched_profile_technique"))
-        matched_prior_technique = _optional_string(selected_parts.get("matched_prior_technique"))
-        if technique_signal_score <= 0:
-            return None
+        matched_profile_technique = string_or_none(selected_parts.get("matched_profile_technique"))
+        matched_prior_technique = string_or_none(selected_parts.get("matched_prior_technique"))
 
-        matched_markers = self._matched_dependency_markers(asset, request)
-        telemetry_value = selection_profile.telemetry_value
-        asset_group = selection_profile.asset_group
-        upgrade_context = _upgrade_context(
-            asset,
-            all_assets,
-            unlocked_asset_ids=unlocked_asset_ids,
-            matched_markers=matched_markers,
-        )
+        matched_markers = list(option.matched_dependency_markers)
+        telemetry_value = option.telemetry_value
         repeat_count = _repeat_count(profile.recent_techniques, selected_technique)
 
         if strategy == "explore":
             if exploit_context is None:
+                return None
+            if str(selected_parts["candidate_type"]) != "continuation":
                 return None
             if _same_technique_family(str(selected_technique), str(exploit_context.selected_technique)):
                 return None
@@ -299,11 +466,11 @@ class ControllerService:
                 return None
             if len({_parent_technique(item) for item in strong_observed}) < 2:
                 return None
-            if not (matched_markers or upgrade_context):
+            if not (_has_concrete_dependency_marker(matched_markers) or option.upgrade_context):
                 return None
 
         return CandidateScore(
-            asset=asset,
+            asset=option.asset,
             strategy=strategy,
             candidate_type=candidate_type,
             selected_technique=selected_technique,
@@ -316,10 +483,15 @@ class ControllerService:
             technique_match_type=technique_match_type,
             matched_profile_technique=matched_profile_technique,
             matched_prior_technique=matched_prior_technique,
-            upgrade_context=upgrade_context,
+            upgrade_context=option.upgrade_context,
             matched_dependency_markers=tuple(matched_markers),
-            asset_group=asset_group,
-            covered_techniques=tuple(covered_techniques),
+            asset_group=option.asset_group,
+            covered_techniques=option.covered_techniques,
+            action_type=option.action_type,
+            configuration_id=option.configuration_id,
+            configuration_kind=option.configuration_kind,
+            target_asset_id=option.target_asset_id,
+            configuration=option.configuration,
         )
 
     def _technique_candidate_parts(
@@ -486,22 +658,26 @@ class ControllerService:
         self,
         candidates: list[CandidateScore],
     ) -> list[str]:
-        return dedupe_preserve([candidate.asset.asset_id for candidate in candidates])
+        return dedupe_preserve([_candidate_exposed_asset_id(candidate) for candidate in candidates])
 
-    def _pick_best(
-        self,
-        candidates: list[CandidateScore],
-        strategy: str,
-    ) -> CandidateScore | None:
-        if not candidates:
-            return None
-        return sorted(candidates, key=_candidate_order_key)[0]
-
-    def _build_unlock_action(
+    def _build_action(
         self,
         binding_id: str,
         candidate: CandidateScore,
     ) -> ControllerAction:
+        if candidate.action_type == ActionType.configure:
+            return ControllerAction(
+                action_type=ActionType.configure,
+                binding_id=binding_id,
+                asset_id=candidate.asset.asset_id,
+                configuration_id=candidate.configuration_id,
+                target_asset_id=candidate.target_asset_id,
+                configuration=candidate.configuration,
+                reason=(
+                    f"{candidate.strategy} configured {candidate.asset.asset_id} "
+                    f"with {candidate.configuration_id} for technique {candidate.selected_technique}"
+                ),
+            )
         return ControllerAction(
             action_type=ActionType.unlock,
             binding_id=binding_id,
@@ -542,21 +718,34 @@ class ControllerService:
             "prior_degraded": self._technique_prior_repository.degraded_reason,
             "observed_techniques": sorted(self._strong_observed_techniques(request.profile)),
             "eligible_assets": eligible_asset_ids,
-            "rejected_assets": rejected,
+            "rejected_assets": dict(rejected),
             "ordering": _controller_ordering_details(candidate),
         }
+        if candidate.action_type == ActionType.configure:
+            details["configuration_reveal"] = {
+                "asset_id": candidate.asset.asset_id,
+                "configuration_id": candidate.configuration_id,
+                "configuration_kind": candidate.configuration_kind,
+                "target_asset_id": candidate.target_asset_id,
+            }
         if candidate.upgrade_context:
             details["same_port_upgrade"] = candidate.upgrade_context
+        decision_type = (
+            DecisionType.configure
+            if candidate.action_type == ActionType.configure
+            else DecisionType.unlock
+        )
+        exposed_asset_id = _candidate_exposed_asset_id(candidate)
         return DecisionEvent(
             attacker_key=request.attacker_key,
             binding_id=request.binding_id,
-            decision_type=DecisionType.unlock,
+            decision_type=decision_type,
             reason=(
-                f"{candidate.strategy} selected {candidate.asset.asset_id} "
+                f"{candidate.strategy} selected {exposed_asset_id} "
                 f"via {candidate.selected_technique}"
             ),
             trigger_evidence_ids=request.profile.recent_evidence_ids,
-            asset_added=candidate.asset.asset_id,
+            asset_added=exposed_asset_id,
             details=details,
         )
 
@@ -634,10 +823,6 @@ def _repeat_count(recent_techniques: list[str], technique: str) -> int:
     return max(0, matches - 1)
 
 
-def _optional_string(value: Any) -> str | None:
-    return string_or_none(value)
-
-
 def _controller_ordering_details(candidate: CandidateScore) -> dict[str, Any]:
     """Return the deterministic ordering tuple used for an asset choice.
 
@@ -646,30 +831,35 @@ def _controller_ordering_details(candidate: CandidateScore) -> dict[str, Any]:
         weaker prior-only recommendation because candidate type is first.
     """
     return {
-        "candidate_type_rank": _candidate_type_rank(candidate.candidate_type),
+        "candidate_type_rank": _candidate_priority_rank(candidate),
         "technique_signal_score": candidate.technique_signal_score,
         "telemetry_value": candidate.telemetry_value,
         "matched_dependency_marker_count": candidate.matched_dependency_marker_count,
         "repeat_count": candidate.repeat_count,
-        "asset_id": candidate.asset.asset_id,
+        "asset_id": _candidate_exposed_asset_id(candidate),
     }
 
 
-def _candidate_order_key(candidate: CandidateScore) -> tuple[int, float, float, int, int, str]:
+def _candidate_order_key(candidate: CandidateScore) -> tuple[float, float, float, int, int, str]:
     """Sort key for deterministic candidate ordering.
 
     Example:
-        sorted(candidates, key=_candidate_order_key)[0] returns the highest
-        ranked candidate while keeping asset_id as an ascending tie-break.
+        min(candidates, key=_candidate_order_key) returns the highest ranked
+        candidate while keeping asset_id as an ascending tie-break.
     """
     return (
-        -_candidate_type_rank(candidate.candidate_type),
+        -_candidate_priority_rank(candidate),
         -candidate.technique_signal_score,
         -candidate.telemetry_value,
         -candidate.matched_dependency_marker_count,
         candidate.repeat_count,
-        candidate.asset.asset_id,
+        _candidate_exposed_asset_id(candidate),
     )
+
+
+def _candidate_exposed_asset_id(candidate: CandidateScore) -> str:
+    """Return the asset id that a decision exposes to the attacker."""
+    return candidate.target_asset_id or candidate.asset.asset_id
 
 
 def _candidate_type_rank(candidate_type: str) -> int:
@@ -679,10 +869,95 @@ def _candidate_type_rank(candidate_type: str) -> int:
         bootstrap first, then observed continuation, then prior recommendations.
     """
     return {
+        "configuration": 2,
         "bootstrap": 3,
         "continuation": 2,
         "recommended": 1,
     }.get(candidate_type, 0)
+
+
+def _candidate_priority_rank(candidate: CandidateScore) -> float:
+    """Return the ordering rank after action-specific tie-breaking.
+
+    Same-port high-interaction upgrades should beat a direct target unlock so
+    the gateway route is replaced on the existing public port. Other
+    configuration reveals compete at the same level as observed continuations.
+    """
+    if (
+        candidate.action_type == ActionType.configure
+        and candidate.configuration_kind == "same-port-high-interaction-upgrade"
+    ):
+        return 2.1
+    return float(_candidate_type_rank(candidate.candidate_type))
+
+
+def _has_concrete_dependency_marker(markers: list[str]) -> bool:
+    """Return True when the reveal is backed by a concrete breadcrumb.
+
+    Technique-only markers are useful for scoring, but explore reveals need a
+    path, rule, or indicator so they do not branch from prior noise alone.
+    """
+    return any(not marker.startswith(("any_techniques:", "any_tactics:")) for marker in markers)
+
+
+def _configuration_variants(asset: AssetDefinition) -> list[dict[str, Any]]:
+    """Return catalog-declared follow-on configurations for one asset.
+
+    Example:
+        git-internal.default_settings.configuration_variants can expose a DB
+        credential clue after repository browsing, without opening a new port.
+    """
+    value = asset.default_settings.get("configuration_variants")
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
+
+
+def _variant_required_markers(variant: dict[str, Any]) -> list[str]:
+    value = variant.get("required_markers")
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str) and ":" in item]
+
+
+def _matched_variant_markers(
+    variant: dict[str, Any],
+    observed: dict[str, set[str]],
+) -> list[str]:
+    """Return exact configuration markers present in the current profile.
+
+    Configuration reveals are narrower than asset unlocks, so technique
+    markers are intentionally exact here instead of parent/sub-technique
+    family matches.
+    """
+    markers: list[str] = []
+    for marker in _variant_required_markers(variant):
+        key, value = marker.split(":", 1)
+        if key in observed and value in observed[key]:
+            markers.append(marker)
+    return dedupe_preserve(markers)
+
+
+def _variant_covered_techniques(
+    variant: dict[str, Any],
+    fallback_asset: AssetDefinition,
+) -> list[str]:
+    value = variant.get("covered_techniques")
+    if isinstance(value, list):
+        techniques = [item for item in value if isinstance(item, str) and item]
+        if techniques:
+            return techniques
+    return SelectionProfileView.from_asset(fallback_asset).covered_techniques
+
+
+def _variant_telemetry_value(
+    variant: dict[str, Any],
+    fallback_asset: AssetDefinition,
+) -> float:
+    value = variant.get("telemetry_value")
+    if isinstance(value, (int, float)):
+        return max(0.0, min(1.0, float(value)))
+    return SelectionProfileView.from_asset(fallback_asset).telemetry_value
 
 
 def _observed_signal_sets(request: ControllerTickRequest) -> dict[str, set[str]]:
@@ -750,12 +1025,12 @@ def _upgrade_context(
     """Return explicit same-port upgrade metadata when catalog allows it.
 
     Example:
-        unlocked ics-plc declares upgrade candidate conpot-plc -> context for conpot-plc.
+        unlocked malware-sink declares upgrade candidate dionaea-capture -> context for dionaea-capture.
     """
     for source_asset in all_assets:
         if source_asset.asset_id not in unlocked_asset_ids:
             continue
-        for upgrade in _upgrade_candidates(source_asset):
+        for upgrade in SelectionProfileView.from_asset(source_asset).upgrade_candidates:
             if upgrade.get("asset_id") != candidate.asset_id:
                 continue
             required_markers = [
@@ -763,17 +1038,16 @@ def _upgrade_context(
                 for marker in upgrade.get("required_markers", [])
                 if isinstance(marker, str)
             ]
-            if required_markers and not set(required_markers).intersection(matched_markers):
+            matched_required_markers = sorted(set(required_markers).intersection(matched_markers))
+            if required_markers and not matched_required_markers:
+                continue
+            if matched_required_markers and not _has_concrete_dependency_marker(matched_required_markers):
                 continue
             return {
                 "previous_backend_asset": source_asset.asset_id,
                 "upgraded_backend_asset": candidate.asset_id,
                 "public_port": upgrade.get("public_port"),
                 "reason": upgrade.get("reason", "explicit catalog upgrade candidate"),
-                "matched_markers": matched_markers,
+                "matched_markers": matched_required_markers or matched_markers,
             }
     return {}
-
-
-def _upgrade_candidates(asset: AssetDefinition) -> list[dict[str, Any]]:
-    return SelectionProfileView.from_asset(asset).upgrade_candidates

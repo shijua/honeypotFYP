@@ -147,6 +147,87 @@ def test_apply_unlock_starts_asset_with_default_settings_and_monitoring_event() 
     assert stored_records[0].asset_id == "admin-jumpbox"
 
 
+def test_apply_configure_records_configuration_and_unlocks_upgrade_target() -> None:
+    binding_service = BindingService(InMemoryBindingRepository())
+    gateway_service = GatewayService(InMemoryGatewayRouteRepository())
+    runtime_repository = InMemoryTemplateRuntimeRepository()
+    orchestrator = OrchestratorService(
+        binding_service,
+        gateway_service,
+        InMemoryAssetRepository(
+            [
+                AssetDefinition(
+                    asset_id="malware-sink",
+                    asset_name="Malware Sink",
+                    exposure_type="internal",
+                    interaction_level="medium",
+                    template_family="web-honeypot",
+                    protocols=["http"],
+                    ports=[80],
+                    default_settings={"runtime": {"backend": "mock"}},
+                    covers_tactics=["Command and Control"],
+                ),
+                AssetDefinition(
+                    asset_id="dionaea-capture",
+                    asset_name="Dionaea Capture",
+                    exposure_type="internal",
+                    interaction_level="high",
+                    template_family="malware-capture-service",
+                    protocols=["http", "smb"],
+                    ports=[80, 445],
+                    default_settings={"runtime": {"backend": "mock"}},
+                    covers_tactics=["Command and Control", "Execution"],
+                ),
+            ]
+        ),
+        MockTemplateRuntime(runtime_repository),
+    )
+    binding = binding_service.resolve(ResolveBindingRequest(attacker_key="198.51.100.54"))
+    orchestrator.apply(
+        OrchestratorApplyRequest(
+            binding_id=binding.binding_id,
+            actions=[
+                ControllerAction(
+                    action_type=ActionType.unlock,
+                    binding_id=binding.binding_id,
+                    asset_id="malware-sink",
+                    reason="start base malware sink",
+                )
+            ],
+        )
+    )
+
+    response = orchestrator.apply(
+        OrchestratorApplyRequest(
+            binding_id=binding.binding_id,
+            actions=[
+                ControllerAction(
+                    action_type=ActionType.configure,
+                    binding_id=binding.binding_id,
+                    asset_id="malware-sink",
+                    configuration_id="malware-dionaea-same-port-upgrade",
+                    target_asset_id="dionaea-capture",
+                    configuration={"kind": "same-port-high-interaction-upgrade"},
+                    reason="upgrade malware capture backend",
+                )
+            ],
+        )
+    )
+
+    assert response.binding.unlocked_assets == ["malware-sink", "dionaea-capture"]
+    assert response.binding.revealed_configurations == {
+        "malware-sink": ["malware-dionaea-same-port-upgrade"]
+    }
+    assert response.route_updates == [
+        f"binding {binding.binding_id} configures malware-sink:malware-dionaea-same-port-upgrade",
+        f"binding {binding.binding_id} exposes dionaea-capture",
+    ]
+    stored_records = tuple(runtime_repository.list_by_binding(binding.binding_id))
+    source_record = next(record for record in stored_records if record.asset_id == "malware-sink")
+    assert "malware-dionaea-same-port-upgrade" in source_record.settings["active_configurations"]
+    assert any(record.asset_id == "dionaea-capture" for record in stored_records)
+
+
 def test_recycle_then_resolve_keeps_unlocked_assets() -> None:
     binding_service = BindingService(InMemoryBindingRepository())
     gateway_service = GatewayService(InMemoryGatewayRouteRepository())

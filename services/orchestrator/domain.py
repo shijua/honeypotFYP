@@ -66,6 +66,31 @@ class OrchestratorService:
                         monitoring_events.append(
                             self._template_runtime.monitoring_event_for(runtime_record)
                         )
+            elif action.action_type == ActionType.configure and action.asset_id and action.configuration_id:
+                binding = self._binding_service.reveal_configurations(
+                    request.binding_id,
+                    {action.asset_id: [action.configuration_id]},
+                )
+                route_updates.append(
+                    f"binding {request.binding_id} configures {action.asset_id}:{action.configuration_id}"
+                )
+                runtime_record = self._apply_asset_configuration(binding, action)
+                if runtime_record is not None:
+                    runtime_events.append(runtime_record)
+                if action.target_asset_id:
+                    binding, unlock_route_updates = self._apply_unlocks(
+                        binding=binding,
+                        binding_id=request.binding_id,
+                        asset_ids=[action.target_asset_id],
+                    )
+                    route_updates.extend(unlock_route_updates)
+                    for asset_id in _new_asset_ids_from_route_updates(unlock_route_updates):
+                        runtime_record = self._start_asset_runtime(binding, asset_id)
+                        if runtime_record is not None:
+                            runtime_events.append(runtime_record)
+                            monitoring_events.append(
+                                self._template_runtime.monitoring_event_for(runtime_record)
+                            )
             elif action.action_type == ActionType.route_update:
                 route_update = (
                     f"binding {request.binding_id} route update: {action.reason}"
@@ -137,6 +162,21 @@ class OrchestratorService:
             binding.binding_id,
             asset,
             attacker_key=binding.attacker_key,
+        )
+
+    def _apply_asset_configuration(
+        self,
+        binding: BindingRecord,
+        action,
+    ) -> AssetRuntimeRecord | None:
+        """Persist runtime-visible configuration state when runtime support exists."""
+        if self._template_runtime is None or not action.asset_id or not action.configuration_id:
+            return None
+        return self._template_runtime.apply_configuration(
+            binding_id=binding.binding_id,
+            asset_id=action.asset_id,
+            configuration_id=action.configuration_id,
+            configuration=action.configuration,
         )
 
     def _asset_by_id(self, asset_id: str) -> AssetDefinition | None:

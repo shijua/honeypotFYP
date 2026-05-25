@@ -1,6 +1,6 @@
 """Domain logic for high-interaction honeypot telemetry.
 
-Conpot, Dionaea, and Honeytrap expose different raw log formats, but their role
+Dionaea and Honeytrap expose different raw log formats, but their role
 in this prototype is the same: once a same-port upgrade is active, convert real
 backend interactions into low-noise ATT&CK evidence and preserve the asset id
 that produced it.
@@ -31,7 +31,6 @@ class HighInteractionService:
     """Ingest normalized high-interaction backend events.
 
     Example:
-        Conpot modbus probe -> Discovery/T1046 plus Collection/Lateral Movement hints.
         Dionaea payload download -> Initial Access/Execution/C2 evidence.
     """
 

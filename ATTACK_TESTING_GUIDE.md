@@ -18,7 +18,6 @@ ssh -N \
   -L 127.0.0.1:18180:146.169.44.23:18080 \
   -L 127.0.0.1:18089:146.169.44.23:18081 \
   -L 127.0.0.1:18082:146.169.44.23:18082 \
-  -L 127.0.0.1:18084:146.169.44.23:18084 \
   -L 127.0.0.1:18085:146.169.44.23:18085 \
   -L 127.0.0.1:18443:146.169.44.23:18443 \
   -L 127.0.0.1:19419:146.169.44.23:19418 \
@@ -28,8 +27,6 @@ ssh -N \
   -L 127.0.0.1:12222:146.169.44.23:12222 \
   -L 127.0.0.1:12323:146.169.44.23:12323 \
   -L 127.0.0.1:12525:146.169.44.23:2525 \
-  -L 127.0.0.1:11502:146.169.44.23:1502 \
-  -L 127.0.0.1:11102:146.169.44.23:1102 \
   -L 127.0.0.1:11445:146.169.44.23:1445 \
   -L 127.0.0.1:11433:146.169.44.23:11433 \
   -L 127.0.0.1:12122:146.169.44.23:12122 \
@@ -136,7 +133,7 @@ sleep 3
 jq --arg ip "$TEST_ATTACKER_KEY" '[.routes[] | select(.attacker_key == $ip) | .asset_id] | unique' data/runtime/asset_gateway_routes.json
 ```
 
-Expected: the route list includes `internal-portal`, `finance-share`, `git-internal`, `ops-db`, `redis-cache`, `web-admin-console`, `ftp-archive`, `ssh-canary`, `legacy-telnet`, `mail-relay`, `ics-plc`, `vpn-appliance`, and `malware-sink`. Extra naturally unlocked assets may also appear if the adaptive loop already acted.
+Expected: the route list includes `internal-portal`, `finance-share`, `git-internal`, `ops-db`, `redis-cache`, `web-admin-console`, `ftp-archive`, `ssh-canary`, `legacy-telnet`, `mail-relay`, `vpn-appliance`, and `malware-sink`. Extra naturally unlocked assets may also appear if the adaptive loop already acted.
 
 ## 5. Full Internal Smoke
 
@@ -153,8 +150,6 @@ curl -i "http://146.169.44.23:18082/" || true
 curl -i "http://146.169.44.23:18082/finance/archive/2024/budget-q4-review.xlsx" || true
 curl -i "http://146.169.44.23:18082/finance/archive/2024/payroll-archive.zip" || true
 curl -i "http://146.169.44.23:18082/exports/db_backup_2024.sql.bak" || true
-curl -i "http://146.169.44.23:18084/" || true
-curl -i "http://146.169.44.23:18084/config/plc-backup-2026-04.cfg" || true
 curl -i "http://146.169.44.23:18443/" || true
 curl -i "http://146.169.44.23:18443/backup/ra-config-2026-04.bak" || true
 curl -i -u "contractor.ops:RemoteAccess-0426" "http://146.169.44.23:18443/backup/ra-config-2026-04.bak" || true
@@ -209,7 +204,6 @@ curl -s "http://146.169.44.23:8090/api/summary" | jq '{asset_gateway_routes, rec
   --asset-id ssh-canary \
   --asset-id legacy-telnet \
   --asset-id mail-relay \
-  --asset-id ics-plc \
   --asset-id vpn-appliance \
   --asset-id malware-sink \
   --require-observed
@@ -226,19 +220,14 @@ TEST_ATTACKER_KEY="$(
   curl -s "http://146.169.44.23:8090/api/summary" |
     jq -r '.recent_entrypoint_observations | .[0].attacker_key // "146.169.44.23"'
 )"
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/unlock_internal_assets_for_test.sh --assets conpot-plc,dionaea-capture,honeytrap-generic
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/unlock_internal_assets_for_test.sh --assets dionaea-capture,honeytrap-generic
 sleep 10
-jq --arg ip "$TEST_ATTACKER_KEY" '[.routes[] | select(.attacker_key == $ip and (.asset_id == "conpot-plc" or .asset_id == "dionaea-capture" or .asset_id == "honeytrap-generic")) | {asset_id, public_port, backend_host, backend_port}]' data/runtime/asset_gateway_routes.json
+jq --arg ip "$TEST_ATTACKER_KEY" '[.routes[] | select(.attacker_key == $ip and (.asset_id == "dionaea-capture" or .asset_id == "honeytrap-generic")) | {asset_id, public_port, backend_host, backend_port}]' data/runtime/asset_gateway_routes.json
 ```
 
 Probe the high-interaction routes:
 
 ```bash
-# Conpot HMI/ICS ports
-curl -i "http://146.169.44.23:18084/" || true
-printf "\x00\x01\x00\x00\x00\x06\x01\x03\x00\x00\x00\x01" | nc -w 3 146.169.44.23 1502 || true
-printf "\x03\x00\x00\x16\x11\xe0\x00\x00\x00\x01\x00\xc1\x02\x01\x00\xc2\x02\x01\x02\xc0\x01\x0a" | nc -w 3 146.169.44.23 1102 || true
-
 # Dionaea HTTP/SMB/MSSQL/FTP-facing ports
 curl -i "http://146.169.44.23:18085/downloads/agent-update.bin" || true
 printf "\x00\x00\x00\x90" | nc -w 3 146.169.44.23 1445 || true
@@ -254,7 +243,7 @@ Check:
 ```bash
 sleep 5
 curl -s "http://146.169.44.23:8090/api/summary" | jq '{recent_high_interaction_observations, high_interaction_events: .event_counts.high_interaction, attackers: [.attackers[] | {attacker_key, recent_tactics, recent_techniques, unlocked_assets}]}'
-.venv/bin/python scripts/validation/asset_telemetry.py --asset-id conpot-plc --asset-id dionaea-capture --asset-id honeytrap-generic --require-observed
+.venv/bin/python scripts/validation/asset_telemetry.py --asset-id dionaea-capture --asset-id honeytrap-generic --require-observed
 ```
 
 Expected: the three assets have runtime records, asset-gateway routes, dashboard running state, and either `recent_high_interaction_observations` or raw high-interaction/internal HTTP telemetry. If a third-party image is unavailable, the validation report should show the failed runtime instead of silently passing.

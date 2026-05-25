@@ -216,11 +216,7 @@ def evaluate_scenario(
             FileAttackGroupTechniquePriorRepository(prior_path),
             config=config,
         ).tick(request)
-        opened_assets = [
-            action.asset_id
-            for action in response.actions
-            if action.action_type == "unlock" and isinstance(action.asset_id, str)
-        ]
+        opened_assets = _controller_opened_assets(response.actions)
         decision_events = [event.model_dump(mode="json") for event in response.decision_events]
 
     reasonable = set(string_list(scenario.get("expected_reasonable_assets")))
@@ -282,7 +278,34 @@ def scenario_request(scenario: dict[str, Any]) -> ControllerTickRequest:
         binding_id=binding_id,
         profile=profile,
         unlocked_asset_ids=string_list(scenario.get("initial_unlocked_assets")),
+        revealed_configurations=_revealed_configurations(scenario.get("revealed_configurations")),
     )
+
+
+def _controller_opened_assets(actions: list[Any]) -> list[str]:
+    """Return attacker-visible assets from unlock and configure actions."""
+    opened: list[str] = []
+    for action in actions:
+        action_type = getattr(action, "action_type", None)
+        asset_id = getattr(action, "asset_id", None)
+        target_asset_id = getattr(action, "target_asset_id", None)
+        if action_type == "unlock" and isinstance(asset_id, str):
+            opened.append(asset_id)
+        if action_type == "configure":
+            exposed_asset = target_asset_id or asset_id
+            if isinstance(exposed_asset, str):
+                opened.append(exposed_asset)
+    return dedupe_preserve(opened)
+
+
+def _revealed_configurations(value: object) -> dict[str, list[str]]:
+    if not isinstance(value, dict):
+        return {}
+    return {
+        str(asset_id): string_list(config_ids)
+        for asset_id, config_ids in value.items()
+        if isinstance(asset_id, str)
+    }
 
 
 def profile_from_evidence_sequence(attacker_key: str, raw_events: object) -> ProfileSnapshot:

@@ -25,7 +25,6 @@ def test_static_internal_assets_have_nginx_runtime_and_files() -> None:
         "internal-portal": 18080,
         "web-admin-console": 18081,
         "finance-share": 18082,
-        "ics-plc": 18084,
         "vpn-appliance": 18443,
         "malware-sink": 18085,
     }
@@ -59,10 +58,6 @@ def test_static_internal_assets_include_breadcrumb_files() -> None:
         "deploy/internal-assets/finance-share/html/finance/archive/2024/payroll-archive.zip",
         "deploy/internal-assets/finance-share/html/finance/archive/2024/vendor-bank-change.csv",
         "deploy/internal-assets/finance-share/html/exports/db_backup_2024.sql.bak",
-        "deploy/internal-assets/ics-plc/html/config/plc-backup-2026-04.cfg",
-        "deploy/internal-assets/ics-plc/html/maps/modbus-unit-map.csv",
-        "deploy/internal-assets/ics-plc/html/captures/plant-span-summary.txt",
-        "deploy/internal-assets/ics-plc/html/captures/camera-index.csv",
         "deploy/internal-assets/vpn-appliance/html/backup/ra-config-2026-04.bak",
         "deploy/internal-assets/vpn-appliance/html/download/contractor-profile.ovpn",
         "deploy/internal-assets/vpn-appliance/html/logs/vpn-auth.log",
@@ -141,7 +136,6 @@ def test_static_internal_asset_ports_are_wired_to_compose_and_env() -> None:
     env_example = (ROOT / ".env.example").read_text(encoding="utf-8")
     expected = {
         "FINANCE_SHARE_PORT": 18082,
-        "ICS_PLC_PORT": 18084,
         "VPN_APPLIANCE_PORT": 18443,
         "MALWARE_SINK_PORT": 18085,
     }
@@ -165,7 +159,6 @@ def test_internal_assets_declare_public_http_unlock_signals() -> None:
         "redis-cache": "/.env.old",
         "web-admin-console": "/admin",
         "ftp-archive": "/backup/passwords_internal.txt",
-        "ics-plc": "/internal-api/status",
         "vpn-appliance": "/admin",
         "malware-sink": "public_http_exploit_probe",
     }
@@ -217,6 +210,51 @@ def test_internal_assets_declare_selection_profiles() -> None:
             assert 1 <= difficulty <= 5
 
 
+def test_configuration_variants_are_catalog_owned_and_target_existing_assets() -> None:
+    assets = _catalog_by_id()
+    catalog = MitreAttackCatalog(ROOT / "data/mitre/enterprise-attack.json")
+    expected_variant_assets = {
+        "internal-portal",
+        "git-internal",
+        "finance-share",
+        "ops-db",
+        "redis-cache",
+        "web-admin-console",
+        "vpn-appliance",
+        "malware-sink",
+        "ssh-canary",
+        "ftp-archive",
+        "legacy-telnet",
+        "mail-relay",
+        "admin-jumpbox",
+        "dionaea-capture",
+        "honeytrap-generic",
+    }
+
+    for asset in assets.values():
+        variants = asset.default_settings.get("configuration_variants", [])
+        assert isinstance(variants, list)
+        for variant in variants:
+            assert isinstance(variant["configuration_id"], str)
+            assert isinstance(variant["kind"], str)
+            assert isinstance(variant["required_markers"], list)
+            assert variant["required_markers"]
+            assert isinstance(variant["covered_techniques"], list)
+            assert variant["covered_techniques"]
+            for technique in variant["covered_techniques"]:
+                assert catalog.tactic_for_technique(technique) is not None
+            assert isinstance(variant["telemetry_value"], (int, float))
+            assert 0 <= variant["telemetry_value"] <= 1
+            assert isinstance(variant["reason"], str)
+            assert variant["reason"]
+            target_asset_id = variant.get("target_asset_id")
+            if target_asset_id is not None:
+                assert target_asset_id in assets
+
+    for asset_id in expected_variant_assets:
+        assert assets[asset_id].default_settings["configuration_variants"]
+
+
 def test_internal_asset_covered_techniques_exist_in_enterprise_attack() -> None:
     catalog = MitreAttackCatalog(ROOT / "data/mitre/enterprise-attack.json")
     assets = _catalog_by_id()
@@ -237,7 +275,6 @@ def test_web_admin_console_has_no_default_external_lab_upgrade() -> None:
 def test_high_interaction_assets_declare_real_runtime_and_gateway_ports() -> None:
     assets = _catalog_by_id()
     expected_ports = {
-        "conpot-plc": {18084, 1502, 1102},
         "dionaea-capture": {18085, 1445, 11433, 12122},
         "honeytrap-generic": {19999},
     }
@@ -252,6 +289,5 @@ def test_high_interaction_assets_declare_real_runtime_and_gateway_ports() -> Non
         assert runtime["backend"] in {"docker", "compose"}
         assert {item["requested_host_port"] for item in mappings} == public_ports
 
-    assert assets["conpot-plc"].dependencies == ["ics-plc"]
     assert assets["dionaea-capture"].dependencies == ["malware-sink"]
     assert assets["honeytrap-generic"].dependencies == ["malware-sink"]

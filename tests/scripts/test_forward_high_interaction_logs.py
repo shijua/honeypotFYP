@@ -7,13 +7,13 @@ def test_build_adapter_payload_normalizes_json_event_with_source_ip() -> None:
     payload = build_adapter_payload(
         {
             "src_ip": "198.51.100.10",
-            "dst_port": 502,
-            "function": "Read Holding Registers",
+            "dst_port": 80,
+            "message": "payload download",
         },
-        source="conpot",
-        asset_id="conpot-plc",
-        service="modbus",
-        event_type="modbus.read",
+        source="dionaea",
+        asset_id="dionaea-capture",
+        service="http",
+        event_type="download.offer",
         protocol="tcp",
         asset_routes=[],
     )
@@ -21,11 +21,11 @@ def test_build_adapter_payload_normalizes_json_event_with_source_ip() -> None:
     assert payload is not None
     event = payload["event"]
     assert isinstance(event, dict)
-    assert event["source"] == "conpot"
-    assert event["asset_id"] == "conpot-plc"
+    assert event["source"] == "dionaea"
+    assert event["asset_id"] == "dionaea-capture"
     assert event["attacker_key"] == "198.51.100.10"
-    assert event["service"] == "modbus"
-    assert event["logdata"] == {"function": "Read Holding Registers"}
+    assert event["service"] == "http"
+    assert event["logdata"] == {"message": "payload download"}
 
 
 def test_build_adapter_payload_can_attribute_source_from_asset_route() -> None:
@@ -81,4 +81,3 @@ def test_forward_lines_posts_high_interaction_payload(monkeypatch) -> None:
     assert isinstance(event, dict)
     assert event["source"] == "honeytrap"
     assert event["attacker_key"] == "198.51.100.12"
-

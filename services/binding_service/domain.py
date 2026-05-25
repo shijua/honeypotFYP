@@ -146,3 +146,37 @@ class BindingService:
             }
         )
         return self._repository.upsert(updated)
+
+    def reveal_configurations(
+        self,
+        binding_id: str,
+        configurations: dict[str, list[str]],
+    ) -> BindingRecord:
+        """Append follow-on configuration reveals without duplicating entries.
+
+        Example:
+            reveal_configurations("b1", {"git-internal": ["git-db-credential-clue"]})
+            records that the opened Git asset now exposes that extra clue.
+        """
+        existing = self._repository.get_by_binding(binding_id)
+        if existing is None:
+            raise BindingNotFoundError(binding_id)
+
+        revealed = {
+            asset_id: list(config_ids)
+            for asset_id, config_ids in existing.revealed_configurations.items()
+        }
+        for asset_id, config_ids in configurations.items():
+            bucket = revealed.setdefault(asset_id, [])
+            for config_id in config_ids:
+                if config_id not in bucket:
+                    bucket.append(config_id)
+
+        updated = existing.model_copy(
+            update={
+                "status": BindingStatus.active,
+                "last_seen_ts": utcnow(),
+                "revealed_configurations": revealed,
+            }
+        )
+        return self._repository.upsert(updated)

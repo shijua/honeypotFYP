@@ -50,6 +50,7 @@ class DecisionType(str, Enum):
 
     bind = "bind"
     unlock = "unlock"
+    configure = "configure"
     route_update = "route_update"
     recycle = "recycle"
     noop = "noop"
@@ -64,6 +65,7 @@ class ActionType(str, Enum):
 
     bind = "bind"
     unlock = "unlock"
+    configure = "configure"
     recycle = "recycle"
     route_update = "route_update"
     noop = "noop"
@@ -128,6 +130,8 @@ class BindingRecord(VersionedModel):
     volume_ref: Optional[str] = None
     # Track assets revealed for this binding.
     unlocked_assets: List[str] = Field(default_factory=list)
+    # Track follow-on configuration reveals per already-unlocked asset.
+    revealed_configurations: Dict[str, List[str]] = Field(default_factory=dict)
 
 
 class RouteResponse(VersionedModel):
@@ -374,6 +378,7 @@ class ControllerTickRequest(VersionedModel):
     # Tests may inject assets directly instead of using the catalog.
     assets: List[AssetDefinition] = Field(default_factory=list)
     unlocked_asset_ids: List[str] = Field(default_factory=list)
+    revealed_configurations: Dict[str, List[str]] = Field(default_factory=dict)
 
 
 class ControllerAction(VersionedModel):
@@ -386,6 +391,9 @@ class ControllerAction(VersionedModel):
     action_type: ActionType
     binding_id: str
     asset_id: Optional[str] = None
+    configuration_id: Optional[str] = None
+    target_asset_id: Optional[str] = None
+    configuration: Dict[str, Any] = Field(default_factory=dict)
     reason: str
 
 
@@ -747,7 +755,7 @@ class OpenCanaryIngestResponse(VersionedModel):
 
 # ---- High-interaction honeypot telemetry contracts ----
 class HighInteractionLogEvent(VersionedModel):
-    """Normalized Conpot/Dionaea/Honeytrap event accepted by the adapter.
+    """Normalized Dionaea/Honeytrap event accepted by the adapter.
 
     High-interaction backends do not share one native log schema. Forwarders
     normalize each raw line into this compact shape so the adapter can still
@@ -755,16 +763,16 @@ class HighInteractionLogEvent(VersionedModel):
 
     Example:
         {
-            "source": "conpot",
-            "asset_id": "conpot-plc",
+            "source": "dionaea",
+            "asset_id": "dionaea-capture",
             "attacker_key": "198.51.100.10",
-            "service": "modbus",
-            "event_type": "modbus.read",
-            "logdata": {"function": "Read Holding Registers"}
+            "service": "http",
+            "event_type": "download.offer",
+            "logdata": {"url": "/downloads/agent-update.bin"}
         }
     """
 
-    source: Literal["conpot", "dionaea", "honeytrap"] = Field(min_length=1)
+    source: Literal["dionaea", "honeytrap"] = Field(min_length=1)
     attacker_key: str = Field(min_length=1)
     service: str = Field(default="unknown", min_length=1)
     event_type: str = Field(default="interaction", min_length=1)

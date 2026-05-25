@@ -1,4 +1,4 @@
-"""FastAPI app for Conpot/Dionaea/Honeytrap telemetry."""
+"""FastAPI app for Dionaea/Honeytrap telemetry."""
 
 from __future__ import annotations
 
@@ -29,4 +29,3 @@ def ingest_high_interaction_event(
 ) -> HighInteractionIngestResponse:
     """Ingest one normalized high-interaction event."""
     return service.ingest(request)
-

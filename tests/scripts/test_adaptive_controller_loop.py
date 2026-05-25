@@ -114,6 +114,99 @@ def test_tick_once_applies_unlock_and_writes_decision_trace(
     ]
 
 
+def test_tick_once_applies_configuration_reveal(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    state_dir = tmp_path / "runtime"
+    state_dir.mkdir()
+    (state_dir / "bindings.json").write_text(
+        json.dumps(
+            {
+                "records": [
+                    {
+                        "attacker_key": "198.51.100.11",
+                        "binding_id": "binding-2",
+                        "unlocked_assets": ["git-internal"],
+                        "revealed_configurations": {},
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    (state_dir / "profiles.json").write_text(
+        json.dumps(
+            {
+                "profiles": {
+                    "198.51.100.11": {
+                        "attacker_key": "198.51.100.11",
+                        "recent_techniques": ["T1213"],
+                        "recent_evidence_ids": ["e-config"],
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    controller_payloads = []
+
+    def fake_post_json(url, payload, timeout_seconds):
+        if url.endswith("/v1/controller/tick"):
+            controller_payloads.append(payload)
+            return {
+                "candidate_asset_ids": ["git-internal"],
+                "actions": [
+                    {
+                        "action_type": "configure",
+                        "binding_id": "binding-2",
+                        "asset_id": "git-internal",
+                        "configuration_id": "git-db-credential-clue",
+                        "configuration": {"kind": "content"},
+                        "reason": "configure git",
+                    }
+                ],
+                "decision_events": [
+                    {
+                        "asset_added": "git-internal",
+                        "details": {
+                            "selected_technique": "T1213",
+                            "matched_dependency_markers": ["any_techniques:T1213"],
+                            "asset_group": "developer",
+                        },
+                    }
+                ],
+            }
+        return {
+            "binding": {
+                "binding_id": "binding-2",
+                "unlocked_assets": ["git-internal"],
+                "revealed_configurations": {
+                    "git-internal": ["git-db-credential-clue"]
+                },
+            },
+            "route_updates": [
+                "binding binding-2 configures git-internal:git-db-credential-clue"
+            ],
+            "runtime_events": [],
+        }
+
+    monkeypatch.setattr(adaptive_controller_loop, "post_json", fake_post_json)
+    trace_file = state_dir / "decision_trace.json"
+
+    applied = adaptive_controller_loop.tick_once(
+        state_dir=state_dir,
+        controller_url="http://controller",
+        orchestrator_url="http://orchestrator",
+        timeout_seconds=0.1,
+        trace_file=trace_file,
+    )
+
+    assert applied == 1
+    assert controller_payloads[0]["revealed_configurations"] == {}
+    trace = json.loads(trace_file.read_text(encoding="utf-8"))
+    assert trace["records"][0]["revealed_configurations_after"] == {
+        "git-internal": ["git-db-credential-clue"]
+    }
+
+
 def test_tick_once_processes_new_evidence_once_and_limits_unlock_actions(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,

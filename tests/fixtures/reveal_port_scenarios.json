@@ -100,7 +100,7 @@
   {
     "scenario_id": "mail-env-breadcrumb",
     "title": "Mail relay environment breadcrumb",
-    "expected_behavior": "Mail-related collection evidence should select mail-relay and expose SMTP port 2525.",
+    "expected_behavior": "Mail-related discovery evidence should select mail-relay and expose SMTP port 2525.",
     "attacker_key": "198.51.100.213",
     "initial_unlocked_assets": [
       "internal-portal"
@@ -116,7 +116,7 @@
     ],
     "profile": {
       "conf_by_technique": {
-        "T1114": 0.95
+        "T1087.003": 0.95
       },
       "recent_evidence_ids": [
         "sim-mail"
@@ -128,14 +128,14 @@
         "/.env.old"
       ],
       "recent_techniques": [
-        "T1114"
+        "T1087.003"
       ]
     }
   },
   {
     "scenario_id": "finance-backup-breadcrumb",
     "title": "Finance backup breadcrumb",
-    "expected_behavior": "Backup-file evidence should select finance-share and expose port 18082.",
+    "expected_behavior": "Backup-file collection evidence should select finance-share and expose port 18082.",
     "attacker_key": "198.51.100.214",
     "initial_unlocked_assets": [
       "internal-portal"
@@ -151,7 +151,7 @@
     ],
     "profile": {
       "conf_by_technique": {
-        "T1213": 0.95
+        "T1005": 0.95
       },
       "recent_evidence_ids": [
         "sim-finance"
@@ -164,14 +164,14 @@
         "/backup/db_backup_2024.sql.bak"
       ],
       "recent_techniques": [
-        "T1213"
+        "T1005"
       ]
     }
   },
   {
     "scenario_id": "ftp-backup-breadcrumb",
     "title": "FTP archive backup breadcrumb",
-    "expected_behavior": "Backup/exfil evidence should select ftp-archive and expose port 12121.",
+    "expected_behavior": "Backup/archive evidence should select ftp-archive and expose port 12121.",
     "attacker_key": "198.51.100.215",
     "initial_unlocked_assets": [
       "internal-portal"
@@ -187,7 +187,7 @@
     ],
     "profile": {
       "conf_by_technique": {
-        "T1567.002": 0.95
+        "T1039": 0.95
       },
       "recent_evidence_ids": [
         "sim-ftp"
@@ -200,14 +200,14 @@
         "/backup/db_backup_2024.sql.bak"
       ],
       "recent_techniques": [
-        "T1567.002"
+        "T1039"
       ]
     }
   },
   {
     "scenario_id": "ops-db-backup-breadcrumb",
     "title": "Operations database breadcrumb",
-    "expected_behavior": "Credential backup evidence after Git unlock should select ops-db and expose port 13306.",
+    "expected_behavior": "Database credential-use evidence after Git unlock should select ops-db and expose port 13306.",
     "attacker_key": "198.51.100.216",
     "initial_unlocked_assets": [
       "internal-portal",
@@ -224,7 +224,7 @@
     ],
     "profile": {
       "conf_by_technique": {
-        "T1552.001": 0.98
+        "T1078": 0.98
       },
       "recent_evidence_ids": [
         "sim-ops-db"
@@ -237,7 +237,7 @@
         "/backup/db_backup_2024.sql.bak"
       ],
       "recent_techniques": [
-        "T1552.001"
+        "T1078"
       ]
     }
   },
@@ -315,7 +315,7 @@
   {
     "scenario_id": "web-admin-probe",
     "title": "Web admin probe",
-    "expected_behavior": "Admin path evidence should select web-admin-console and expose port 18081.",
+    "expected_behavior": "Admin path brute-force evidence should select web-admin-console and expose port 18081.",
     "attacker_key": "198.51.100.219",
     "initial_unlocked_assets": [
       "internal-portal"
@@ -331,7 +331,7 @@
     ],
     "profile": {
       "conf_by_technique": {
-        "T1654": 0.95
+        "T1110": 0.95
       },
       "recent_evidence_ids": [
         "sim-web-admin"
@@ -343,7 +343,7 @@
         "/admin"
       ],
       "recent_techniques": [
-        "T1654"
+        "T1110"
       ]
     }
   },
@@ -383,44 +383,9 @@
     }
   },
   {
-    "scenario_id": "ics-status-probe",
-    "title": "ICS status probe",
-    "expected_behavior": "Internal API/status evidence should select ics-plc and expose port 18084.",
-    "attacker_key": "198.51.100.221",
-    "initial_unlocked_assets": [
-      "internal-portal"
-    ],
-    "expected_assets": [
-      "ics-plc"
-    ],
-    "expected_routes": [
-      {
-        "asset_id": "ics-plc",
-        "public_port": 18084
-      }
-    ],
-    "profile": {
-      "conf_by_technique": {
-        "T1125": 0.95
-      },
-      "recent_evidence_ids": [
-        "sim-ics"
-      ],
-      "recent_public_http_indicators": [
-        "path:/internal-api"
-      ],
-      "recent_public_http_paths": [
-        "/internal-api/status"
-      ],
-      "recent_techniques": [
-        "T1125"
-      ]
-    }
-  },
-  {
     "scenario_id": "malware-exploit-probe",
     "title": "Malware sink exploit probe",
-    "expected_behavior": "Exploit-shaped payload evidence should select malware-sink and expose port 18085.",
+    "expected_behavior": "Exploit-shaped transfer evidence should select malware-sink and expose port 18085.",
     "attacker_key": "198.51.100.222",
     "initial_unlocked_assets": [
       "internal-portal"
@@ -436,7 +401,7 @@
     ],
     "profile": {
       "conf_by_technique": {
-        "T1608": 0.95
+        "T1105": 0.95
       },
       "recent_evidence_ids": [
         "sim-malware"
@@ -448,14 +413,14 @@
         "public_http_exploit_probe"
       ],
       "recent_techniques": [
-        "T1608"
+        "T1105"
       ]
     }
   },
   {
     "scenario_id": "admin-jumpbox-after-git",
     "title": "Admin jumpbox after Git",
-    "expected_behavior": "Privileged shell evidence after Git unlock should select admin-jumpbox and expose port 2222.",
+    "expected_behavior": "Shell evidence after Git unlock should select admin-jumpbox and expose port 2222.",
     "attacker_key": "198.51.100.223",
     "initial_unlocked_assets": [
       "git-internal"
@@ -471,56 +436,13 @@
     ],
     "profile": {
       "conf_by_technique": {
-        "T1548.003": 0.95
+        "T1059": 0.95
       },
       "recent_evidence_ids": [
         "sim-admin-jumpbox"
       ],
       "recent_techniques": [
-        "T1548.003"
-      ]
-    }
-  },
-  {
-    "scenario_id": "conpot-plc-upgrade",
-    "title": "Conpot PLC upgrade",
-    "expected_behavior": "PLC capture evidence should upgrade to conpot-plc and expose HTTP plus Modbus/S7 ports.",
-    "attacker_key": "198.51.100.224",
-    "initial_unlocked_assets": [
-      "ics-plc"
-    ],
-    "expected_assets": [
-      "conpot-plc"
-    ],
-    "expected_routes": [
-      {
-        "asset_id": "conpot-plc",
-        "public_port": 18084
-      },
-      {
-        "asset_id": "conpot-plc",
-        "public_port": 1502
-      },
-      {
-        "asset_id": "conpot-plc",
-        "public_port": 1102
-      }
-    ],
-    "profile": {
-      "conf_by_technique": {
-        "T1040": 0.95
-      },
-      "recent_evidence_ids": [
-        "sim-conpot"
-      ],
-      "recent_internal_http_indicators": [
-        "path:.txt"
-      ],
-      "recent_internal_http_paths": [
-        "/captures/plant-span-summary.txt"
-      ],
-      "recent_techniques": [
-        "T1040"
+        "T1059"
       ]
     }
   },
@@ -555,7 +477,7 @@
     ],
     "profile": {
       "conf_by_technique": {
-        "T1204.002": 0.95
+        "T1105": 0.95
       },
       "recent_evidence_ids": [
         "sim-dionaea"
@@ -567,7 +489,7 @@
         "/downloads/agent-update.bin"
       ],
       "recent_techniques": [
-        "T1204.002"
+        "T1105"
       ]
     }
   },
@@ -606,7 +528,7 @@
   {
     "scenario_id": "web-exploit-payload-probe",
     "title": "Web exploit payload probe",
-    "expected_behavior": "Web exploit technique evidence should select malware-sink and expose port 18085.",
+    "expected_behavior": "Web exploit transfer evidence should select malware-sink and expose port 18085.",
     "attacker_key": "198.51.100.227",
     "initial_unlocked_assets": [
       "internal-portal"
@@ -622,7 +544,7 @@
     ],
     "profile": {
       "conf_by_technique": {
-        "T1190": 0.95
+        "T1105": 0.95
       },
       "recent_evidence_ids": [
         "sim-web-exploit-payload"
@@ -634,7 +556,7 @@
         "public_http_exploit_probe"
       ],
       "recent_techniques": [
-        "T1190"
+        "T1105"
       ]
     }
   },

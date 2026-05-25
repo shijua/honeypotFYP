@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -176,6 +177,7 @@ def write_runtime_latency_chart(report: dict[str, Any], path: Path) -> None:
 
 
 def _pyplot():
+    os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
     import matplotlib
 
     matplotlib.use("Agg")

@@ -525,7 +525,7 @@ def _report_high_interaction_probe(
     """Write generic TCP interaction metadata for upgraded high-interaction assets.
 
     Backend-specific sidecars can provide richer logs, but this gateway-level
-    record guarantees a TCP probe to Conpot/Dionaea/Honeytrap still creates
+    record guarantees a TCP probe to Dionaea/Honeytrap still creates
     adapter-visible telemetry during smoke tests.
     """
     if not data:
@@ -550,7 +550,6 @@ def _report_high_interaction_probe(
 
 def _high_interaction_source(asset_id: str) -> str:
     return {
-        "conpot-plc": "conpot",
         "dionaea-capture": "dionaea",
         "honeytrap-generic": "honeytrap",
     }.get(asset_id, "")
@@ -558,10 +557,7 @@ def _high_interaction_source(asset_id: str) -> str:
 
 def _high_interaction_service(route: AssetRoute) -> str:
     by_port = {
-        18084: "hmi",
         18085: "http",
-        1102: "s7",
-        1502: "modbus",
         1445: "smb",
         11433: "mssql",
         12122: "ftp",
@@ -609,7 +605,7 @@ def _parse_http_request(data: bytes) -> ParsedHttpRequest | None:
 def _should_observe_http(public_port: int) -> bool:
     raw_ports = os.environ.get(
         "HONEYPOT_ASSET_GATEWAY_HTTP_PORTS",
-        "18080,18081,18082,18084,18443,18085",
+        "18080,18081,18082,18443,18085",
     )
     return public_port in set(_parse_ports(raw_ports))
 

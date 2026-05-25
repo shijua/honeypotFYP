@@ -172,8 +172,8 @@
         "evidence_id": "mixed-e2",
         "public_http_indicator": "combined:php://filter",
         "public_http_rule": "public_http_exploit_probe",
-        "tactic": "Resource Development",
-        "technique": "T1608",
+        "tactic": "Command and Control",
+        "technique": "T1105",
         "weight": 0.9
       },
       {
@@ -247,13 +247,12 @@
     "scenario_id": "normal-source-map-git-discovery",
     "title": "Normal case: source-map discovery",
     "scenario_type": "normal",
-    "expected_behavior": "A source-map breadcrumb should reveal the internal Git service and may reveal the adjacent jumpbox as a follow-on developer path.",
+    "expected_behavior": "A source-map breadcrumb should reveal the internal Git service.",
     "initial_unlocked_assets": [
       "internal-portal"
     ],
     "expected_reasonable_assets": [
-      "git-internal",
-      "admin-jumpbox"
+      "git-internal"
     ],
     "expected_hidden_assets": [
       "ops-db",
@@ -368,16 +367,16 @@
         "evidence_id": "normal-admin-e1",
         "public_http_indicator": "path:/admin",
         "public_http_path": "/admin",
-        "tactic": "Discovery",
-        "technique": "T1654",
+        "tactic": "Credential Access",
+        "technique": "T1110",
         "weight": 0.9
       },
       {
         "evidence_id": "normal-admin-e2",
         "public_http_indicator": "path:/admin",
         "public_http_path": "/admin",
-        "tactic": "Discovery",
-        "technique": "T1046",
+        "tactic": "Defense Evasion",
+        "technique": "T1078",
         "weight": 0.7
       }
     ],
@@ -392,64 +391,14 @@
     ]
   },
   {
-    "scenario_id": "normal-ics-status-probe",
-    "title": "Normal case: internal API status probe",
-    "scenario_type": "normal",
-    "expected_behavior": "Industrial/status endpoint probing should reveal the ICS PLC surface.",
-    "initial_unlocked_assets": [
-      "internal-portal"
-    ],
-    "expected_reasonable_assets": [
-      "ics-plc"
-    ],
-    "expected_hidden_assets": [
-      "finance-share",
-      "malware-sink"
-    ],
-    "useful_followup_assets": [
-      "ics-plc"
-    ],
-    "diagnostic_followup_assets": [
-      "ics-plc"
-    ],
-    "evidence_sequence": [
-      {
-        "evidence_id": "normal-ics-e1",
-        "public_http_indicator": "path:/internal-api",
-        "public_http_path": "/internal-api/status",
-        "tactic": "Collection",
-        "technique": "T1125",
-        "weight": 0.9
-      },
-      {
-        "evidence_id": "normal-ics-e2",
-        "public_http_indicator": "path:/internal-api",
-        "public_http_path": "/internal-api/status",
-        "tactic": "Discovery",
-        "technique": "T1046",
-        "weight": 0.7
-      }
-    ],
-    "real_world_basis": "Source-derived from ATT&CK ICS-style discovery/capture concepts and adapted to the local PLC/HMI story. It is a controlled ICS surface probe, not a reproduction of a named ICS incident.",
-    "transition_basis": [
-      {
-        "from_technique": "T1046",
-        "to_technique": "T1125",
-        "source_name": "MITRE ATT&CK service discovery and capture techniques",
-        "basis": "Service/status discovery followed by camera/status capture context maps to the local ics-plc asset."
-      }
-    ]
-  },
-  {
     "scenario_id": "normal-password-ssh-canary",
     "title": "Normal case: password breadcrumb to remote access",
     "scenario_type": "normal",
-    "expected_behavior": "A password breadcrumb plus remote-access technique should reveal credential/data context and the SSH canary.",
+    "expected_behavior": "A password breadcrumb plus remote-access technique should reveal the SSH canary without prematurely opening database assets.",
     "initial_unlocked_assets": [
       "internal-portal"
     ],
     "expected_reasonable_assets": [
-      "finance-share",
       "ssh-canary"
     ],
     "expected_hidden_assets": [

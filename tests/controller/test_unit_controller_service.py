@@ -44,7 +44,10 @@ def _assets() -> list[AssetDefinition]:
                 "selection_profile": {
                     "asset_group": "portal",
                     "covered_techniques": ["T1046"],
-                    "optional_dependency_signals": {"any_techniques": ["T1046"]},
+                    "optional_dependency_signals": {
+                        "any_http_indicators": ["path:/discovery"],
+                        "any_techniques": ["T1046"],
+                    },
                     "telemetry_value": 0.6,
                 }
             },
@@ -67,12 +70,13 @@ def test_tick_prefers_exploit_then_secondary_explore() -> None:
                 attacker_key="198.51.100.30",
                 conf_by_tactic={"Credential Access": 0.9, "Discovery": 0.2},
                 conf_by_technique={"T1552.001": 0.9, "T1046": 0.5},
-                recent_tactics=["Credential Access"],
-                recent_techniques=["T1552.001", "T1046"],
-                recent_evidence_ids=["e-1"],
-            ),
+                    recent_tactics=["Credential Access"],
+                    recent_techniques=["T1552.001", "T1046"],
+                    recent_public_http_indicators=["path:/discovery"],
+                    recent_evidence_ids=["e-1"],
+                ),
+            )
         )
-    )
 
     assert [action.asset_id for action in response.actions] == [
         "asset-exploit",
@@ -189,43 +193,103 @@ def test_tick_scores_parent_and_subtechnique_family_matches() -> None:
     assert details["matched_profile_technique"] == "T1552"
 
 
-def test_tick_records_same_port_upgrade_context_for_explicit_catalog_candidate() -> None:
+def test_tick_reveals_follow_on_configuration_for_open_asset() -> None:
     assets = [
         AssetDefinition(
-            asset_id="ics-plc",
-            asset_name="ICS PLC",
+            asset_id="git-internal",
+            asset_name="Internal Git",
             exposure_type="internal",
             interaction_level="medium",
-            covers_tactics=["Discovery"],
+            covers_tactics=["Discovery", "Credential Access"],
             dependencies=[],
             default_settings={
                 "selection_profile": {
-                    "asset_group": "ics",
-                    "covered_techniques": ["T1046"],
+                    "asset_group": "developer",
+                    "covered_techniques": ["T1213"],
                     "telemetry_value": 0.8,
-                    "upgrade_candidates": [
-                        {
-                            "asset_id": "conpot-plc",
-                            "public_port": 18084,
-                            "required_markers": ["any_internal_http_paths:/captures/plant-span-summary.txt"],
-                            "reason": "upgrade static HMI to protocol-aware PLC backend",
-                        }
-                    ],
-                }
+                },
+                "configuration_variants": [
+                    {
+                        "configuration_id": "git-db-credential-clue",
+                        "kind": "content",
+                        "required_markers": ["any_techniques:T1213"],
+                        "covered_techniques": ["T1213", "T1552.001"],
+                        "telemetry_value": 0.95,
+                        "reason": "repo browsing exposes a DB credential clue",
+                    }
+                ],
+            },
+        )
+    ]
+    service = ControllerService(
+        InMemoryAssetRepository(assets),
+        InMemoryTechniquePriorRepository(),
+        config=RuntimeConfig(),
+    )
+
+    response = service.tick(
+        ControllerTickRequest(
+            attacker_key="198.51.100.36",
+            binding_id="binding-config",
+            unlocked_asset_ids=["git-internal"],
+            profile=ProfileSnapshot(
+                attacker_key="198.51.100.36",
+                conf_by_technique={"T1213": 0.95},
+                recent_techniques=["T1213"],
+                recent_evidence_ids=["e-config"],
+            ),
+        )
+    )
+
+    assert response.actions[0].action_type == "configure"
+    assert response.actions[0].asset_id == "git-internal"
+    assert response.actions[0].configuration_id == "git-db-credential-clue"
+    details = response.decision_events[0].details
+    assert details["configuration_reveal"]["configuration_id"] == "git-db-credential-clue"
+    assert details["candidate_type"] == "configuration"
+
+
+def test_tick_records_same_port_upgrade_as_configuration_reveal() -> None:
+    assets = [
+        AssetDefinition(
+            asset_id="malware-sink",
+            asset_name="Malware Sink",
+            exposure_type="internal",
+            interaction_level="medium",
+            covers_tactics=["Command and Control"],
+            dependencies=[],
+            default_settings={
+                "selection_profile": {
+                    "asset_group": "payload-transfer",
+                    "covered_techniques": ["T1105"],
+                    "telemetry_value": 0.9,
+                },
+                "configuration_variants": [
+                    {
+                        "configuration_id": "malware-dionaea-same-port-upgrade",
+                        "kind": "same-port-high-interaction-upgrade",
+                        "target_asset_id": "dionaea-capture",
+                        "public_port": 18085,
+                        "required_markers": ["any_internal_http_paths:/downloads/agent-update.bin"],
+                        "covered_techniques": ["T1105"],
+                        "telemetry_value": 1.0,
+                        "reason": "upgrade static malware sink to capture backend",
+                    }
+                ],
             },
         ),
         AssetDefinition(
-            asset_id="conpot-plc",
-            asset_name="Conpot PLC",
+            asset_id="dionaea-capture",
+            asset_name="Dionaea Capture",
             exposure_type="internal",
             interaction_level="high",
-            covers_tactics=["Discovery", "Collection"],
+            covers_tactics=["Command and Control", "Execution"],
             dependencies=[],
             default_settings={
-                "unlock_signals": {"any_internal_http_paths": ["/captures/plant-span-summary.txt"]},
+                "unlock_signals": {"any_internal_http_paths": ["/downloads/agent-update.bin"]},
                 "selection_profile": {
-                    "asset_group": "ics-protocol",
-                    "covered_techniques": ["T1040"],
+                    "asset_group": "payload-transfer-high",
+                    "covered_techniques": ["T1105"],
                     "telemetry_value": 1.0,
                 },
             },
@@ -241,22 +305,25 @@ def test_tick_records_same_port_upgrade_context_for_explicit_catalog_candidate()
         ControllerTickRequest(
             attacker_key="198.51.100.34",
             binding_id="binding-upgrade",
-            unlocked_asset_ids=["ics-plc"],
+            unlocked_asset_ids=["malware-sink"],
             profile=ProfileSnapshot(
                 attacker_key="198.51.100.34",
-                conf_by_technique={"T1040": 0.95},
-                recent_techniques=["T1040"],
-                recent_internal_http_paths=["/captures/plant-span-summary.txt"],
+                conf_by_technique={"T1105": 0.95},
+                recent_techniques=["T1105"],
+                recent_internal_http_paths=["/downloads/agent-update.bin"],
                 recent_evidence_ids=["e-upgrade"],
             ),
         )
     )
 
-    assert response.actions[0].asset_id == "conpot-plc"
+    assert response.actions[0].action_type == "configure"
+    assert response.actions[0].asset_id == "malware-sink"
+    assert response.actions[0].target_asset_id == "dionaea-capture"
+    assert response.actions[0].configuration_id == "malware-dionaea-same-port-upgrade"
     upgrade = response.decision_events[0].details["same_port_upgrade"]
-    assert upgrade["previous_backend_asset"] == "ics-plc"
-    assert upgrade["upgraded_backend_asset"] == "conpot-plc"
-    assert upgrade["public_port"] == 18084
+    assert upgrade["previous_backend_asset"] == "malware-sink"
+    assert upgrade["upgraded_backend_asset"] == "dionaea-capture"
+    assert upgrade["public_port"] == 18085
 
 
 def test_tick_can_chain_first_internal_unlock_into_file_gated_asset() -> None:

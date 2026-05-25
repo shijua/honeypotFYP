@@ -139,7 +139,7 @@ This measures control-plane overhead after the compose stack is running.
 
 ```bash
 .venv/bin/python scripts/evaluation/runtime_latency.py \
-  --assets internal-portal,finance-share,web-admin-console,ics-plc,vpn-appliance,malware-sink \
+  --assets internal-portal,finance-share,web-admin-console,vpn-appliance,malware-sink \
   --output /tmp/runtime_latency_report.json
 ```
 
@@ -147,7 +147,7 @@ Use a small smoke set when iterating:
 
 ```bash
 .venv/bin/python scripts/evaluation/runtime_latency.py \
-  --assets internal-portal,finance-share,web-admin-console,ics-plc,vpn-appliance,malware-sink \
+  --assets internal-portal,finance-share,web-admin-console,vpn-appliance,malware-sink \
   --output /tmp/runtime_latency_report.json
 ```
 

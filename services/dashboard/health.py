@@ -167,7 +167,7 @@ def build_chain_health(
                     latest_high_interaction,
                     ["source", "service", "event_type", "attacker_key"],
                 ),
-                empty_detail="adapter is up, waiting for Conpot/Dionaea/Honeytrap telemetry",
+                empty_detail="adapter is up, waiting for Dionaea/Honeytrap telemetry",
             ),
             _profile_stage(attackers, bindings, latest_decision),
             technique_prior,

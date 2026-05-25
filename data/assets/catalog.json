@@ -46,12 +46,15 @@
       "log_profile_events": true,
       "selection_profile": {
         "tactic_difficulties": {
+          "Credential Access": 2,
           "Discovery": 1,
           "Reconnaissance": 2
         },
         "reveal_outputs": [
+          "API documentation links",
           "service directory",
           "selected internal hostnames",
+          "admin-console link",
           "credential-gated links",
           "host inventory",
           "network map references",
@@ -62,11 +65,7 @@
         "covered_techniques": [
           "T1046",
           "T1083",
-          "T1018",
-          "T1049",
-          "T1592",
-          "T1595",
-          "T1590"
+          "T1018"
         ],
         "optional_dependency_signals": {
           "any_techniques": [
@@ -76,7 +75,9 @@
             "T1049",
             "T1592",
             "T1595",
-            "T1590"
+            "T1590",
+            "T1078",
+            "T1110"
           ],
           "any_http_paths": [
             "/robots.txt",
@@ -90,9 +91,53 @@
         "event_file": "internal_http_events.jsonl",
         "match": "asset_id",
         "expected_trigger": "HTTP request through the asset-gateway fixed port"
-      }
+      },
+      "configuration_variants": [
+        {
+          "configuration_id": "portal-api-directory-links",
+          "kind": "content",
+          "required_markers": [
+            "any_internal_http_paths:/directory/hosts.csv",
+            "any_internal_http_paths:/directory/network-connections.csv",
+            "any_internal_http_indicators:path:/directory"
+          ],
+          "covered_techniques": [
+            "T1046",
+            "T1083",
+            "T1018"
+          ],
+          "telemetry_value": 0.75,
+          "reveal_outputs": [
+            "API documentation links",
+            "service-directory links",
+            "host and network map references"
+          ],
+          "reason": "Internal portal browsing can justify adding richer API and service-directory links."
+        },
+        {
+          "configuration_id": "portal-admin-console-link",
+          "kind": "content",
+          "required_markers": [
+            "any_internal_http_paths:/directory/network-connections.csv",
+            "any_internal_http_indicators:path:/admin",
+            "any_techniques:T1078",
+            "any_techniques:T1110"
+          ],
+          "covered_techniques": [
+            "T1078",
+            "T1110"
+          ],
+          "telemetry_value": 0.7,
+          "reveal_outputs": [
+            "admin-console link",
+            "credential-gated navigation hint"
+          ],
+          "reason": "Portal-level admin or credential interest can justify showing an admin-console link."
+        }
+      ]
     },
     "covers_tactics": [
+      "Credential Access",
       "Discovery",
       "Reconnaissance"
     ],
@@ -175,8 +220,6 @@
         "asset_group": "data-share",
         "covered_techniques": [
           "T1005",
-          "T1552.001",
-          "T1213",
           "T1074"
         ],
         "optional_dependency_signals": {
@@ -202,7 +245,49 @@
         "event_file": "internal_http_events.jsonl",
         "match": "asset_id",
         "expected_trigger": "HTTP request through the asset-gateway fixed port"
-      }
+      },
+      "configuration_variants": [
+        {
+          "configuration_id": "finance-backup-archive-index",
+          "kind": "content",
+          "required_markers": [
+            "any_internal_http_paths:/finance/archive/2024/payroll-archive.zip",
+            "any_internal_http_indicators:path:.zip",
+            "any_techniques:T1005",
+            "any_techniques:T1074"
+          ],
+          "covered_techniques": [
+            "T1005",
+            "T1074"
+          ],
+          "telemetry_value": 0.85,
+          "reveal_outputs": [
+            "backup index",
+            "archive directory",
+            "finance export list"
+          ],
+          "reason": "Backup browsing after the share is visible can justify exposing deeper archive indexes."
+        },
+        {
+          "configuration_id": "finance-password-rotation-clue",
+          "kind": "content",
+          "required_markers": [
+            "any_internal_http_paths:/finance/archive/2024/vendor-bank-change.csv",
+            "any_internal_http_indicators:combined:password",
+            "any_techniques:T1552.001"
+          ],
+          "covered_techniques": [
+            "T1552.001"
+          ],
+          "telemetry_value": 0.9,
+          "reveal_outputs": [
+            "password-rotation note",
+            "contractor archive clue",
+            "credential reuse breadcrumb"
+          ],
+          "reason": "Repeated file-share or password-file interest can justify a credential clue inside the finance story."
+        }
+      ]
     },
     "covers_tactics": [
       "Credential Access",
@@ -286,13 +371,13 @@
           "clone URLs",
           "repository names",
           "CI configuration",
-          "deployment hostnames"
+          "deployment hostnames",
+          "database credential clues"
         ],
         "selection_notes": "Use after source-map access, Git token references, developer API paths, or .git probing.",
         "asset_group": "developer",
         "covered_techniques": [
           "T1213",
-          "T1552.001",
           "T1083"
         ],
         "optional_dependency_signals": {
@@ -306,11 +391,55 @@
           ],
           "any_techniques": [
             "T1552.001",
-            "T1083"
+            "T1083",
+            "T1078",
+            "T1110"
           ]
         },
         "telemetry_value": 0.9
       },
+      "configuration_variants": [
+        {
+          "configuration_id": "git-deployment-ci-config",
+          "kind": "content",
+          "required_markers": [
+            "any_internal_http_paths:/config/application-prod.yml",
+            "any_internal_http_paths:/k8s/values-prod.yaml",
+            "any_techniques:T1213",
+            "any_techniques:T1083"
+          ],
+          "covered_techniques": [
+            "T1213",
+            "T1083"
+          ],
+          "telemetry_value": 0.9,
+          "reveal_outputs": [
+            "deployment configuration files",
+            "CI configuration files",
+            "service host references"
+          ],
+          "reason": "Repository browsing can reveal CI and deployment configuration before planting stronger credential clues."
+        },
+        {
+          "configuration_id": "git-db-credential-clue",
+          "kind": "content",
+          "required_markers": [
+            "any_techniques:T1213",
+            "any_techniques:T1083"
+          ],
+          "covered_techniques": [
+            "T1552.001",
+            "T1078",
+            "T1110"
+          ],
+          "telemetry_value": 0.95,
+          "reveal_outputs": [
+            "fake database credential clue",
+            "ops-db credential reuse path"
+          ],
+          "reason": "Repository browsing can reveal a staged database credential clue without opening another asset immediately."
+        }
+      ],
       "planned_clone_mode": "seeded-git-daemon",
       "planned_repositories": [
         "infra-deploy",
@@ -407,14 +536,14 @@
         "reveal_outputs": [
           "database names",
           "login prompts",
+          "schema hints",
           "table-name hints"
         ],
         "selection_notes": "Use after Git or backup artifacts point toward database credentials or data access.",
         "asset_group": "database",
         "covered_techniques": [
-          "T1005",
-          "T1110",
-          "T1552.001"
+          "T1078",
+          "T1110"
         ],
         "optional_dependency_signals": {
           "any_http_paths": [
@@ -429,7 +558,8 @@
           "any_techniques": [
             "T1005",
             "T1110",
-            "T1552.001"
+            "T1552.001",
+            "T1078"
           ]
         },
         "telemetry_value": 0.9
@@ -440,7 +570,47 @@
         "match": "service",
         "service": "mysql",
         "expected_trigger": "mysql protocol probe through the asset-gateway fixed port"
-      }
+      },
+      "configuration_variants": [
+        {
+          "configuration_id": "ops-db-login-database-names",
+          "kind": "service-configuration",
+          "required_markers": [
+            "any_techniques:T1078",
+            "any_techniques:T1110",
+            "any_techniques:T1552.001"
+          ],
+          "covered_techniques": [
+            "T1078",
+            "T1110"
+          ],
+          "telemetry_value": 0.9,
+          "reveal_outputs": [
+            "database login prompt",
+            "database name list",
+            "credential reuse telemetry"
+          ],
+          "reason": "Credential clues from Git or backup material can justify exposing concrete database names and login attempts."
+        },
+        {
+          "configuration_id": "ops-db-schema-table-hints",
+          "kind": "content",
+          "required_markers": [
+            "any_techniques:T1005",
+            "any_techniques:T1078"
+          ],
+          "covered_techniques": [
+            "T1005"
+          ],
+          "telemetry_value": 0.85,
+          "reveal_outputs": [
+            "schema hints",
+            "table-name hints",
+            "query-like access prompts"
+          ],
+          "reason": "Repeated database interaction can justify schema and table-name hints as a collection test."
+        }
+      ]
     },
     "covers_tactics": [
       "Credential Access",
@@ -549,27 +719,9 @@
         "selection_notes": "Use only after SSH behaviour, admin host discovery, or strong credential reuse.",
         "asset_group": "admin-access",
         "covered_techniques": [
-          "T1021",
-          "T1021.004",
           "T1059",
-          "T1548",
-          "T1548.003",
           "T1033",
-          "T1082",
-          "T1057",
-          "T1016",
-          "T1049",
-          "T1007",
-          "T1069",
-          "T1518",
-          "T1053",
-          "T1068",
-          "T1003",
-          "T1222",
-          "T1070",
-          "T1569",
-          "T1570",
-          "T1074"
+          "T1082"
         ],
         "optional_dependency_signals": {
           "any_techniques": [
@@ -612,7 +764,54 @@
         "event_file": "cowrie_observations.json",
         "match": "asset_id",
         "expected_trigger": "SSH login or command through the asset-gateway Cowrie runtime"
-      }
+      },
+      "configuration_variants": [
+        {
+          "configuration_id": "jumpbox-interactive-discovery-shell",
+          "kind": "service-configuration",
+          "required_markers": [
+            "any_techniques:T1059",
+            "any_techniques:T1033",
+            "any_techniques:T1082"
+          ],
+          "covered_techniques": [
+            "T1059",
+            "T1033",
+            "T1082"
+          ],
+          "telemetry_value": 1,
+          "reveal_outputs": [
+            "interactive shell prompt",
+            "ordinary discovery breadcrumbs",
+            "command sequence telemetry"
+          ],
+          "reason": "Strong shell or admin-host evidence can justify an interactive discovery shell."
+        },
+        {
+          "configuration_id": "jumpbox-privilege-cleanup-breadcrumbs",
+          "kind": "content",
+          "required_markers": [
+            "any_techniques:T1548",
+            "any_techniques:T1053",
+            "any_techniques:T1070",
+            "any_techniques:T1003"
+          ],
+          "covered_techniques": [
+            "T1548",
+            "T1053",
+            "T1070",
+            "T1003"
+          ],
+          "telemetry_value": 0.95,
+          "reveal_outputs": [
+            "privilege breadcrumb",
+            "scheduled-task hint",
+            "log-cleaning hint",
+            "credential-dump probe path"
+          ],
+          "reason": "Repeated shell and privilege checks can justify deeper privilege or cleanup breadcrumbs."
+        }
+      ]
     },
     "covers_tactics": [
       "Collection",
@@ -697,8 +896,7 @@
         "asset_group": "cache",
         "covered_techniques": [
           "T1046",
-          "T1552.001",
-          "T1213"
+          "T1005"
         ],
         "optional_dependency_signals": {
           "any_http_paths": [
@@ -709,7 +907,8 @@
           ],
           "any_techniques": [
             "T1046",
-            "T1552.001"
+            "T1552.001",
+            "T1005"
           ]
         },
         "telemetry_value": 0.8
@@ -728,7 +927,30 @@
         "match": "service",
         "service": "redis",
         "expected_trigger": "redis protocol probe through the asset-gateway fixed port"
-      }
+      },
+      "configuration_variants": [
+        {
+          "configuration_id": "redis-session-key-references",
+          "kind": "content",
+          "required_markers": [
+            "any_internal_http_paths:/keys.txt",
+            "any_internal_http_indicators:combined:redis",
+            "any_techniques:T1552.001",
+            "any_techniques:T1005"
+          ],
+          "covered_techniques": [
+            "T1552.001",
+            "T1005"
+          ],
+          "telemetry_value": 0.8,
+          "reveal_outputs": [
+            "cache key references",
+            "session key names",
+            "upstream service hints"
+          ],
+          "reason": "Cache host or credential interest can justify exposing session-key details."
+        }
+      ]
     },
     "covers_tactics": [
       "Credential Access",
@@ -786,11 +1008,13 @@
       "unlock_signals": {
         "any_http_paths": [
           "/admin",
-          "/api/search"
+          "/api/search",
+          "/assets/app.js.map"
         ],
         "any_http_indicators": [
           "path:/admin",
           "path:/api",
+          "path:.map",
           "user_agent:sqlmap"
         ]
       },
@@ -817,31 +1041,19 @@
         "selection_notes": "Use after /admin, admin source-map references, API probing, or scanner user agents.",
         "asset_group": "admin-web",
         "covered_techniques": [
-          "T1110",
-          "T1190",
           "T1078",
-          "T1046",
-          "T1033",
-          "T1082",
-          "T1057",
-          "T1518",
-          "T1016",
-          "T1069",
-          "T1654",
-          "T1556",
-          "T1602",
-          "T1613",
-          "T1098",
-          "T1136"
+          "T1110"
         ],
         "optional_dependency_signals": {
           "any_http_paths": [
             "/admin",
-            "/api/search"
+            "/api/search",
+            "/assets/app.js.map"
           ],
           "any_http_indicators": [
             "path:/admin",
             "path:/api",
+            "path:.map",
             "user_agent:sqlmap"
           ],
           "any_techniques": [
@@ -869,7 +1081,55 @@
         "event_file": "internal_http_events.jsonl",
         "match": "asset_id",
         "expected_trigger": "HTTP request through the asset-gateway fixed port"
-      }
+      },
+      "configuration_variants": [
+        {
+          "configuration_id": "web-admin-login-surface",
+          "kind": "content",
+          "required_markers": [
+            "any_internal_http_paths:/login",
+            "any_internal_http_indicators:path:/admin",
+            "any_techniques:T1078",
+            "any_techniques:T1110"
+          ],
+          "covered_techniques": [
+            "T1078",
+            "T1110"
+          ],
+          "telemetry_value": 0.85,
+          "reveal_outputs": [
+            "admin login surface",
+            "account-name probing telemetry"
+          ],
+          "reason": "Admin-surface interest can justify exposing an explicit login prompt."
+        },
+        {
+          "configuration_id": "web-admin-discovery-endpoints",
+          "kind": "content",
+          "required_markers": [
+            "any_internal_http_paths:/api/inventory.json",
+            "any_internal_http_paths:/api/processes.json",
+            "any_techniques:T1082",
+            "any_techniques:T1057",
+            "any_techniques:T1069",
+            "any_techniques:T1518"
+          ],
+          "covered_techniques": [
+            "T1082",
+            "T1057",
+            "T1069",
+            "T1518"
+          ],
+          "telemetry_value": 0.9,
+          "reveal_outputs": [
+            "inventory endpoint",
+            "process endpoint",
+            "group endpoint",
+            "audit endpoint"
+          ],
+          "reason": "Admin/API browsing after login-surface interest can justify richer discovery endpoints."
+        }
+      ]
     },
     "covers_tactics": [
       "Collection",
@@ -957,10 +1217,8 @@
         "selection_notes": "Use after backup path discovery, password files, or archive-oriented behaviour.",
         "asset_group": "archive",
         "covered_techniques": [
-          "T1046",
-          "T1110",
           "T1005",
-          "T1567.002"
+          "T1039"
         ],
         "optional_dependency_signals": {
           "any_http_paths": [
@@ -974,7 +1232,8 @@
           ],
           "any_techniques": [
             "T1005",
-            "T1110"
+            "T1110",
+            "T1552.001"
           ]
         },
         "telemetry_value": 0.75
@@ -985,7 +1244,45 @@
         "match": "service",
         "service": "ftp",
         "expected_trigger": "ftp protocol probe through the asset-gateway fixed port"
-      }
+      },
+      "configuration_variants": [
+        {
+          "configuration_id": "ftp-backup-archive-directory",
+          "kind": "service-configuration",
+          "required_markers": [
+            "any_techniques:T1005",
+            "any_techniques:T1567.002"
+          ],
+          "covered_techniques": [
+            "T1005",
+            "T1567.002"
+          ],
+          "telemetry_value": 0.78,
+          "reveal_outputs": [
+            "backup-like archive directory",
+            "file-name selection telemetry"
+          ],
+          "reason": "Archive and collection interest can justify an FTP archive directory."
+        },
+        {
+          "configuration_id": "ftp-credential-protected-archive",
+          "kind": "service-configuration",
+          "required_markers": [
+            "any_techniques:T1110",
+            "any_techniques:T1552.001"
+          ],
+          "covered_techniques": [
+            "T1110",
+            "T1552.001"
+          ],
+          "telemetry_value": 0.8,
+          "reveal_outputs": [
+            "credential-protected archive prompt",
+            "password guess telemetry"
+          ],
+          "reason": "Password-file clues or repeated archive access can justify an archive authentication prompt."
+        }
+      ]
     },
     "covers_tactics": [
       "Credential Access",
@@ -1055,7 +1352,8 @@
       "selection_profile": {
         "tactic_difficulties": {
           "Credential Access": 3,
-          "Discovery": 2
+          "Discovery": 2,
+          "Lateral Movement": 3
         },
         "reveal_outputs": [
           "SSH banner",
@@ -1065,9 +1363,8 @@
         "selection_notes": "Use after leaked password files or SSH-oriented credential reuse.",
         "asset_group": "remote-access",
         "covered_techniques": [
-          "T1110",
           "T1021.004",
-          "T1046"
+          "T1110"
         ],
         "optional_dependency_signals": {
           "any_http_paths": [
@@ -1078,7 +1375,9 @@
           ],
           "any_techniques": [
             "T1110",
-            "T1021.004"
+            "T1021.004",
+            "T1021",
+            "T1078"
           ]
         },
         "telemetry_value": 0.7
@@ -1089,11 +1388,52 @@
         "match": "service",
         "service": "ssh",
         "expected_trigger": "ssh protocol probe through the asset-gateway fixed port"
-      }
+      },
+      "configuration_variants": [
+        {
+          "configuration_id": "ssh-login-banner-prompt",
+          "kind": "service-configuration",
+          "required_markers": [
+            "any_techniques:T1021.004",
+            "any_techniques:T1110",
+            "any_internal_http_indicators:combined:password"
+          ],
+          "covered_techniques": [
+            "T1021.004",
+            "T1110"
+          ],
+          "telemetry_value": 0.75,
+          "reveal_outputs": [
+            "lightweight SSH login prompt",
+            "host banner",
+            "credential attempt telemetry"
+          ],
+          "reason": "Leaked password or SSH credential-reuse interest can justify a lightweight SSH prompt."
+        },
+        {
+          "configuration_id": "ssh-jumpbox-hostname-hint",
+          "kind": "content",
+          "required_markers": [
+            "any_techniques:T1021.004",
+            "any_techniques:T1078"
+          ],
+          "covered_techniques": [
+            "T1021",
+            "T1078"
+          ],
+          "telemetry_value": 0.78,
+          "reveal_outputs": [
+            "jumpbox hostname hint",
+            "remote-access pivot clue"
+          ],
+          "reason": "Repeated SSH-specific login or valid-account reuse can justify a hint toward the jumpbox path."
+        }
+      ]
     },
     "covers_tactics": [
       "Credential Access",
-      "Discovery"
+      "Discovery",
+      "Lateral Movement"
     ],
     "dependencies": [
       "internal-portal"
@@ -1169,9 +1509,8 @@
         "selection_notes": "Use after legacy host references, password files, or broad protocol scanning.",
         "asset_group": "legacy-access",
         "covered_techniques": [
-          "T1110",
-          "T1021",
-          "T1046"
+          "T1046",
+          "T1021"
         ],
         "optional_dependency_signals": {
           "any_http_paths": [
@@ -1193,7 +1532,44 @@
         "match": "service",
         "service": "telnet",
         "expected_trigger": "telnet protocol probe through the asset-gateway fixed port"
-      }
+      },
+      "configuration_variants": [
+        {
+          "configuration_id": "telnet-legacy-device-banner",
+          "kind": "service-configuration",
+          "required_markers": [
+            "any_techniques:T1046",
+            "any_techniques:T1021"
+          ],
+          "covered_techniques": [
+            "T1046",
+            "T1021"
+          ],
+          "telemetry_value": 0.65,
+          "reveal_outputs": [
+            "legacy network-device banner",
+            "service-probing telemetry"
+          ],
+          "reason": "Legacy host references or broad service scanning can justify a Telnet banner."
+        },
+        {
+          "configuration_id": "telnet-basic-credential-prompt",
+          "kind": "service-configuration",
+          "required_markers": [
+            "any_techniques:T1110",
+            "any_internal_http_indicators:combined:password"
+          ],
+          "covered_techniques": [
+            "T1110"
+          ],
+          "telemetry_value": 0.68,
+          "reveal_outputs": [
+            "basic credential prompt",
+            "username/password attempt telemetry"
+          ],
+          "reason": "Password material or repeated Telnet probing can justify a credential prompt."
+        }
+      ]
     },
     "covers_tactics": [
       "Credential Access",
@@ -1278,10 +1654,7 @@
         "asset_group": "mail",
         "covered_techniques": [
           "T1046",
-          "T1110",
-          "T1087.001",
-          "T1005",
-          "T1114"
+          "T1087.003"
         ],
         "optional_dependency_signals": {
           "any_http_paths": [
@@ -1306,150 +1679,52 @@
         "match": "service",
         "service": "smtp",
         "expected_trigger": "SMTP probe through the asset-gateway fixed port"
-      }
+      },
+      "configuration_variants": [
+        {
+          "configuration_id": "mail-smtp-domain-hints",
+          "kind": "service-configuration",
+          "required_markers": [
+            "any_techniques:T1046",
+            "any_techniques:T1087.001"
+          ],
+          "covered_techniques": [
+            "T1046",
+            "T1087.001"
+          ],
+          "telemetry_value": 0.75,
+          "reveal_outputs": [
+            "SMTP banner",
+            "mail-domain hints",
+            "recipient probing telemetry"
+          ],
+          "reason": "Mail hostname or address-enumeration behaviour can justify SMTP domain hints."
+        },
+        {
+          "configuration_id": "mail-mailbox-archive-reference",
+          "kind": "content",
+          "required_markers": [
+            "any_techniques:T1114",
+            "any_techniques:T1110"
+          ],
+          "covered_techniques": [
+            "T1114",
+            "T1110"
+          ],
+          "telemetry_value": 0.8,
+          "reveal_outputs": [
+            "mailbox archive reference",
+            "mail login clue",
+            "mailbox path follow-up"
+          ],
+          "reason": "Leaked account or credential-reuse interest can justify mailbox/archive references."
+        }
+      ]
     },
     "covers_tactics": [
       "Credential Access",
       "Discovery",
       "Collection"
-    ],
-    "dependencies": [
-      "internal-portal"
-    ]
-  },
-  {
-    "asset_id": "ics-plc",
-    "asset_name": "Plant PLC",
-    "exposure_type": "internal",
-    "interaction_level": "high",
-    "description": "A static plant-control panel that gives ICS-interested attackers a safe internal target before any real Conpot-style runtime exists.",
-    "template_family": "ics-service",
-    "protocols": [
-      "http"
-    ],
-    "ports": [
-      80
-    ],
-    "source_refs": [
-      "mvp:static-ics-panel",
-      "planned:tpotce/conpot"
-    ],
-    "telemetry_source": "asset_runtime",
-    "default_settings": {
-      "runtime": {
-        "backend": "docker",
-        "image": "nginx:alpine",
-        "network": "{project_name}_net_internal",
-        "memory_limit": "128m",
-        "volumes": [
-          "{host_project_root}/deploy/internal-assets/ics-plc/html:/usr/share/nginx/html:ro"
-        ],
-        "port_mappings": [
-          {
-            "host": "127.0.0.1",
-            "requested_host_port": 18084,
-            "container_port": 80
-          }
-        ],
-        "healthcheck": {
-          "type": "tcp",
-          "host": "127.0.0.1",
-          "port_setting": "host_port"
-        },
-        "source": "mvp/static-ics-panel-nginx"
-      },
-      "plant_profile": "water-treatment",
-      "modbus_unit_ids": [
-        1,
-        2
-      ],
-      "image_references": [
-        "nginx:alpine"
-      ],
-      "unlock_signals": {
-        "any_http_paths": [
-          "/internal-api/status"
-        ],
-        "any_http_indicators": [
-          "path:/internal-api"
-        ]
-      },
-      "selection_profile": {
-        "tactic_difficulties": {
-          "Credential Access": 4,
-          "Discovery": 3,
-          "Reconnaissance": 3,
-          "Collection": 3,
-          "Lateral Movement": 4
-        },
-        "reveal_outputs": [
-          "PLC status paths",
-          "unit maps",
-          "plant segment references",
-          "network connection map",
-          "span-port capture summary",
-          "plant network range notes",
-          "camera monitoring index"
-        ],
-        "selection_notes": "Use after internal API status access, plant references, or ICS-shaped probing.",
-        "asset_group": "operations",
-        "covered_techniques": [
-          "T1046",
-          "T1005",
-          "T1021",
-          "T1018",
-          "T1049",
-          "T1592",
-          "T1590",
-          "T1040",
-          "T1125"
-        ],
-        "optional_dependency_signals": {
-          "any_http_paths": [
-            "/internal-api/status"
-          ],
-          "any_http_indicators": [
-            "path:/internal-api"
-          ],
-          "any_techniques": [
-            "T1046",
-            "T1005",
-            "T1018",
-            "T1049",
-            "T1592",
-            "T1590",
-            "T1040",
-            "T1125"
-          ]
-        },
-        "upgrade_candidates": [
-          {
-            "asset_id": "conpot-plc",
-            "public_port": 18084,
-            "required_markers": [
-              "any_internal_http_paths:/config/plc-backup-2026-04.cfg",
-              "any_internal_http_indicators:path:.cfg",
-              "any_techniques:T1046",
-              "any_techniques:T1021"
-            ],
-            "reason": "PLC/HMI exploration can keep the same HMI port while adding real Conpot protocol backends for Modbus and S7 probes."
-          }
-        ],
-        "telemetry_value": 0.8
-      },
-      "telemetry_validation": {
-        "kind": "asset_runtime",
-        "event_file": "internal_http_events.jsonl",
-        "match": "asset_id",
-        "expected_trigger": "HTTP request through the asset-gateway fixed port"
-      }
-    },
-    "covers_tactics": [
-      "Discovery",
-      "Credential Access",
-      "Reconnaissance",
-      "Collection",
-      "Lateral Movement"
     ],
     "dependencies": [
       "internal-portal"
@@ -1539,17 +1814,8 @@
         "selection_notes": "Use after admin references, internal portal access, VPN paths, or credential reuse.",
         "asset_group": "remote-access",
         "covered_techniques": [
-          "T1078",
-          "T1021",
-          "T1552",
-          "T1552.001",
-          "T1033",
-          "T1082",
-          "T1016",
-          "T1550",
-          "T1572",
-          "T1011",
-          "T1133"
+          "T1133",
+          "T1078"
         ],
         "optional_dependency_signals": {
           "any_http_paths": [
@@ -1582,7 +1848,52 @@
         "event_file": "internal_http_events.jsonl",
         "match": "asset_id",
         "expected_trigger": "HTTP request through the asset-gateway fixed port"
-      }
+      },
+      "configuration_variants": [
+        {
+          "configuration_id": "vpn-profile-login-clue",
+          "kind": "content",
+          "required_markers": [
+            "any_internal_http_paths:/download/contractor-profile.ovpn",
+            "any_internal_http_indicators:path:/download",
+            "any_techniques:T1078",
+            "any_techniques:T1133"
+          ],
+          "covered_techniques": [
+            "T1078",
+            "T1133"
+          ],
+          "telemetry_value": 0.85,
+          "reveal_outputs": [
+            "remote-access login clue",
+            "WireGuard/OpenVPN profile clue",
+            "credential reuse path"
+          ],
+          "reason": "Remote-access references can justify exposing a VPN profile or login clue."
+        },
+        {
+          "configuration_id": "vpn-route-policy-notes",
+          "kind": "content",
+          "required_markers": [
+            "any_internal_http_paths:/policy/tunnel-routes.txt",
+            "any_internal_http_indicators:path:/policy",
+            "any_techniques:T1016",
+            "any_techniques:T1572"
+          ],
+          "covered_techniques": [
+            "T1016",
+            "T1021",
+            "T1572"
+          ],
+          "telemetry_value": 0.8,
+          "reveal_outputs": [
+            "route-policy notes",
+            "tunnel route hints",
+            "remote-service follow-up clues"
+          ],
+          "reason": "Repeated VPN interaction can justify route-policy and tunneling details."
+        }
+      ]
     },
     "covers_tactics": [
       "Initial Access",
@@ -1651,7 +1962,13 @@
         "any_http_indicators": [
           "combined:php://filter",
           "combined:../",
-          "combined:ldap://"
+          "combined:ldap://",
+          "combined:wget",
+          "combined:curl",
+          "combined:http://",
+          "combined:https://",
+          "path:.bin",
+          "path:/upload"
         ]
       },
       "selection_profile": {
@@ -1676,19 +1993,8 @@
         "selection_notes": "Use after downloader, payload, traversal, or command-and-control shaped behaviour.",
         "asset_group": "payload-transfer",
         "covered_techniques": [
-          "T1190",
           "T1105",
-          "T1059",
-          "T1567",
-          "T1005",
-          "T1608",
-          "T1587",
-          "T1570",
-          "T1074",
-          "T1560",
-          "T1132",
-          "T1204.002",
-          "T1041"
+          "T1074"
         ],
         "optional_dependency_signals": {
           "any_http_rules": [
@@ -1697,7 +2003,13 @@
           "any_http_indicators": [
             "combined:php://filter",
             "combined:../",
-            "combined:ldap://"
+            "combined:ldap://",
+            "combined:wget",
+            "combined:curl",
+            "combined:http://",
+            "combined:https://",
+            "path:.bin",
+            "path:/upload"
           ],
           "any_techniques": [
             "T1190",
@@ -1739,6 +2051,89 @@
         ],
         "telemetry_value": 0.9
       },
+      "configuration_variants": [
+        {
+          "configuration_id": "malware-downloader-staging-directory",
+          "kind": "content",
+          "required_markers": [
+            "any_internal_http_paths:/staging/manifest.json",
+            "any_internal_http_indicators:path:.bin",
+            "any_techniques:T1105",
+            "any_techniques:T1608"
+          ],
+          "covered_techniques": [
+            "T1105",
+            "T1608"
+          ],
+          "telemetry_value": 0.85,
+          "reveal_outputs": [
+            "downloader staging directory",
+            "tool-transfer manifest",
+            "payload request metadata"
+          ],
+          "reason": "Downloader-shaped follow-up can justify a staged payload directory before high-interaction capture."
+        },
+        {
+          "configuration_id": "malware-upload-drop-endpoint",
+          "kind": "content",
+          "required_markers": [
+            "any_internal_http_paths:/upload/README.txt",
+            "any_internal_http_indicators:path:/upload",
+            "any_techniques:T1041",
+            "any_techniques:T1567"
+          ],
+          "covered_techniques": [
+            "T1105",
+            "T1041",
+            "T1567"
+          ],
+          "telemetry_value": 0.82,
+          "reveal_outputs": [
+            "upload endpoint",
+            "drop endpoint",
+            "transfer metadata"
+          ],
+          "reason": "Upload or exfiltration-shaped follow-up can justify exposing a drop endpoint."
+        },
+        {
+          "configuration_id": "malware-dionaea-same-port-upgrade",
+          "kind": "same-port-high-interaction-upgrade",
+          "target_asset_id": "dionaea-capture",
+          "public_port": 18085,
+          "required_markers": [
+            "any_internal_http_paths:/downloads/agent-update.bin",
+            "any_internal_http_indicators:path:.bin",
+            "any_techniques:T1105",
+            "any_techniques:T1204.002"
+          ],
+          "covered_techniques": [
+            "T1105",
+            "T1204.002",
+            "T1041",
+            "T1190"
+          ],
+          "telemetry_value": 1,
+          "reason": "Downloader and payload-transfer evidence can replace the static malware sink with Dionaea capture services on the same download port."
+        },
+        {
+          "configuration_id": "malware-honeytrap-generic-listener",
+          "kind": "adjacent-high-interaction-listener",
+          "target_asset_id": "honeytrap-generic",
+          "public_port": 19999,
+          "required_markers": [
+            "any_techniques:T1046",
+            "any_techniques:T1105",
+            "any_internal_http_indicators:path:.bin"
+          ],
+          "covered_techniques": [
+            "T1046",
+            "T1105",
+            "T1190"
+          ],
+          "telemetry_value": 0.95,
+          "reason": "Unknown binary transfer or generic TCP probing can reveal a generic Honeytrap listener without changing the existing malware-sink story."
+        }
+      ],
       "telemetry_validation": {
         "kind": "asset_runtime",
         "event_file": "internal_http_events.jsonl",
@@ -1758,162 +2153,6 @@
     ],
     "dependencies": [
       "internal-portal"
-    ]
-  },
-  {
-    "asset_id": "conpot-plc",
-    "asset_name": "Conpot PLC Backend",
-    "exposure_type": "internal",
-    "interaction_level": "high",
-    "description": "A Conpot-backed ICS backend used as the same-port upgrade for the plant HMI and PLC probes.",
-    "template_family": "ics-service",
-    "protocols": [
-      "http",
-      "modbus",
-      "s7"
-    ],
-    "ports": [
-      80,
-      502,
-      102
-    ],
-    "source_refs": [
-      "honeynet:conpot"
-    ],
-    "telemetry_source": "high_interaction",
-    "default_settings": {
-      "runtime": {
-        "backend": "docker",
-        "image": "honeynet/conpot:latest",
-        "network": "{project_name}_net_internal",
-        "memory_limit": "512m",
-        "pids_limit": 512,
-        "cap_drop": [
-          "ALL"
-        ],
-        "cap_add": [
-          "NET_BIND_SERVICE"
-        ],
-        "security_opt": [
-          "no-new-privileges"
-        ],
-        "volumes": [
-          "{host_project_root}/data/runtime/high_interaction/{binding_id_short}/conpot-plc:/var/log/conpot"
-        ],
-        "port_mappings": [
-          {
-            "host": "127.0.0.1",
-            "requested_host_port": 18084,
-            "container_port": 80
-          },
-          {
-            "host": "127.0.0.1",
-            "requested_host_port": 1502,
-            "container_port": 502
-          },
-          {
-            "host": "127.0.0.1",
-            "requested_host_port": 1102,
-            "container_port": 102
-          }
-        ],
-        "healthcheck": {
-          "type": "tcp",
-          "host": "127.0.0.1",
-          "port_setting": "host_port"
-        },
-        "source": "honeynet/conpot",
-        "sidecar_forwarders": [
-          {
-            "name": "conpot-forwarder",
-            "image": "python:3.10-slim",
-            "network": "{project_name}_net_control",
-            "working_dir": "/app",
-            "volumes": [
-              "{host_project_root}:/app",
-              "{host_project_root}/data/runtime/high_interaction/{binding_id_short}/conpot-plc:/runtime-logs"
-            ],
-            "command": [
-              "bash",
-              "-lc",
-              "python scripts/forwarders/high_interaction_logs.py --log-file /runtime-logs/conpot.json --adapter-url http://high-interaction-adapter:8014/v1/high-interaction/events --source conpot --asset-id conpot-plc --service modbus --event-type backend.log --asset-routes-file data/runtime/asset_gateway_routes.json --poll-seconds 0.5"
-            ]
-          }
-        ]
-      },
-      "image_references": [
-        "honeynet/conpot:latest"
-      ],
-      "real_backend": true,
-      "upgrade_source": "ics-plc",
-      "unlock_signals": {
-        "any_internal_http_paths": [
-          "/config/plc-backup-2026-04.cfg",
-          "/captures/plant-span-summary.txt"
-        ],
-        "any_internal_http_indicators": [
-          "path:.cfg",
-          "path:.txt"
-        ],
-        "any_techniques": [
-          "T1046",
-          "T1021",
-          "T1040"
-        ]
-      },
-      "selection_profile": {
-        "tactic_difficulties": {
-          "Collection": 4,
-          "Discovery": 3,
-          "Lateral Movement": 4,
-          "Reconnaissance": 3
-        },
-        "reveal_outputs": [
-          "Conpot HMI interaction",
-          "Modbus TCP register probes",
-          "S7 connection telemetry",
-          "ICS protocol source attribution"
-        ],
-        "selection_notes": "Same-port upgrade from static plant HMI after PLC config, span capture, or ICS protocol intent.",
-        "asset_group": "operations-high",
-        "upgrade_source": "ics-plc",
-        "covered_techniques": [
-          "T1046",
-          "T1021",
-          "T1005",
-          "T1040",
-          "T1018",
-          "T1049"
-        ],
-        "optional_dependency_signals": {
-          "any_internal_http_indicators": [
-            "path:.cfg",
-            "path:.txt"
-          ],
-          "any_techniques": [
-            "T1046",
-            "T1021",
-            "T1040"
-          ]
-        },
-        "telemetry_value": 1
-      },
-      "telemetry_validation": {
-        "kind": "high_interaction",
-        "event_file": "high_interaction_observations.json",
-        "match": "asset_id",
-        "source": "conpot",
-        "expected_trigger": "TCP/HTTP probe through upgraded high-interaction asset-gateway route"
-      }
-    },
-    "covers_tactics": [
-      "Collection",
-      "Discovery",
-      "Lateral Movement",
-      "Reconnaissance"
-    ],
-    "dependencies": [
-      "ics-plc"
     ]
   },
   {
@@ -2043,12 +2282,7 @@
         "asset_group": "payload-transfer-high",
         "upgrade_source": "malware-sink",
         "covered_techniques": [
-          "T1190",
-          "T1204.002",
-          "T1105",
-          "T1041",
-          "T1005",
-          "T1567"
+          "T1105"
         ],
         "optional_dependency_signals": {
           "any_internal_http_indicators": [
@@ -2069,7 +2303,50 @@
         "match": "asset_id",
         "source": "dionaea",
         "expected_trigger": "TCP/HTTP probe through upgraded high-interaction asset-gateway route"
-      }
+      },
+      "configuration_variants": [
+        {
+          "configuration_id": "dionaea-payload-capture-backend",
+          "kind": "service-configuration",
+          "required_markers": [
+            "any_techniques:T1105",
+            "any_techniques:T1204.002",
+            "any_internal_http_indicators:path:.bin"
+          ],
+          "covered_techniques": [
+            "T1105",
+            "T1204.002"
+          ],
+          "telemetry_value": 1,
+          "reveal_outputs": [
+            "payload metadata",
+            "requested filenames",
+            "transfer timing"
+          ],
+          "reason": "Download requests or binary-transfer evidence can justify payload-capture mode."
+        },
+        {
+          "configuration_id": "dionaea-protocol-capture-surface",
+          "kind": "service-configuration",
+          "required_markers": [
+            "any_techniques:T1041",
+            "any_techniques:T1567",
+            "any_techniques:T1005"
+          ],
+          "covered_techniques": [
+            "T1041",
+            "T1567",
+            "T1005"
+          ],
+          "telemetry_value": 0.95,
+          "reveal_outputs": [
+            "SMB capture surface",
+            "FTP capture surface",
+            "database-probe capture surface"
+          ],
+          "reason": "Repeated payload-transfer or protocol-specific follow-up can justify protocol capture surfaces."
+        }
+      ]
     },
     "covers_tactics": [
       "Command and Control",
@@ -2181,8 +2458,7 @@
         "upgrade_source": "malware-sink",
         "covered_techniques": [
           "T1046",
-          "T1190",
-          "T1105"
+          "T1190"
         ],
         "optional_dependency_signals": {
           "any_techniques": [
@@ -2203,7 +2479,47 @@
         "match": "asset_id",
         "source": "honeytrap",
         "expected_trigger": "TCP/HTTP probe through upgraded high-interaction asset-gateway route"
-      }
+      },
+      "configuration_variants": [
+        {
+          "configuration_id": "honeytrap-minimal-generic-banner",
+          "kind": "service-configuration",
+          "required_markers": [
+            "any_techniques:T1046",
+            "any_techniques:T1190"
+          ],
+          "covered_techniques": [
+            "T1046",
+            "T1190"
+          ],
+          "telemetry_value": 0.9,
+          "reveal_outputs": [
+            "generic TCP listener",
+            "minimal banner",
+            "first-payload metadata"
+          ],
+          "reason": "Unknown TCP probing can justify a generic listener when no protocol-specific lure fits."
+        },
+        {
+          "configuration_id": "honeytrap-payload-metadata-capture",
+          "kind": "service-configuration",
+          "required_markers": [
+            "any_techniques:T1105",
+            "any_internal_http_indicators:path:.bin",
+            "any_internal_http_indicators:path:/upload"
+          ],
+          "covered_techniques": [
+            "T1105"
+          ],
+          "telemetry_value": 0.92,
+          "reveal_outputs": [
+            "raw payload metadata",
+            "filenames",
+            "transfer direction"
+          ],
+          "reason": "Binary-transfer hints can justify payload metadata capture when no specific protocol backend is justified."
+        }
+      ]
     },
     "covers_tactics": [
       "Command and Control",

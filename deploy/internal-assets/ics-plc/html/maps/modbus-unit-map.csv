@@ -1,5 +1,0 @@
-unit_id,register,name,mode
-1,40001,inlet_pressure,read
-1,40002,pump_state,read
-2,40001,filter_pressure,read
-2,40002,valve_position,read

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Forward Conpot/Dionaea/Honeytrap logs into the high-interaction adapter.
+"""Forward Dionaea/Honeytrap logs into the high-interaction adapter.
 
 The supported raw input is intentionally broad: a JSON line is passed through
 as structured logdata, while a plain text line becomes `logdata.message`. The
@@ -257,7 +257,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Forward high-interaction honeypot logs.")
     parser.add_argument("--log-file", type=Path, required=True)
     parser.add_argument("--adapter-url", default="http://127.0.0.1:8014/v1/high-interaction/events")
-    parser.add_argument("--source", choices=["conpot", "dionaea", "honeytrap"], required=True)
+    parser.add_argument("--source", choices=["dionaea", "honeytrap"], required=True)
     parser.add_argument("--asset-id", required=True)
     parser.add_argument("--service", default="unknown")
     parser.add_argument("--event-type", default="interaction")
