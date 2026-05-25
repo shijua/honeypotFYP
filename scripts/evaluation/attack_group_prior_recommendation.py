@@ -22,6 +22,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from libs.common.config import RuntimeConfig
+from scripts.evaluation.charts import write_prior_recommendation_chart
 from scripts.evaluation.reveal_policy import load_scenarios
 from services.controller.repository import FileAttackGroupTechniquePriorRepository
 
@@ -41,6 +42,7 @@ def main() -> int:
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(f"{text}\n", encoding="utf-8")
+        write_prior_recommendation_chart(report, args.output.with_suffix(".svg"))
     else:
         print(text)
     return 0 if report["ok"] else 1
@@ -150,10 +152,12 @@ def _evaluate_trace_prefixes(
                 "scenario_id": trace["scenario_id"],
                 "technique_count": len(techniques),
                 "prefix_count": scenario_prefixes,
-                "true_positive": scenario_tp,
-                "false_positive": scenario_fp,
-                "true_negative": scenario_tn,
-                "false_negative": scenario_fn,
+                # Keep confusion-count internals out of the report; the paper-facing
+                # metrics below are recall, specificity, and accuracy.
+                # "true_positive": scenario_tp,
+                # "false_positive": scenario_fp,
+                # "true_negative": scenario_tn,
+                # "false_negative": scenario_fn,
                 "recall": _ratio(scenario_tp, scenario_tp + scenario_fn),
                 "specificity": _ratio(scenario_tn, scenario_tn + scenario_fp),
                 "accuracy": _ratio(
@@ -168,10 +172,10 @@ def _evaluate_trace_prefixes(
         "support_threshold": support_threshold,
         "degraded_reason": repository.degraded_reason,
         "prefix_count": prefix_count,
-        "true_positive": true_positive_total,
-        "false_positive": false_positive_total,
-        "true_negative": true_negative_total,
-        "false_negative": false_negative_total,
+        # "true_positive": true_positive_total,
+        # "false_positive": false_positive_total,
+        # "true_negative": true_negative_total,
+        # "false_negative": false_negative_total,
         "hit_rate_at_k": _ratio(prefix_hit_total, prefix_count),
         "recall": _ratio(true_positive_total, true_positive_total + false_negative_total),
         "specificity": _ratio(true_negative_total, true_negative_total + false_positive_total),

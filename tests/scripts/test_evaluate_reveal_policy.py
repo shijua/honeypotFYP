@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from scripts.evaluation.charts import write_reveal_policy_chart
 from scripts.evaluation.reveal_policy import evaluate_reveal_policies, load_scenarios
 
 
@@ -172,6 +173,12 @@ def test_reveal_policy_evaluator_compares_baselines(tmp_path: Path) -> None:
     assert report["policies"]["random-eligible"]["scenario_count"] == 3
     assert report["policies"]["all-open"]["hidden_violation_rate"] > 0
     assert report["policies"]["all-open"]["irrelevant_reveal_rate"] > 0
+
+    chart_path = tmp_path / "policy.svg"
+    write_reveal_policy_chart(report, chart_path)
+    chart = chart_path.read_text(encoding="utf-8")
+    assert chart.startswith("<?xml") or chart.startswith("<svg")
+    assert "Reveal Policy Comparison" in chart
 
 
 def test_reveal_policy_loader_skips_comments(tmp_path: Path) -> None:

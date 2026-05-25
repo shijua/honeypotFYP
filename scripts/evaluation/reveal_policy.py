@@ -29,6 +29,7 @@ if str(ROOT_DIR) not in sys.path:
 from libs.common.config import RuntimeConfig
 from libs.common.iterables import dedupe_preserve
 from libs.contracts.models import AssetDefinition, ControllerTickRequest, ProfileSnapshot
+from scripts.evaluation.charts import write_reveal_policy_chart
 from services.controller.domain import ControllerService
 from services.controller.repository import FileAssetRepository, FileAttackGroupTechniquePriorRepository
 
@@ -87,6 +88,7 @@ def main() -> int:
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(f"{text}\n", encoding="utf-8")
+        write_reveal_policy_chart(report, args.output.with_suffix(".svg"))
     else:
         print(text)
     return 0 if report["ok"] else 1
@@ -140,21 +142,31 @@ def evaluate_reveal_policies(
 
 
 def load_scenarios(path: Path) -> list[dict[str, Any]]:
-    """Read JSON array or JSONL scenarios, skipping blank/comment lines for JSONL.
+    """Read scenario fixtures from JSON object, JSON array, or JSONL.
 
     Example:
-        [{"scenario_id":"s1"}] -> [{"scenario_id": "s1"}]
+        {"scenarios": [{"scenario_id":"s1"}]} -> [{"scenario_id": "s1"}]
     """
     text = path.read_text(encoding="utf-8")
     stripped_text = text.strip()
-    if stripped_text.startswith("["):
-        payload = json.loads(stripped_text)
-        if not isinstance(payload, list):
-            raise ValueError(f"{path} must contain a JSON array")
-        for index, item in enumerate(payload, start=1):
-            if not isinstance(item, dict):
-                raise ValueError(f"{path}:{index} must be a JSON object")
-        return payload
+    if stripped_text.startswith(("[", "{")):
+        try:
+            payload = json.loads(stripped_text)
+        except json.JSONDecodeError:
+            payload = None
+        if payload is not None:
+            if isinstance(payload, dict):
+                raw_scenarios = payload.get("scenarios")
+                if raw_scenarios is None and payload.get("scenario_id"):
+                    raw_scenarios = [payload]
+            else:
+                raw_scenarios = payload
+            if not isinstance(raw_scenarios, list):
+                raise ValueError(f"{path} must contain a JSON array or an object with a scenarios array")
+            for index, item in enumerate(raw_scenarios, start=1):
+                if not isinstance(item, dict):
+                    raise ValueError(f"{path}:{index} must be a JSON object")
+            return raw_scenarios
 
     scenarios: list[dict[str, Any]] = []
     for line_number, line in enumerate(text.splitlines(), start=1):

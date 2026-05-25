@@ -19,6 +19,7 @@ dependencies = [
   "elasticsearch>=8.14.0,<9.0.0",
   "kubernetes>=30.1.0,<31.0.0",
   "PyYAML>=6.0.0,<7.0.0",
+  "matplotlib>=3.8.0,<4.0.0",
 ]
 
 [project.optional-dependencies]

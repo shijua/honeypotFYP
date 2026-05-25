@@ -19,8 +19,13 @@ import time
 import urllib.request
 from pathlib import Path
 from typing import Any
+import sys
+ROOT_DIR = Path(__file__).resolve().parents[2]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 from libs.common.json_utils import read_json_value
+from scripts.evaluation.charts import write_runtime_latency_chart
 
 
 DEFAULT_ASSET_GATEWAY_PORTS = "18080,19418,13306,16379,18081,12121,12222,12323,2525,18082,18084,18443,18085"
@@ -42,6 +47,7 @@ def main() -> int:
     parser.add_argument("--state-dir", default="data/runtime")
     parser.add_argument("--assets", default="", help="Comma-separated asset ids. Defaults to fixed-port Docker assets.")
     parser.add_argument("--route-timeout", type=float, default=10.0)
+    parser.add_argument("--output", type=Path)
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
@@ -74,7 +80,13 @@ def main() -> int:
         "assets": results,
         "summary": _latency_summary(results),
     }
-    print(json.dumps(report, indent=2, sort_keys=True))
+    text = json.dumps(report, indent=2, sort_keys=True)
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(f"{text}\n", encoding="utf-8")
+        write_runtime_latency_chart(report, args.output.with_suffix(".svg"))
+    else:
+        print(text)
     return 0 if all(item["ok"] for item in results) else 1
 
 

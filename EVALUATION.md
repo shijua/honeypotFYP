@@ -24,7 +24,8 @@ This checks whether the ATT&CK group prior recommends useful next techniques for
 ```bash
 .venv/bin/python scripts/evaluation/attack_group_prior_recommendation.py \
   tests/fixtures/reveal_policy_scenarios.json \
-  --prior data/technique_prior/attack_group_technique_prior.json
+  --prior data/technique_prior/attack_group_technique_prior.json \
+  --output /tmp/attack_group_prior_report.json
 ```
 
 Read these fields first:
@@ -34,11 +35,13 @@ Read these fields first:
 - `recall`: percentage of later scenario technique families that were recommended.
 - `specificity`: percentage of not-used ATT&CK technique families that were not recommended.
 - `accuracy`: percentage of ATT&CK technique families classified correctly as recommended/not recommended.
-- `true_positive`, `false_positive`, `true_negative`, `false_negative`: the aggregated confusion matrix behind those metrics.
+<!-- - `true_positive`, `false_positive`, `true_negative`, `false_negative`: the aggregated confusion matrix behind those metrics. -->
 - `source_breakdown`: per-scenario confusion matrix and recall/specificity/accuracy.
 - `degraded_reason`: why the prior could not be loaded, if any.
 
 No-reveal and boundary scenarios are excluded from prior quality scoring because they test controller restraint, not next-technique recommendation. This evaluator matches sub-techniques by parent ATT&CK technique family by default, for example `T1548.003` counts as a hit when `T1548` is recommended. It uses `RuntimeConfig.recommendation_top_k` and `RuntimeConfig.recommendation_support_threshold`, whose defaults are the fixed paper parameters `K=40` and `support_threshold=0.15`; it is not a tuning sweep.
+
+This also writes `/tmp/attack_group_prior_report.svg`, a matplotlib summary of overall prior quality and per-scenario recall.
 
 ## 2. Offline Reveal Policy Replay
 
@@ -50,6 +53,8 @@ This is the main correctness evaluation. It replays the scenario file against mu
   --policy all \
   --output /tmp/reveal_policy_report.json
 ```
+
+This also writes `/tmp/reveal_policy_report.svg`, a compact visual comparison of policy metrics. The SVG path is always the JSON output path with a `.svg` suffix.
 
 Policies compared:
 
@@ -97,6 +102,8 @@ jq '.ok, .summary' /tmp/reveal_port_controller_report.json
 
 Expected: `ok=true` and all default scenarios pass. This is the fastest way to check “will the right asset and port be selected?”
 
+This also writes `/tmp/reveal_port_controller_report.svg`, a pass/fail chart for the route checks.
+
 ## 4. Live Port Reveal
 
 This starts or uses the running compose stack, applies unlock actions, and checks the actual asset-gateway route table. It mutates `data/runtime/*.json`.
@@ -132,14 +139,16 @@ This measures control-plane overhead after the compose stack is running.
 
 ```bash
 .venv/bin/python scripts/evaluation/runtime_latency.py \
-  --assets internal-portal,finance-share,web-admin-console,ics-plc,vpn-appliance,malware-sink
+  --assets internal-portal,finance-share,web-admin-console,ics-plc,vpn-appliance,malware-sink \
+  --output /tmp/runtime_latency_report.json
 ```
 
 Use a small smoke set when iterating:
 
 ```bash
 .venv/bin/python scripts/evaluation/runtime_latency.py \
-  --assets internal-portal,finance-share
+  --assets internal-portal,finance-share,web-admin-console,ics-plc,vpn-appliance,malware-sink \
+  --output /tmp/runtime_latency_report.json
 ```
 
 Reported timings:
@@ -149,6 +158,8 @@ Reported timings:
 - runtime startup as observed by the orchestrator response
 - route visible latency in `data/runtime/asset_gateway_routes.json`
 - per-asset pass/fail plus min/p50/max
+
+This also writes `/tmp/runtime_latency_report.svg`, showing orchestrator apply time and route-visible time by asset.
 
 ## 6. Manual Smoke
 
@@ -168,10 +179,12 @@ For a normal development check, run this sequence:
 
 ```bash
 .venv/bin/python scripts/validation/attack_group_prior.py --path data/technique_prior/attack_group_technique_prior.json
-.venv/bin/python scripts/evaluation/attack_group_prior_recommendation.py tests/fixtures/reveal_policy_scenarios.json --prior data/technique_prior/attack_group_technique_prior.json
+.venv/bin/python scripts/evaluation/attack_group_prior_recommendation.py tests/fixtures/reveal_policy_scenarios.json --prior data/technique_prior/attack_group_technique_prior.json --output /tmp/attack_group_prior_report.json
 .venv/bin/python scripts/evaluation/reveal_policy.py tests/fixtures/reveal_policy_scenarios.json --policy all --output /tmp/reveal_policy_report.json
 .venv/bin/python scripts/evaluation/reveal_port_simulation.py --mode controller-only --scenario-file tests/fixtures/reveal_port_scenarios.json --output /tmp/reveal_port_controller_report.json
 docker-compose -p honeynet -f docker-compose.control.yml -f docker-compose.enterprise.yml config
 ```
+
+Each evaluation command with `--output` writes the JSON report plus a sibling matplotlib SVG with the same filename stem.
 
 Then run live-apply and latency only when Docker images and ports are available.

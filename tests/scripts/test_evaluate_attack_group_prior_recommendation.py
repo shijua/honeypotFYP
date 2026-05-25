@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from libs.common.config import RuntimeConfig
+from scripts.evaluation.charts import write_prior_recommendation_chart
 from scripts.evaluation.attack_group_prior_recommendation import evaluate_prior_recommendations
 
 
@@ -69,15 +70,15 @@ def test_attack_group_prior_recommendation_reports_default_paper_metrics(
     assert report["evaluation_match"] == "technique_family"
     assert report["technique_family_universe_size"] == 4
     assert metrics["prefix_count"] == 2
-    assert metrics["true_positive"] == 3
-    assert metrics["false_positive"] == 0
-    assert metrics["true_negative"] == 2
-    assert metrics["false_negative"] == 0
     assert metrics["hit_rate_at_k"] == 1.0
     assert metrics["recall"] == 1.0
     assert metrics["specificity"] == 1.0
     assert metrics["accuracy"] == 1.0
     assert metrics["source_breakdown"][0]["recall"] == 1.0
+
+    chart_path = tmp_path / "prior.svg"
+    write_prior_recommendation_chart(report, chart_path)
+    assert "ATT&amp;CK Group Prior Recommendation" in chart_path.read_text(encoding="utf-8")
 
 
 def test_attack_group_prior_recommendation_reports_degraded_missing_prior(
@@ -213,8 +214,6 @@ def test_attack_group_prior_recommendation_matches_subtechnique_family(
     )
 
     metrics = report["metrics"]
-    assert metrics["true_positive"] == 1
-    assert metrics["false_negative"] == 0
     assert metrics["recall"] == 1.0
 
 

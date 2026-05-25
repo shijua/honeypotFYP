@@ -27,6 +27,7 @@ if str(ROOT_DIR) not in sys.path:
 from libs.common.config import RuntimeConfig
 from libs.common.json_utils import read_json_object
 from libs.contracts.models import ActionType, ControllerTickRequest
+from scripts.evaluation.charts import write_reveal_port_chart
 from scripts.evaluation.reveal_policy import load_scenarios, scenario_request, string_list
 from services.controller.domain import ControllerService
 from services.controller.repository import FileAssetRepository, FileAttackGroupTechniquePriorRepository
@@ -57,6 +58,7 @@ def main() -> int:
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(f"{text}\n", encoding="utf-8")
+        write_reveal_port_chart(report, args.output.with_suffix(".svg"))
     print(text)
     return 0 if report["ok"] else 1
 

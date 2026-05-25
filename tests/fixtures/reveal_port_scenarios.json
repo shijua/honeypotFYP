@@ -1,6 +1,10 @@
 [
   {
+    "scenario_id": "bootstrap-internal-portal",
+    "title": "Bootstrap internal portal",
+    "expected_behavior": "Public evidence should unlock the first internal discovery portal on port 18080.",
     "attacker_key": "198.51.100.210",
+    "initial_unlocked_assets": [],
     "expected_assets": [
       "internal-portal"
     ],
@@ -10,7 +14,6 @@
         "public_port": 18080
       }
     ],
-    "initial_unlocked_assets": [],
     "profile": {
       "conf_by_technique": {
         "T1083": 0.8
@@ -21,11 +24,16 @@
       "recent_techniques": [
         "T1083"
       ]
-    },
-    "scenario_id": "bootstrap-internal-portal"
+    }
   },
   {
+    "scenario_id": "git-env-breadcrumb",
+    "title": "Git source-map breadcrumb",
+    "expected_behavior": "Source-map evidence should select git-internal and expose port 19418.",
     "attacker_key": "198.51.100.211",
+    "initial_unlocked_assets": [
+      "internal-portal"
+    ],
     "expected_assets": [
       "git-internal"
     ],
@@ -34,9 +42,6 @@
         "asset_id": "git-internal",
         "public_port": 19418
       }
-    ],
-    "initial_unlocked_assets": [
-      "internal-portal"
     ],
     "profile": {
       "conf_by_technique": {
@@ -54,11 +59,17 @@
       "recent_techniques": [
         "T1083"
       ]
-    },
-    "scenario_id": "git-env-breadcrumb"
+    }
   },
   {
+    "scenario_id": "redis-env-breadcrumb",
+    "title": "Redis environment breadcrumb",
+    "expected_behavior": "Environment-file evidence after Git unlock should select redis-cache and expose port 16379.",
     "attacker_key": "198.51.100.212",
+    "initial_unlocked_assets": [
+      "internal-portal",
+      "git-internal"
+    ],
     "expected_assets": [
       "redis-cache"
     ],
@@ -67,10 +78,6 @@
         "asset_id": "redis-cache",
         "public_port": 16379
       }
-    ],
-    "initial_unlocked_assets": [
-      "internal-portal",
-      "git-internal"
     ],
     "profile": {
       "conf_by_technique": {
@@ -88,11 +95,16 @@
       "recent_techniques": [
         "T1046"
       ]
-    },
-    "scenario_id": "redis-env-breadcrumb"
+    }
   },
   {
+    "scenario_id": "mail-env-breadcrumb",
+    "title": "Mail relay environment breadcrumb",
+    "expected_behavior": "Mail-related collection evidence should select mail-relay and expose SMTP port 2525.",
     "attacker_key": "198.51.100.213",
+    "initial_unlocked_assets": [
+      "internal-portal"
+    ],
     "expected_assets": [
       "mail-relay"
     ],
@@ -101,9 +113,6 @@
         "asset_id": "mail-relay",
         "public_port": 2525
       }
-    ],
-    "initial_unlocked_assets": [
-      "internal-portal"
     ],
     "profile": {
       "conf_by_technique": {
@@ -121,11 +130,16 @@
       "recent_techniques": [
         "T1114"
       ]
-    },
-    "scenario_id": "mail-env-breadcrumb"
+    }
   },
   {
+    "scenario_id": "finance-backup-breadcrumb",
+    "title": "Finance backup breadcrumb",
+    "expected_behavior": "Backup-file evidence should select finance-share and expose port 18082.",
     "attacker_key": "198.51.100.214",
+    "initial_unlocked_assets": [
+      "internal-portal"
+    ],
     "expected_assets": [
       "finance-share"
     ],
@@ -134,9 +148,6 @@
         "asset_id": "finance-share",
         "public_port": 18082
       }
-    ],
-    "initial_unlocked_assets": [
-      "internal-portal"
     ],
     "profile": {
       "conf_by_technique": {
@@ -155,11 +166,16 @@
       "recent_techniques": [
         "T1213"
       ]
-    },
-    "scenario_id": "finance-backup-breadcrumb"
+    }
   },
   {
+    "scenario_id": "ftp-backup-breadcrumb",
+    "title": "FTP archive backup breadcrumb",
+    "expected_behavior": "Backup/exfil evidence should select ftp-archive and expose port 12121.",
     "attacker_key": "198.51.100.215",
+    "initial_unlocked_assets": [
+      "internal-portal"
+    ],
     "expected_assets": [
       "ftp-archive"
     ],
@@ -168,9 +184,6 @@
         "asset_id": "ftp-archive",
         "public_port": 12121
       }
-    ],
-    "initial_unlocked_assets": [
-      "internal-portal"
     ],
     "profile": {
       "conf_by_technique": {
@@ -189,11 +202,17 @@
       "recent_techniques": [
         "T1567.002"
       ]
-    },
-    "scenario_id": "ftp-backup-breadcrumb"
+    }
   },
   {
+    "scenario_id": "ops-db-backup-breadcrumb",
+    "title": "Operations database breadcrumb",
+    "expected_behavior": "Credential backup evidence after Git unlock should select ops-db and expose port 13306.",
     "attacker_key": "198.51.100.216",
+    "initial_unlocked_assets": [
+      "internal-portal",
+      "git-internal"
+    ],
     "expected_assets": [
       "ops-db"
     ],
@@ -202,10 +221,6 @@
         "asset_id": "ops-db",
         "public_port": 13306
       }
-    ],
-    "initial_unlocked_assets": [
-      "internal-portal",
-      "git-internal"
     ],
     "profile": {
       "conf_by_technique": {
@@ -224,11 +239,16 @@
       "recent_techniques": [
         "T1552.001"
       ]
-    },
-    "scenario_id": "ops-db-backup-breadcrumb"
+    }
   },
   {
+    "scenario_id": "ssh-password-breadcrumb",
+    "title": "SSH password breadcrumb",
+    "expected_behavior": "Password evidence with SSH remote-access technique should select ssh-canary and expose port 12222.",
     "attacker_key": "198.51.100.217",
+    "initial_unlocked_assets": [
+      "internal-portal"
+    ],
     "expected_assets": [
       "ssh-canary"
     ],
@@ -237,9 +257,6 @@
         "asset_id": "ssh-canary",
         "public_port": 12222
       }
-    ],
-    "initial_unlocked_assets": [
-      "internal-portal"
     ],
     "profile": {
       "conf_by_technique": {
@@ -257,11 +274,17 @@
       "recent_techniques": [
         "T1021.004"
       ]
-    },
-    "scenario_id": "ssh-password-breadcrumb"
+    }
   },
   {
+    "scenario_id": "telnet-password-breadcrumb",
+    "title": "Legacy Telnet breadcrumb",
+    "expected_behavior": "Password evidence after SSH canary unlock should select legacy-telnet and expose port 12323.",
     "attacker_key": "198.51.100.218",
+    "initial_unlocked_assets": [
+      "internal-portal",
+      "ssh-canary"
+    ],
     "expected_assets": [
       "legacy-telnet"
     ],
@@ -270,10 +293,6 @@
         "asset_id": "legacy-telnet",
         "public_port": 12323
       }
-    ],
-    "initial_unlocked_assets": [
-      "internal-portal",
-      "ssh-canary"
     ],
     "profile": {
       "conf_by_technique": {
@@ -291,11 +310,16 @@
       "recent_techniques": [
         "T1021"
       ]
-    },
-    "scenario_id": "telnet-password-breadcrumb"
+    }
   },
   {
+    "scenario_id": "web-admin-probe",
+    "title": "Web admin probe",
+    "expected_behavior": "Admin path evidence should select web-admin-console and expose port 18081.",
     "attacker_key": "198.51.100.219",
+    "initial_unlocked_assets": [
+      "internal-portal"
+    ],
     "expected_assets": [
       "web-admin-console"
     ],
@@ -304,9 +328,6 @@
         "asset_id": "web-admin-console",
         "public_port": 18081
       }
-    ],
-    "initial_unlocked_assets": [
-      "internal-portal"
     ],
     "profile": {
       "conf_by_technique": {
@@ -324,11 +345,16 @@
       "recent_techniques": [
         "T1654"
       ]
-    },
-    "scenario_id": "web-admin-probe"
+    }
   },
   {
+    "scenario_id": "vpn-admin-probe",
+    "title": "VPN admin probe",
+    "expected_behavior": "External remote-service evidence should select vpn-appliance and expose port 18443.",
     "attacker_key": "198.51.100.220",
+    "initial_unlocked_assets": [
+      "internal-portal"
+    ],
     "expected_assets": [
       "vpn-appliance"
     ],
@@ -337,9 +363,6 @@
         "asset_id": "vpn-appliance",
         "public_port": 18443
       }
-    ],
-    "initial_unlocked_assets": [
-      "internal-portal"
     ],
     "profile": {
       "conf_by_technique": {
@@ -357,11 +380,16 @@
       "recent_techniques": [
         "T1133"
       ]
-    },
-    "scenario_id": "vpn-admin-probe"
+    }
   },
   {
+    "scenario_id": "ics-status-probe",
+    "title": "ICS status probe",
+    "expected_behavior": "Internal API/status evidence should select ics-plc and expose port 18084.",
     "attacker_key": "198.51.100.221",
+    "initial_unlocked_assets": [
+      "internal-portal"
+    ],
     "expected_assets": [
       "ics-plc"
     ],
@@ -370,9 +398,6 @@
         "asset_id": "ics-plc",
         "public_port": 18084
       }
-    ],
-    "initial_unlocked_assets": [
-      "internal-portal"
     ],
     "profile": {
       "conf_by_technique": {
@@ -390,11 +415,16 @@
       "recent_techniques": [
         "T1125"
       ]
-    },
-    "scenario_id": "ics-status-probe"
+    }
   },
   {
+    "scenario_id": "malware-exploit-probe",
+    "title": "Malware sink exploit probe",
+    "expected_behavior": "Exploit-shaped payload evidence should select malware-sink and expose port 18085.",
     "attacker_key": "198.51.100.222",
+    "initial_unlocked_assets": [
+      "internal-portal"
+    ],
     "expected_assets": [
       "malware-sink"
     ],
@@ -403,9 +433,6 @@
         "asset_id": "malware-sink",
         "public_port": 18085
       }
-    ],
-    "initial_unlocked_assets": [
-      "internal-portal"
     ],
     "profile": {
       "conf_by_technique": {
@@ -423,11 +450,16 @@
       "recent_techniques": [
         "T1608"
       ]
-    },
-    "scenario_id": "malware-exploit-probe"
+    }
   },
   {
+    "scenario_id": "admin-jumpbox-after-git",
+    "title": "Admin jumpbox after Git",
+    "expected_behavior": "Privileged shell evidence after Git unlock should select admin-jumpbox and expose port 2222.",
     "attacker_key": "198.51.100.223",
+    "initial_unlocked_assets": [
+      "git-internal"
+    ],
     "expected_assets": [
       "admin-jumpbox"
     ],
@@ -436,9 +468,6 @@
         "asset_id": "admin-jumpbox",
         "public_port": 2222
       }
-    ],
-    "initial_unlocked_assets": [
-      "git-internal"
     ],
     "profile": {
       "conf_by_technique": {
@@ -450,11 +479,16 @@
       "recent_techniques": [
         "T1548.003"
       ]
-    },
-    "scenario_id": "admin-jumpbox-after-git"
+    }
   },
   {
+    "scenario_id": "conpot-plc-upgrade",
+    "title": "Conpot PLC upgrade",
+    "expected_behavior": "PLC capture evidence should upgrade to conpot-plc and expose HTTP plus Modbus/S7 ports.",
     "attacker_key": "198.51.100.224",
+    "initial_unlocked_assets": [
+      "ics-plc"
+    ],
     "expected_assets": [
       "conpot-plc"
     ],
@@ -472,9 +506,6 @@
         "public_port": 1102
       }
     ],
-    "initial_unlocked_assets": [
-      "ics-plc"
-    ],
     "profile": {
       "conf_by_technique": {
         "T1040": 0.95
@@ -491,11 +522,16 @@
       "recent_techniques": [
         "T1040"
       ]
-    },
-    "scenario_id": "conpot-plc-upgrade"
+    }
   },
   {
+    "scenario_id": "dionaea-malware-upgrade",
+    "title": "Dionaea malware upgrade",
+    "expected_behavior": "Downloaded payload evidence should upgrade malware-sink to dionaea-capture and expose malware-capture ports.",
     "attacker_key": "198.51.100.225",
+    "initial_unlocked_assets": [
+      "malware-sink"
+    ],
     "expected_assets": [
       "dionaea-capture"
     ],
@@ -517,9 +553,6 @@
         "public_port": 12122
       }
     ],
-    "initial_unlocked_assets": [
-      "malware-sink"
-    ],
     "profile": {
       "conf_by_technique": {
         "T1204.002": 0.95
@@ -536,11 +569,16 @@
       "recent_techniques": [
         "T1204.002"
       ]
-    },
-    "scenario_id": "dionaea-malware-upgrade"
+    }
   },
   {
+    "scenario_id": "honeytrap-generic-probe",
+    "title": "Honeytrap generic probe",
+    "expected_behavior": "Generic transfer/probe evidence should select honeytrap-generic and expose port 19999.",
     "attacker_key": "198.51.100.226",
+    "initial_unlocked_assets": [
+      "malware-sink"
+    ],
     "expected_assets": [
       "honeytrap-generic"
     ],
@@ -549,9 +587,6 @@
         "asset_id": "honeytrap-generic",
         "public_port": 19999
       }
-    ],
-    "initial_unlocked_assets": [
-      "malware-sink"
     ],
     "profile": {
       "conf_by_technique": {
@@ -566,11 +601,16 @@
       "recent_techniques": [
         "T1046"
       ]
-    },
-    "scenario_id": "honeytrap-generic-probe"
+    }
   },
   {
+    "scenario_id": "web-exploit-payload-probe",
+    "title": "Web exploit payload probe",
+    "expected_behavior": "Web exploit technique evidence should select malware-sink and expose port 18085.",
     "attacker_key": "198.51.100.227",
+    "initial_unlocked_assets": [
+      "internal-portal"
+    ],
     "expected_assets": [
       "malware-sink"
     ],
@@ -579,9 +619,6 @@
         "asset_id": "malware-sink",
         "public_port": 18085
       }
-    ],
-    "initial_unlocked_assets": [
-      "internal-portal"
     ],
     "profile": {
       "conf_by_technique": {
@@ -599,11 +636,16 @@
       "recent_techniques": [
         "T1190"
       ]
-    },
-    "scenario_id": "web-exploit-payload-probe"
+    }
   },
   {
+    "scenario_id": "generic-transfer-honeytrap",
+    "title": "Generic transfer honeytrap",
+    "expected_behavior": "Generic upload/transfer evidence should select honeytrap-generic and expose port 19999.",
     "attacker_key": "198.51.100.228",
+    "initial_unlocked_assets": [
+      "malware-sink"
+    ],
     "expected_assets": [
       "honeytrap-generic"
     ],
@@ -612,9 +654,6 @@
         "asset_id": "honeytrap-generic",
         "public_port": 19999
       }
-    ],
-    "initial_unlocked_assets": [
-      "malware-sink"
     ],
     "profile": {
       "conf_by_technique": {
@@ -629,7 +668,6 @@
       "recent_techniques": [
         "T1046"
       ]
-    },
-    "scenario_id": "generic-transfer-honeytrap"
+    }
   }
 ]

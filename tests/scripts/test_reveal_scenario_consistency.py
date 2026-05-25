@@ -27,6 +27,8 @@ def test_reveal_policy_scenarios_reference_existing_assets_and_covered_technique
     }.issubset({item.get("scenario_type") for item in scenarios})
 
     for scenario in scenarios:
+        assert isinstance(scenario.get("real_world_basis"), str) and scenario["real_world_basis"], scenario["scenario_id"]
+        assert _has_transition_basis(scenario), scenario["scenario_id"]
         expected_assets = _strings(scenario.get("expected_reasonable_assets"))
         hidden_assets = _strings(scenario.get("expected_hidden_assets"))
         for asset_id in [*expected_assets, *hidden_assets, *_strings(scenario.get("useful_followup_assets"))]:
@@ -96,3 +98,17 @@ def _strings(value: object) -> list[str]:
 
 def _same_family(left: str, right: str) -> bool:
     return left.split(".", 1)[0] == right.split(".", 1)[0]
+
+
+def _has_transition_basis(scenario: dict[str, Any]) -> bool:
+    transitions = scenario.get("transition_basis")
+    if not isinstance(transitions, list) or not transitions:
+        return False
+    return all(
+        isinstance(item, dict)
+        and isinstance(item.get("from_technique"), str)
+        and isinstance(item.get("to_technique"), str)
+        and isinstance(item.get("source_name"), str)
+        and isinstance(item.get("basis"), str)
+        for item in transitions
+    )

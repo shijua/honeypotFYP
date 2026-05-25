@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 
+from scripts.evaluation.charts import write_reveal_port_chart
 from scripts.evaluation.reveal_port_simulation import (
     ControlPlaneClient,
     evaluate_reveal_port_scenario,
@@ -228,6 +229,10 @@ def test_report_fails_when_expected_route_is_missing(tmp_path: Path) -> None:
     assert report["ok"] is False
     assert report["summary"]["failed"] == 1
     assert report["scenarios"][0]["failure_reason"] == "missing route finance-share:18083"
+
+    chart_path = tmp_path / "ports.svg"
+    write_reveal_port_chart(report, chart_path)
+    assert "Reveal Port Simulation" in chart_path.read_text(encoding="utf-8")
 
 
 class FakeControlPlaneClient(ControlPlaneClient):
