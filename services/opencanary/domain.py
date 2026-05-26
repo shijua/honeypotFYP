@@ -55,7 +55,11 @@ _REDIS_COLLECTION_COMMANDS = {
 }
 _REDIS_CREDENTIAL_COMMANDS = {"AUTH", "CONFIG"}
 _SMTP_CREDENTIAL_COMMANDS = {"AUTH"}
-_SMTP_DISCOVERY_COMMANDS = {"EHLO", "EXPN", "HELO", "MAIL", "RCPT", "VRFY"}
+_SMTP_DISCOVERY_COMMANDS = {"EHLO", "HELO"}
+_SMTP_ACCOUNT_DISCOVERY_COMMANDS = {"EXPN", "RCPT", "VRFY"}
+_FTP_EXFIL_COMMANDS = {"APPE", "PUT", "STOR", "STOU", "UPLOAD"}
+_FTP_COLLECTION_COMMANDS = {"GET", "MGET", "RETR"}
+_FTP_DISCOVERY_COMMANDS = {"CWD", "FEAT", "LIST", "MLSD", "NLST", "PWD", "SYST"}
 
 
 class OpenCanaryService:
@@ -187,6 +191,15 @@ def _profile_tags(
         ftp USER/PASS -> ["mitre_credential_access", "T1110", "mitre_lateral_movement", "T1021", ...]
     """
     base_tags = ["opencanary", f"opencanary_{service}"]
+    if service == "ftp":
+        return dedupe_preserve([
+            *_ftp_tags(
+                event.logdata,
+                password_seen=password_seen,
+                username=username,
+            ),
+            *base_tags,
+        ])
     if _is_login_probe(
         event=event,
         service=service,
@@ -196,6 +209,8 @@ def _profile_tags(
         behavior_tags = ["mitre_credential_access", "T1110"]
         if service in _LATERAL_LOGIN_SERVICES:
             behavior_tags.extend(["mitre_lateral_movement", "T1021"])
+        if service == "ssh":
+            behavior_tags.append("T1021.004")
         return dedupe_preserve([*behavior_tags, *base_tags])
     if service == "git":
         return dedupe_preserve([
@@ -256,13 +271,44 @@ def _smtp_tags(logdata: dict[str, Any]) -> list[str]:
     """Map SMTP command probes to low-noise ATT&CK tags.
 
     Example:
-        COMMANDS=["VRFY"] -> Discovery/T1046
-        COMMANDS=["AUTH"] -> Credential Access/T1110
+        COMMANDS=["HELO"] -> Discovery/T1046
+        COMMANDS=["VRFY"] -> Discovery/T1087.003
     """
     tags: list[str] = []
     if _has_any_command(logdata, _SMTP_CREDENTIAL_COMMANDS):
         tags.extend(["mitre_credential_access", "T1110"])
-    if not tags or _has_any_command(logdata, _SMTP_DISCOVERY_COMMANDS):
+    if _has_any_command(logdata, _SMTP_ACCOUNT_DISCOVERY_COMMANDS):
+        tags.extend(["mitre_discovery", "T1087.003"])
+    elif not tags or _has_any_command(logdata, _SMTP_DISCOVERY_COMMANDS):
+        tags.extend(["mitre_discovery", "T1046"])
+    return tags
+
+
+def _ftp_tags(
+    logdata: dict[str, Any],
+    *,
+    password_seen: bool,
+    username: str | None,
+) -> list[str]:
+    """Map FTP auth, listing, download, and upload events separately.
+
+    Example:
+        USER/PASS -> Credential Access/T1110 plus Lateral Movement/T1021
+        COMMAND=STOR -> Exfiltration/T1567.002
+    """
+    tags: list[str] = []
+    if password_seen or username:
+        tags.extend([
+            "mitre_credential_access",
+            "T1110",
+            "mitre_lateral_movement",
+            "T1021",
+        ])
+    if _has_any_command(logdata, _FTP_EXFIL_COMMANDS):
+        tags.extend(["mitre_exfiltration", "T1567.002"])
+    elif _has_any_command(logdata, _FTP_COLLECTION_COMMANDS):
+        tags.extend(["mitre_collection", "T1039"])
+    elif not tags or _has_any_command(logdata, _FTP_DISCOVERY_COMMANDS):
         tags.extend(["mitre_discovery", "T1046"])
     return tags
 

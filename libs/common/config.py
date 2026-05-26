@@ -32,9 +32,9 @@ class RuntimeConfig:
     feedback_window_seconds: int = 300
     reveal_feedback_path: str = "data/runtime/reveal_feedback.json"
     cowrie_event_mapping_path: str = "data/cowrie/event_mappings.json"
-    cowrie_command_mapping_mode: str = "sigma"
+    cowrie_command_mapping_mode: str = "hybrid"
     cowrie_command_mapping_path: str = "data/cowrie/command_mapping_rules.json"
-    cowrie_sigma_rules_path: str = "vendor/sigma/rules/linux"
+    cowrie_sigma_rules_path: str = "data/detections/cowrie_sigma:vendor/sigma/rules/linux"
     entrypoint_http_sigma_rules_path: str = "data/detections/http_sigma"
     entrypoint_body_preview_bytes: int = 2048
     mitre_attack_stix_path: str = "data/mitre/enterprise-attack.json"

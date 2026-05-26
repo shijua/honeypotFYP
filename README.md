@@ -154,10 +154,10 @@ Cowrie command profiling has three runtime modes:
 | Mode | Runtime catalog | Purpose |
 | --- | --- | --- |
 | `local` | `data/cowrie/command_mapping_rules.json` | Project-owned command mappings for known honeypot behaviors |
-| `sigma` | `vendor/sigma/rules/linux` | Sigma-only experiment using externally sourced Linux rules that can be expressed from Cowrie commands |
+| `sigma` | `data/detections/cowrie_sigma:vendor/sigma/rules/linux` | Project-owned Sigma rules plus optional external Linux Sigma rules that can be expressed from Cowrie commands |
 | `hybrid` | local catalog, then runtime Sigma catalog | Practical mode that keeps project-specific coverage while adding Sigma coverage |
 
-Fetch SigmaHQ rules before using `sigma` or `hybrid` mode:
+The default mode is `hybrid`, using the local mapping file plus repo-owned Sigma rules and `vendor/sigma/rules/linux` when that optional checkout exists. To test an external SigmaHQ checkout, fetch it or point `HONEYPOT_COWRIE_SIGMA_RULES_PATH` at one or more rule directories separated by `:`.
 
 ```bash
 mkdir -p vendor
@@ -167,10 +167,10 @@ test -d vendor/sigma || git clone --depth 1 https://github.com/SigmaHQ/sigma.git
 Run the stack with the desired mode:
 
 ```bash
-# default Sigma command detection
+# default hybrid command detection
 ./scripts/start_enterprise_stack.sh
 HONEYPOT_COWRIE_COMMAND_MAPPING_MODE=sigma ./scripts/start_enterprise_stack.sh
-HONEYPOT_COWRIE_COMMAND_MAPPING_MODE=hybrid ./scripts/start_enterprise_stack.sh
+HONEYPOT_COWRIE_SIGMA_RULES_PATH=data/detections/cowrie_sigma:vendor/sigma/rules/linux HONEYPOT_COWRIE_COMMAND_MAPPING_MODE=hybrid ./scripts/start_enterprise_stack.sh
 ```
 
 The Cowrie adapter reads the configured Sigma YAML folder directly at runtime and imports rule conditions it can express from one Cowrie command: process/image fields, command-line fields, auditd `EXECVE` arguments, and simple keyword lists. The supported condition subset includes standalone selections, `selection_a and selection_b`, `all of selection_*`, `1 of selection_*`, and `selection and not filter_*`. Selections with unsupported fields are skipped instead of weakened. Override the Sigma rule directory with `HONEYPOT_COWRIE_SIGMA_RULES_PATH` when testing a different Sigma checkout.

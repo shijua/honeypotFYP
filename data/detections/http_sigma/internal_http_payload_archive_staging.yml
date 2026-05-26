@@ -1,0 +1,20 @@
+title: Internal HTTP Payload Archive Staging
+id: honeynet-internal-http-payload-archive-staging
+status: experimental
+logsource:
+  product: honeynet
+  category: web
+honeynet.rule_name: internal_http_payload_archive_staging
+honeynet.evidence_label: internal-http archive staging plan access
+detection:
+  surface:
+    honeynet.surface: internal
+  asset:
+    honeynet.asset_id: malware-sink
+  selection:
+    url.path|contains:
+      - /staging/archive-plan.txt
+  condition: surface and asset and selection
+tags:
+  - attack.collection
+  - attack.t1074

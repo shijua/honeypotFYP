@@ -14,6 +14,7 @@ selection: can it be evaluated from a single Cowrie command string?
 from __future__ import annotations
 
 import re
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -58,7 +59,7 @@ class SigmaCowrieCommandRuleCatalog:
     """
 
     def __init__(self, root: str | Path) -> None:
-        self._root = Path(root)
+        self._root = str(root)
         self._loaded = False
         self._rules: tuple[CowrieCommandRule, ...] = ()
 
@@ -75,7 +76,7 @@ class SigmaCowrieCommandRuleCatalog:
 
         # Load once per adapter process. If the Sigma checkout changes on disk,
         # restart the Cowrie adapter so the in-memory catalog is rebuilt.
-        result = import_sigma_command_rules(self._root)
+        result = _import_sigma_command_rules_from_configured_roots(self._root)
         self._rules = tuple(
             dedupe_preserve_by(
                 (_cowrie_rule_from_sigma_payload(item) for item in result.rules),
@@ -83,6 +84,36 @@ class SigmaCowrieCommandRuleCatalog:
             )
         )
         self._loaded = True
+
+
+def _import_sigma_command_rules_from_configured_roots(root: str) -> SigmaImportResult:
+    """Load one or more Sigma roots from an `os.pathsep` separated config value.
+
+    Example:
+        "data/detections/cowrie_sigma:vendor/sigma/rules/linux" loads both when present, while a missing optional vendor checkout is skipped if the local root exists.
+    """
+    roots = [Path(item) for item in root.split(os.pathsep) if item]
+    if len(roots) <= 1:
+        return import_sigma_command_rules(roots[0] if roots else Path(root))
+
+    rules: list[dict[str, object]] = []
+    files_read = 0
+    files_with_rules = 0
+    existing_roots = [path for path in roots if path.exists()]
+    if not existing_roots:
+        raise FileNotFoundError(f"Sigma rule path does not exist: {root}")
+
+    for path in existing_roots:
+        result = import_sigma_command_rules(path)
+        rules.extend(result.rules)
+        files_read += result.files_read
+        files_with_rules += result.files_with_rules
+
+    return SigmaImportResult(
+        rules=_dedupe_rule_names(rules),
+        files_read=files_read,
+        files_with_rules=files_with_rules,
+    )
 
 
 def import_sigma_command_rules(root: Path) -> SigmaImportResult:

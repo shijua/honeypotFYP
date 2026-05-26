@@ -1,0 +1,15 @@
+title: Cowrie Sudo Privilege Check
+id: honeynet-cowrie-sudo-privilege-check
+status: experimental
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    CommandLine|contains:
+      - sudo -l
+  condition: selection
+tags:
+  - attack.privilege_escalation
+  - attack.t1548
+level: medium

@@ -24,7 +24,13 @@
       "recent_techniques": [
         "T1083"
       ]
-    }
+    },
+    "expected_actions": [
+      {
+        "action_type": "unlock",
+        "asset_id": "internal-portal"
+      }
+    ]
   },
   {
     "scenario_id": "git-env-breadcrumb",
@@ -59,7 +65,13 @@
       "recent_techniques": [
         "T1083"
       ]
-    }
+    },
+    "expected_actions": [
+      {
+        "action_type": "unlock",
+        "asset_id": "git-internal"
+      }
+    ]
   },
   {
     "scenario_id": "redis-env-breadcrumb",
@@ -95,7 +107,13 @@
       "recent_techniques": [
         "T1046"
       ]
-    }
+    },
+    "expected_actions": [
+      {
+        "action_type": "unlock",
+        "asset_id": "redis-cache"
+      }
+    ]
   },
   {
     "scenario_id": "mail-env-breadcrumb",
@@ -130,7 +148,13 @@
       "recent_techniques": [
         "T1087.003"
       ]
-    }
+    },
+    "expected_actions": [
+      {
+        "action_type": "unlock",
+        "asset_id": "mail-relay"
+      }
+    ]
   },
   {
     "scenario_id": "finance-backup-breadcrumb",
@@ -166,7 +190,13 @@
       "recent_techniques": [
         "T1005"
       ]
-    }
+    },
+    "expected_actions": [
+      {
+        "action_type": "unlock",
+        "asset_id": "finance-share"
+      }
+    ]
   },
   {
     "scenario_id": "ftp-backup-breadcrumb",
@@ -202,7 +232,13 @@
       "recent_techniques": [
         "T1039"
       ]
-    }
+    },
+    "expected_actions": [
+      {
+        "action_type": "unlock",
+        "asset_id": "ftp-archive"
+      }
+    ]
   },
   {
     "scenario_id": "ops-db-backup-breadcrumb",
@@ -239,7 +275,13 @@
       "recent_techniques": [
         "T1078"
       ]
-    }
+    },
+    "expected_actions": [
+      {
+        "action_type": "unlock",
+        "asset_id": "ops-db"
+      }
+    ]
   },
   {
     "scenario_id": "ssh-password-breadcrumb",
@@ -274,7 +316,13 @@
       "recent_techniques": [
         "T1021.004"
       ]
-    }
+    },
+    "expected_actions": [
+      {
+        "action_type": "unlock",
+        "asset_id": "ssh-canary"
+      }
+    ]
   },
   {
     "scenario_id": "telnet-password-breadcrumb",
@@ -310,7 +358,13 @@
       "recent_techniques": [
         "T1021"
       ]
-    }
+    },
+    "expected_actions": [
+      {
+        "action_type": "unlock",
+        "asset_id": "legacy-telnet"
+      }
+    ]
   },
   {
     "scenario_id": "web-admin-probe",
@@ -345,7 +399,13 @@
       "recent_techniques": [
         "T1110"
       ]
-    }
+    },
+    "expected_actions": [
+      {
+        "action_type": "unlock",
+        "asset_id": "web-admin-console"
+      }
+    ]
   },
   {
     "scenario_id": "vpn-admin-probe",
@@ -380,7 +440,13 @@
       "recent_techniques": [
         "T1133"
       ]
-    }
+    },
+    "expected_actions": [
+      {
+        "action_type": "unlock",
+        "asset_id": "vpn-appliance"
+      }
+    ]
   },
   {
     "scenario_id": "malware-exploit-probe",
@@ -415,7 +481,13 @@
       "recent_techniques": [
         "T1105"
       ]
-    }
+    },
+    "expected_actions": [
+      {
+        "action_type": "unlock",
+        "asset_id": "malware-sink"
+      }
+    ]
   },
   {
     "scenario_id": "admin-jumpbox-after-git",
@@ -444,7 +516,13 @@
       "recent_techniques": [
         "T1059"
       ]
-    }
+    },
+    "expected_actions": [
+      {
+        "action_type": "unlock",
+        "asset_id": "admin-jumpbox"
+      }
+    ]
   },
   {
     "scenario_id": "dionaea-malware-upgrade",
@@ -490,8 +568,19 @@
       ],
       "recent_techniques": [
         "T1105"
+      ],
+      "recent_asset_ids": [
+        "malware-sink"
       ]
-    }
+    },
+    "expected_actions": [
+      {
+        "action_type": "configure",
+        "asset_id": "malware-sink",
+        "target_asset_id": "dionaea-capture",
+        "configuration_id": "malware-dionaea-same-port-upgrade"
+      }
+    ]
   },
   {
     "scenario_id": "honeytrap-generic-probe",
@@ -522,8 +611,19 @@
       ],
       "recent_techniques": [
         "T1046"
+      ],
+      "recent_asset_ids": [
+        "malware-sink"
       ]
-    }
+    },
+    "expected_actions": [
+      {
+        "action_type": "configure",
+        "asset_id": "malware-sink",
+        "target_asset_id": "honeytrap-generic",
+        "configuration_id": "malware-honeytrap-generic-listener"
+      }
+    ]
   },
   {
     "scenario_id": "web-exploit-payload-probe",
@@ -558,7 +658,13 @@
       "recent_techniques": [
         "T1105"
       ]
-    }
+    },
+    "expected_actions": [
+      {
+        "action_type": "unlock",
+        "asset_id": "malware-sink"
+      }
+    ]
   },
   {
     "scenario_id": "generic-transfer-honeytrap",
@@ -589,7 +695,18 @@
       ],
       "recent_techniques": [
         "T1046"
+      ],
+      "recent_asset_ids": [
+        "malware-sink"
       ]
-    }
+    },
+    "expected_actions": [
+      {
+        "action_type": "configure",
+        "asset_id": "malware-sink",
+        "target_asset_id": "honeytrap-generic",
+        "configuration_id": "malware-honeytrap-generic-listener"
+      }
+    ]
   }
 ]

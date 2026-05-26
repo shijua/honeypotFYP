@@ -312,11 +312,12 @@ class ControllerService:
         """Return explicit follow-on configuration options for opened assets.
 
         Configuration variants are catalog-owned. They only appear here when
-        their source asset is already open and the current profile matches an
-        exact required marker.
+        the source asset is already open, the attacker is still on that source
+        asset's active path, and the current profile matches an exact marker.
         """
         asset_by_id = {asset.asset_id: asset for asset in assets}
         observed = _observed_signal_sets(request)
+        active_asset_ids = set(request.profile.recent_asset_ids)
         options: list[RevealOption] = []
 
         for source_asset in assets:
@@ -328,6 +329,12 @@ class ControllerService:
             for variant in _configuration_variants(source_asset):
                 configuration_id = string_or_none(variant.get("configuration_id"))
                 if configuration_id is None or configuration_id in revealed_for_asset:
+                    continue
+                if not _variant_visible_on_active_path(
+                    source_asset.asset_id,
+                    variant,
+                    active_asset_ids,
+                ):
                     continue
                 matched_markers = _matched_variant_markers(variant, observed)
                 if _variant_required_markers(variant) and not matched_markers:
@@ -938,6 +945,26 @@ def _matched_variant_markers(
     return dedupe_preserve(markers)
 
 
+def _variant_visible_on_active_path(
+    source_asset_id: str,
+    variant: dict[str, Any],
+    active_asset_ids: set[str],
+) -> bool:
+    """Return True when a configuration can appear on a currently active path.
+
+    Example:
+        source git-internal plus recent_asset_ids=["git-internal"] -> True.
+        source git-internal plus recent_asset_ids=["finance-share"] -> False.
+    """
+    if not active_asset_ids:
+        return False
+    visible_from = variant.get("visible_from_asset_ids")
+    allowed_asset_ids = {source_asset_id}
+    if isinstance(visible_from, list):
+        allowed_asset_ids.update(item for item in visible_from if isinstance(item, str))
+    return bool(active_asset_ids.intersection(allowed_asset_ids))
+
+
 def _variant_covered_techniques(
     variant: dict[str, Any],
     fallback_asset: AssetDefinition,
@@ -969,6 +996,7 @@ def _observed_signal_sets(request: ControllerTickRequest) -> dict[str, set[str]]
         "any_internal_http_paths": set(profile.recent_internal_http_paths),
         "any_internal_http_rules": set(profile.recent_internal_http_rules),
         "any_internal_http_indicators": set(profile.recent_internal_http_indicators),
+        "any_asset_ids": set(profile.recent_asset_ids),
         "any_techniques": set(profile.recent_techniques),
         "any_tactics": set(profile.recent_tactics),
     }

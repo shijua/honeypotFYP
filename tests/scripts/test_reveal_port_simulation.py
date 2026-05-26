@@ -110,6 +110,18 @@ def test_validate_scenarios_requires_expected_routes() -> None:
         )
 
 
+def test_validate_scenarios_rejects_malformed_expected_actions() -> None:
+    with pytest.raises(ValueError, match="invalid expected action"):
+        validate_scenarios(
+            [
+                {
+                    **_scenario(),
+                    "expected_actions": [{"asset_id": "finance-share"}],
+                }
+            ]
+        )
+
+
 def test_controller_only_detects_expected_asset(tmp_path: Path) -> None:
     catalog = tmp_path / "catalog.json"
     prior = tmp_path / "prior.json"
@@ -127,6 +139,29 @@ def test_controller_only_detects_expected_asset(tmp_path: Path) -> None:
 
     assert row["ok"] is True
     assert row["selected_assets"] == ["finance-share"]
+    assert row["selected_actions"] == [{"action_type": "unlock", "asset_id": "finance-share"}]
+
+
+def test_controller_only_detects_expected_action_type(tmp_path: Path) -> None:
+    catalog = tmp_path / "catalog.json"
+    prior = tmp_path / "prior.json"
+    _catalog(catalog)
+    _prior(prior)
+
+    row = evaluate_reveal_port_scenario(
+        {
+            **_scenario(),
+            "expected_actions": [{"action_type": "configure", "asset_id": "finance-share"}],
+        },
+        mode="controller-only",
+        catalog_path=catalog,
+        prior_path=prior,
+        route_path=tmp_path / "routes.json",
+        control_client=FakeControlPlaneClient(tmp_path / "routes.json"),
+    )
+
+    assert row["ok"] is False
+    assert row["action_failures"] == ["missing expected action configure finance-share"]
 
 
 def test_controller_only_fails_forbidden_asset(tmp_path: Path) -> None:

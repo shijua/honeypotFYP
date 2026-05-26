@@ -126,6 +126,12 @@ def validate_scenarios(scenarios: list[dict[str, Any]]) -> list[dict[str, Any]]:
         for route in routes:
             if not isinstance(route, dict) or not isinstance(route.get("asset_id"), str) or not isinstance(route.get("public_port"), int):
                 raise ValueError(f"scenario {scenario_id} has invalid expected route {route!r}")
+        actions = scenario.get("expected_actions", [])
+        if actions is not None and not isinstance(actions, list):
+            raise ValueError(f"scenario {scenario_id} has invalid expected_actions")
+        for action in actions:
+            if not isinstance(action, dict) or not isinstance(action.get("action_type"), str) or not isinstance(action.get("asset_id"), str):
+                raise ValueError(f"scenario {scenario_id} has invalid expected action {action!r}")
     return scenarios
 
 
@@ -163,17 +169,21 @@ def evaluate_reveal_port_scenario(
     forbidden_assets = string_list(scenario.get("forbidden_assets"))
     expected_routes = _expected_routes(scenario)
     decision_details = _decision_details(response)
+    selected_actions = _selected_actions(response)
     selected_failures = _asset_selection_failures(selected_assets, expected_assets, forbidden_assets)
+    action_failures = _action_selection_failures(selected_actions, _expected_actions(scenario))
     route_failures = [] if mode == "controller-only" else _route_failures(actual_routes, expected_routes)
     rejected_runtime_failure = _runtime_rejected_failure(decision_details, expected_assets)
-    failure_reason = runtime_failure or rejected_runtime_failure or _first_failure(selected_failures, route_failures)
+    failure_reason = runtime_failure or rejected_runtime_failure or _first_failure(selected_failures, action_failures, route_failures)
     ok = failure_reason is None
     return {
         "scenario_id": scenario["scenario_id"],
         "ok": ok,
         "mode": mode,
         "selected_assets": selected_assets,
+        "selected_actions": selected_actions,
         "expected_assets": expected_assets,
+        "expected_actions": _expected_actions(scenario),
         "forbidden_assets": forbidden_assets,
         "expected_routes": expected_routes,
         "actual_routes": actual_routes,
@@ -181,6 +191,7 @@ def evaluate_reveal_port_scenario(
         "decision_details": decision_details,
         "failure_reason": failure_reason,
         "selection_failures": selected_failures,
+        "action_failures": action_failures,
         "route_failures": route_failures,
     }
 
@@ -333,6 +344,32 @@ def _selected_assets(controller_response: dict[str, Any]) -> list[str]:
     return selected
 
 
+def _selected_actions(controller_response: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return compact reveal action summaries for action-type assertions.
+
+    Example:
+        configure malware-sink -> dionaea-capture keeps action_type,
+        source asset, target asset, and configuration id.
+    """
+    summaries: list[dict[str, Any]] = []
+    for action in controller_response.get("actions", []):
+        if not isinstance(action, dict):
+            continue
+        action_type = action.get("action_type")
+        if action_type not in {ActionType.unlock.value, ActionType.configure.value}:
+            continue
+        summary = {
+            "action_type": action_type,
+            "asset_id": action.get("asset_id"),
+        }
+        if action.get("target_asset_id") is not None:
+            summary["target_asset_id"] = action.get("target_asset_id")
+        if action.get("configuration_id") is not None:
+            summary["configuration_id"] = action.get("configuration_id")
+        summaries.append(summary)
+    return summaries
+
+
 def _decision_details(controller_response: dict[str, Any]) -> list[dict[str, Any]]:
     details = []
     for event in controller_response.get("decision_events", []):
@@ -349,6 +386,30 @@ def _asset_selection_failures(
     failures = [f"missing expected asset {asset_id}" for asset_id in expected_assets if asset_id not in selected_assets]
     failures.extend(f"selected forbidden asset {asset_id}" for asset_id in forbidden_assets if asset_id in selected_assets)
     return failures
+
+
+def _action_selection_failures(
+    selected_actions: list[dict[str, Any]],
+    expected_actions: list[dict[str, Any]],
+) -> list[str]:
+    failures: list[str] = []
+    for expected in expected_actions:
+        if not any(_action_matches(selected, expected) for selected in selected_actions):
+            failures.append(f"missing expected action {_action_label(expected)}")
+    return failures
+
+
+def _action_matches(selected: dict[str, Any], expected: dict[str, Any]) -> bool:
+    return all(selected.get(key) == value for key, value in expected.items())
+
+
+def _action_label(action: dict[str, Any]) -> str:
+    parts = [str(action.get("action_type")), str(action.get("asset_id"))]
+    if action.get("target_asset_id"):
+        parts.append(f"target={action['target_asset_id']}")
+    if action.get("configuration_id"):
+        parts.append(f"config={action['configuration_id']}")
+    return " ".join(parts)
 
 
 def _route_failures(
@@ -408,6 +469,22 @@ def _expected_routes(scenario: dict[str, Any]) -> list[dict[str, Any]]:
         {"asset_id": str(route["asset_id"]), "public_port": int(route["public_port"])}
         for route in routes
         if isinstance(route, dict) and isinstance(route.get("asset_id"), str) and isinstance(route.get("public_port"), int)
+    ]
+
+
+def _expected_actions(scenario: dict[str, Any]) -> list[dict[str, Any]]:
+    actions = scenario.get("expected_actions")
+    if not isinstance(actions, list):
+        return []
+    return [
+        {
+            key: value
+            for key, value in action.items()
+            if key in {"action_type", "asset_id", "target_asset_id", "configuration_id"}
+            and isinstance(value, str)
+        }
+        for action in actions
+        if isinstance(action, dict)
     ]
 
 

@@ -1,0 +1,20 @@
+title: Internal HTTP Web Admin Container Resources
+id: honeynet-internal-http-web-admin-container-resources
+status: experimental
+logsource:
+  product: honeynet
+  category: web
+honeynet.rule_name: internal_http_web_admin_container_resources
+honeynet.evidence_label: internal-http admin container resource access
+detection:
+  surface:
+    honeynet.surface: internal
+  asset:
+    honeynet.asset_id: web-admin-console
+  selection:
+    url.path|contains:
+      - /api/container-resources.json
+  condition: surface and asset and selection
+tags:
+  - attack.discovery
+  - attack.t1082

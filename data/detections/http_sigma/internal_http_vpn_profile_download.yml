@@ -1,0 +1,20 @@
+title: Internal HTTP VPN Profile Download
+id: honeynet-internal-http-vpn-profile-download
+status: experimental
+logsource:
+  product: honeynet
+  category: web
+honeynet.rule_name: internal_http_vpn_profile_download
+honeynet.evidence_label: internal-http VPN profile download
+detection:
+  surface:
+    honeynet.surface: internal
+  asset:
+    honeynet.asset_id: vpn-appliance
+  selection:
+    url.path|contains:
+      - /download/contractor-profile.ovpn
+  condition: surface and asset and selection
+tags:
+  - attack.initial_access
+  - attack.t1133

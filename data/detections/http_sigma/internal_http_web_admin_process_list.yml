@@ -1,0 +1,20 @@
+title: Internal HTTP Web Admin Process List
+id: honeynet-internal-http-web-admin-process-list
+status: experimental
+logsource:
+  product: honeynet
+  category: web
+honeynet.rule_name: internal_http_web_admin_process_list
+honeynet.evidence_label: internal-http admin process list access
+detection:
+  surface:
+    honeynet.surface: internal
+  asset:
+    honeynet.asset_id: web-admin-console
+  selection:
+    url.path|contains:
+      - /api/processes.json
+  condition: surface and asset and selection
+tags:
+  - attack.discovery
+  - attack.t1057

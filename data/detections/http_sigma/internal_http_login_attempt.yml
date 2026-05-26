@@ -18,7 +18,7 @@ detection:
       - username=
       - password=
       - token=
-  condition: surface and 1 of selection_*
+  condition: surface and selection_path and selection_body
 tags:
   - attack.credential_access
   - attack.t1110

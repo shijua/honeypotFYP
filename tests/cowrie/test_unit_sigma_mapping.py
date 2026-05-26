@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -24,6 +25,45 @@ def test_sigma_command_rule_catalog_reads_sigma_yaml_at_runtime() -> None:
     assert download_rules[0].source_refs[0].type == "sigma_rule"
     assert [rule.technique_id for rule in chmod_rules] == ["T1059"]
     assert chmod_rules[0].confidence == "medium"
+
+
+def test_sigma_command_rule_catalog_reads_multiple_configured_roots(tmp_path: Path) -> None:
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    (first / "whoami.yml").write_text(
+        """
+title: Compatible Whoami
+detection:
+  selection:
+    CommandLine|contains: whoami
+  condition: selection
+tags:
+  - attack.t1033
+level: high
+""",
+        encoding="utf-8",
+    )
+    (second / "shadow.yml").write_text(
+        """
+title: Shadow Access
+detection:
+  selection:
+    CommandLine|contains: /etc/shadow
+  condition: selection
+tags:
+  - attack.t1003
+level: high
+""",
+        encoding="utf-8",
+    )
+    catalog = SigmaCowrieCommandRuleCatalog(
+        os.pathsep.join([str(first), str(tmp_path / "missing"), str(second)])
+    )
+
+    assert [rule.technique_id for rule in catalog.match("whoami")] == ["T1033"]
+    assert [rule.technique_id for rule in catalog.match("cat /etc/shadow")] == ["T1003"]
 
 
 def test_import_sigma_command_rules_ignores_rules_without_attack_tags(tmp_path: Path) -> None:

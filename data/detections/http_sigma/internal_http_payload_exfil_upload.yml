@@ -1,0 +1,22 @@
+title: Internal HTTP Payload Exfil Upload
+id: honeynet-internal-http-payload-exfil-upload
+status: experimental
+logsource:
+  product: honeynet
+  category: web
+honeynet.rule_name: internal_http_payload_exfil_upload
+honeynet.evidence_label: internal-http upload endpoint access
+detection:
+  surface:
+    honeynet.surface: internal
+  asset:
+    honeynet.asset_id: malware-sink
+  method:
+    http.request.method: POST
+  selection:
+    url.path|contains:
+      - /upload/
+  condition: surface and asset and method and selection
+tags:
+  - attack.exfiltration
+  - attack.t1567

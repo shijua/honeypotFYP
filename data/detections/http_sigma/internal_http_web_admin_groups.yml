@@ -1,0 +1,20 @@
+title: Internal HTTP Web Admin Groups
+id: honeynet-internal-http-web-admin-groups
+status: experimental
+logsource:
+  product: honeynet
+  category: web
+honeynet.rule_name: internal_http_web_admin_groups
+honeynet.evidence_label: internal-http admin group listing access
+detection:
+  surface:
+    honeynet.surface: internal
+  asset:
+    honeynet.asset_id: web-admin-console
+  selection:
+    url.path|contains:
+      - /api/groups.json
+  condition: surface and asset and selection
+tags:
+  - attack.discovery
+  - attack.t1069

@@ -1,0 +1,15 @@
+title: Cowrie Shell History Clear
+id: honeynet-cowrie-shell-history-clear
+status: experimental
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    CommandLine|contains:
+      - history -c
+  condition: selection
+tags:
+  - attack.defense_evasion
+  - attack.t1070
+level: high

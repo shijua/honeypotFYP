@@ -1,0 +1,15 @@
+title: Cowrie Shadow File Access
+id: honeynet-cowrie-shadow-file-access
+status: experimental
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    CommandLine|contains:
+      - /etc/shadow
+  condition: selection
+tags:
+  - attack.credential_access
+  - attack.t1003
+level: high

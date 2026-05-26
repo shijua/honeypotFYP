@@ -198,6 +198,10 @@ class ProfilerService:
                 recent_evidences,
                 "http_indicators",
             ),
+            recent_asset_ids=self._source_ref_values(
+                recent_evidences,
+                "asset_id",
+            ),
             updated_at=latest_ts,
         )
         return self._profile_repository.upsert(snapshot)
@@ -398,6 +402,26 @@ class ProfilerService:
             if source_ref.get("source") != "internal_http":
                 continue
             value = source_ref.get(source_ref_key)
+            if isinstance(value, list):
+                values.extend(item for item in value if isinstance(item, str))
+            elif isinstance(value, str) and value:
+                values.append(value)
+        return dedupe_preserve(values)
+
+    def _source_ref_values(
+        self,
+        evidences: list[TechniqueEvidence],
+        source_ref_key: str,
+    ) -> list[str]:
+        """Extract recent source-ref values without restricting telemetry source.
+
+        Example:
+            internal HTTP evidence with source_ref.asset_id=git-internal
+            -> ["git-internal"].
+        """
+        values: list[str] = []
+        for evidence in evidences:
+            value = evidence.source_ref.get(source_ref_key)
             if isinstance(value, list):
                 values.extend(item for item in value if isinstance(item, str))
             elif isinstance(value, str) and value:

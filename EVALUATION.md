@@ -70,6 +70,8 @@ For the controller row, check:
 - `reveal_correctness`: expected reasonable assets were opened.
 - `irrelevant_reveal_rate`: opened assets outside the scenario expectation.
 - `hidden_violation_rate`: opened assets that should stay hidden.
+- `expected_reveal_match_rate`: expected `unlock` vs `configure` action types matched.
+- `configuration_reveal_count`: per-row count showing when the controller changed a configuration instead of opening a new asset.
 - `correct_no_reveal_rate`: scanner/boundary no-reveal cases stayed closed.
 - `opened_asset_count`: average number of reveals per scenario.
 - `prior_influence_rate`: how often the group prior influenced selection.
@@ -78,10 +80,10 @@ For the controller row, check:
 Quick summary:
 
 ```bash
-jq '.ok, .policies.controller.metrics' /tmp/reveal_policy_report.json
+jq '.ok, .policies.controller | {scenario_count, reveal_correctness, irrelevant_reveal_rate, hidden_violation_rate, expected_reveal_match_rate, correct_no_reveal_rate}' /tmp/reveal_policy_report.json
 ```
 
-Expected: `ok=true`, no hidden violations, and no-reveal scenarios pass.
+Expected: `ok=true`, no hidden violations, no missing expected reveal actions, and no-reveal scenarios pass.
 
 ## 3. Controller-Only Port Reveal
 
@@ -100,7 +102,7 @@ Quick summary:
 jq '.ok, .summary' /tmp/reveal_port_controller_report.json
 ```
 
-Expected: `ok=true` and all default scenarios pass. This is the fastest way to check “will the right asset and port be selected?”
+Expected: `ok=true` and all default scenarios pass. This is the fastest way to check “will the right asset, action type, and port be selected?” Configuration scenarios show `selected_actions[].action_type == "configure"` and include `configuration_id`.
 
 This also writes `/tmp/reveal_port_controller_report.svg`, a pass/fail chart for the route checks.
 
@@ -127,7 +129,7 @@ Run the live route check:
 Inspect the result:
 
 ```bash
-jq '.summary, .scenarios[] | {scenario_id, ok, selected_assets, expected_routes, actual_routes, failure_reason}' \
+jq '.summary, .scenarios[] | {scenario_id, ok, selected_assets, selected_actions, expected_routes, actual_routes, failure_reason}' \
   data/runtime/reveal_port_simulation_report.json
 ```
 

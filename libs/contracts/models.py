@@ -234,6 +234,8 @@ class ProfileSnapshot(VersionedModel):
     - recent_internal_http_paths: suspicious internal asset paths observed after unlock
     - recent_internal_http_rules: internal HTTP Sigma rule names that matched those paths
     - recent_internal_http_indicators: concrete matched internal asset tokens
+    - recent_asset_ids: asset ids seen in recent evidence source refs, used to 
+    keep configuration reveals on the attacker's active path
     - updated_at: timestamp of the newest evidence included in this snapshot
 
     Example:
@@ -250,6 +252,7 @@ class ProfileSnapshot(VersionedModel):
             "recent_public_http_rules": ["public_http_credential_discovery"],
             "recent_public_http_indicators": ["combined:.env", "path:.old"],
             "recent_internal_http_paths": ["/finance/archive/2024/payroll-archive.zip"],
+            "recent_asset_ids": ["finance-share"],
             "updated_at": "2026-04-18T12:00:00Z"
         }
     """
@@ -269,6 +272,7 @@ class ProfileSnapshot(VersionedModel):
     recent_internal_http_paths: List[str] = Field(default_factory=list)
     recent_internal_http_rules: List[str] = Field(default_factory=list)
     recent_internal_http_indicators: List[str] = Field(default_factory=list)
+    recent_asset_ids: List[str] = Field(default_factory=list)
     updated_at: datetime = Field(default_factory=utcnow)
 
 

@@ -173,8 +173,9 @@ def test_capture_http_request_profiles_internal_token_reuse() -> None:
     assert response.profile.recent_tactics == [
         "Credential Access",
         "Lateral Movement",
+        "Defense Evasion",
     ]
-    assert response.profile.recent_techniques == ["T1110", "T1021"]
+    assert response.profile.recent_techniques == ["T1110", "T1021", "T1078"]
     observations = tuple(observation_repository.list_recent())
     assert observations[0].body_preview == "username=portal.reader&token=[redacted]&auth_result=success"
     assert observations[0].matched_rules == [

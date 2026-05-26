@@ -1,0 +1,20 @@
+title: Internal HTTP Directory Hosts Discovery
+id: honeynet-internal-http-directory-hosts-discovery
+status: experimental
+logsource:
+  product: honeynet
+  category: web
+honeynet.rule_name: internal_http_directory_hosts_discovery
+honeynet.evidence_label: internal-http host directory access
+detection:
+  surface:
+    honeynet.surface: internal
+  asset:
+    honeynet.asset_id: internal-portal
+  selection:
+    url.path|contains:
+      - /directory/hosts.csv
+  condition: surface and asset and selection
+tags:
+  - attack.discovery
+  - attack.t1018

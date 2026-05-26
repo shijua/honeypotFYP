@@ -113,7 +113,7 @@ def test_login_probe_maps_to_credential_access_without_storing_password() -> Non
     assert observation.logdata["PASSWORD"] == "[redacted]"
     assert "letmein" not in str(observation.model_dump())
     assert response.profile.recent_tactics == ["Credential Access", "Lateral Movement"]
-    assert response.profile.recent_techniques == ["T1110", "T1021"]
+    assert response.profile.recent_techniques == ["T1110", "T1021", "T1021.004"]
 
 
 @pytest.mark.parametrize(
@@ -148,6 +148,52 @@ def test_interactive_login_probe_maps_to_credential_and_lateral_context(
 
     assert response.profile.recent_tactics == ["Credential Access", "Lateral Movement"]
     assert response.profile.recent_techniques == ["T1110", "T1021"]
+
+
+def test_ftp_upload_maps_to_exfiltration_without_login_tags() -> None:
+    service, _repository, evidence_repository = _service()
+
+    response = service.ingest(
+        OpenCanaryIngestRequest(
+            event=OpenCanaryLogEvent(
+                src_host="198.51.100.37",
+                dst_port=21,
+                utc_time=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                logdata={
+                    "SERVICE": "ftp",
+                    "COMMAND": "STOR finance-drop.zip",
+                },
+            ),
+            protocol="ftp",
+        )
+    )
+
+    assert response.profile.recent_techniques == ["T1567.002"]
+    evidences = evidence_repository.list_by_attacker("198.51.100.37")
+    assert evidences[0].source_ref["opencanary_command"] == "STOR"
+
+
+def test_ftp_download_maps_to_collection_without_exfiltration_tags() -> None:
+    service, _repository, evidence_repository = _service()
+
+    response = service.ingest(
+        OpenCanaryIngestRequest(
+            event=OpenCanaryLogEvent(
+                src_host="198.51.100.38",
+                dst_port=21,
+                utc_time=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                logdata={
+                    "SERVICE": "ftp",
+                    "COMMAND": "RETR finance-drop.zip",
+                },
+            ),
+            protocol="ftp",
+        )
+    )
+
+    assert response.profile.recent_techniques == ["T1039"]
+    evidences = evidence_repository.list_by_attacker("198.51.100.38")
+    assert evidences[0].source_ref["opencanary_command"] == "RETR"
 
 
 def test_mysql_login_probe_maps_to_credential_access() -> None:
@@ -204,6 +250,32 @@ def test_smtp_probe_maps_to_smtp_discovery() -> None:
     ]
     assert response.profile.recent_tactics == ["Discovery"]
     assert response.profile.recent_techniques == ["T1046"]
+
+
+def test_smtp_recipient_probe_maps_to_email_account_discovery() -> None:
+    service, repository, evidence_repository = _service()
+
+    response = service.ingest(
+        OpenCanaryIngestRequest(
+            event=OpenCanaryLogEvent(
+                src_host="198.51.100.39",
+                dst_port=25,
+                utc_time=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                logdata={
+                    "SERVICE": "smtp",
+                    "COMMANDS": ["VRFY finance"],
+                },
+            ),
+            protocol="smtp",
+        )
+    )
+
+    observation = tuple(repository.list_recent())[0]
+    assert observation.service == "smtp"
+    assert response.profile.recent_tactics == ["Discovery"]
+    assert response.profile.recent_techniques == ["T1087.003"]
+    evidences = evidence_repository.list_by_attacker("198.51.100.39")
+    assert evidences[0].source_ref["opencanary_commands"] == ["VRFY"]
 
 
 def test_smtp_auth_probe_maps_to_credential_access() -> None:

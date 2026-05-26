@@ -18,3 +18,5 @@ detection:
 tags:
   - attack.lateral_movement
   - attack.t1021
+  - attack.defense_evasion
+  - attack.t1078

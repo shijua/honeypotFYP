@@ -46,19 +46,11 @@
         "weight": 0.7
       }
     ],
-    "real_world_basis": "Source-derived from CISA LockBit reporting: affiliates use public-facing application exploitation for initial access and use tools/services for data exfiltration before encryption. The local fixture adapts that behaviour to exploit-shaped HTTP evidence followed by payload/download sink reveal.",
-    "transition_basis": [
+    "reference_id": "cisa-lockbit-tool-transfer",
+    "expected_reveals": [
       {
-        "from_technique": "T1190",
-        "to_technique": "T1608",
-        "source_name": "CISA AA23-075A #StopRansomware: LockBit 3.0",
-        "basis": "CISA reports public-facing application exploitation as an initial-access path; staging/payload evidence is the local honeynet representation of adversary capability preparation after exploit-shaped access."
-      },
-      {
-        "from_technique": "T1608",
-        "to_technique": "T1105",
-        "source_name": "CISA eviction strategy for T1105 and LockBit tool-use context",
-        "basis": "After capability staging, the fixture tests whether a tool-transfer/download signal routes to the payload sink rather than unrelated data assets."
+        "action_type": "unlock",
+        "asset_id": "malware-sink"
       }
     ]
   },
@@ -93,15 +85,7 @@
       ]
     },
     "boundary": true,
-    "real_world_basis": "Source-derived from CISA AA23-059A: the red team used credential access and SMB/Admin Shares lateral movement against enterprise infrastructure. This honeynet intentionally lacks AD/DC assets, so the correct behaviour is no_reveal.",
-    "transition_basis": [
-      {
-        "from_technique": "T1003",
-        "to_technique": "T1021.002",
-        "source_name": "CISA AA23-059A Red Team Shares Key Findings",
-        "basis": "CISA maps credential access and SMB/Admin Shares lateral movement in the same red-team operation; the scenario checks catalogue boundary discipline."
-      }
-    ]
+    "reference_id": "cisa-red-team-aa23-059a"
   },
   {
     "scenario_id": "scanner-one-shot-web-probe",
@@ -126,15 +110,7 @@
         "weight": 0.6
       }
     ],
-    "real_world_basis": "Controlled negative case, not a claimed incident reproduction. It is included because public-facing exploit attempts and scanning are common but a one-shot scan should not be treated as enough evidence to reveal internal assets.",
-    "transition_basis": [
-      {
-        "from_technique": "T1595",
-        "to_technique": "T1190",
-        "source_name": "MITRE ATT&CK technique definitions for active scanning and public-facing exploitation",
-        "basis": "This is a negative-control transition: scanner-like evidence must not trigger the same reveal path as an interactive exploit chain."
-      }
-    ]
+    "reference_id": "mitre-scan-exploit-negative"
   },
   {
     "scenario_id": "mixed-discovery-download-persistence",
@@ -183,19 +159,15 @@
         "weight": 0.7
       }
     ],
-    "real_world_basis": "Source-derived from CISA ransomware reporting, especially BianLian and LockBit: actors perform discovery, retrieve/use tools, and prepare collection or exfiltration. The local fixture compresses those behaviours into a mixed-signal controller stress test.",
-    "transition_basis": [
+    "reference_id": "cisa-ransomware-mixed",
+    "expected_reveals": [
       {
-        "from_technique": "T1083",
-        "to_technique": "T1608",
-        "source_name": "CISA ransomware advisories for BianLian and LockBit",
-        "basis": "Discovery followed by staging/tooling signals tests whether the controller reveals both a developer breadcrumb and a payload sink."
+        "action_type": "unlock",
+        "asset_id": "git-internal"
       },
       {
-        "from_technique": "T1608",
-        "to_technique": "T1548.003",
-        "source_name": "CISA LockBit execution and privilege-escalation context",
-        "basis": "The persistence/privilege-shaped signal is included to ensure mixed evidence does not cause unrelated database reveals."
+        "action_type": "unlock",
+        "asset_id": "malware-sink"
       }
     ]
   },
@@ -233,13 +205,11 @@
         "T1083"
       ]
     },
-    "real_world_basis": "Controlled false-positive case. It uses a real ATT&CK discovery behaviour pattern, but the short trace intentionally stops before useful follow-up so the evaluation can measure whether the decision trace explains weak engagement.",
-    "transition_basis": [
+    "reference_id": "mitre-discovery-negative",
+    "expected_reveals": [
       {
-        "from_technique": "T1083",
-        "to_technique": "no_followup",
-        "source_name": "MITRE ATT&CK File and Directory Discovery plus local negative-control design",
-        "basis": "The scenario is not a real attack-chain claim; it checks that a plausible reveal can later be judged low-value when no follow-up appears."
+        "action_type": "unlock",
+        "asset_id": "git-internal"
       }
     ]
   },
@@ -282,13 +252,11 @@
         "weight": 0.7
       }
     ],
-    "real_world_basis": "Source-derived from CISA Scattered Spider and CISA red-team reporting where actors searched repositories/source code or found useful credentials and operational data in files/scripts/databases. The local source-map path is a honeynet-specific breadcrumb for file and repository discovery.",
-    "transition_basis": [
+    "reference_id": "cisa-red-team-aa23-059a",
+    "expected_reveals": [
       {
-        "from_technique": "T1083",
-        "to_technique": "T1213",
-        "source_name": "CISA AA23-059A Red Team Shares Key Findings",
-        "basis": "CISA describes finding useful credentials/data in files and databases; the fixture adapts that idea to source-map discovery leading to Git/repository reveal."
+        "action_type": "unlock",
+        "asset_id": "git-internal"
       }
     ]
   },
@@ -331,13 +299,11 @@
         "weight": 0.7
       }
     ],
-    "real_world_basis": "Source-derived from CISA AA23-059A credential/data discovery in backups, scripts, and databases. The local backup path is a controlled analogue for information repository access.",
-    "transition_basis": [
+    "reference_id": "cisa-red-team-aa23-059a",
+    "expected_reveals": [
       {
-        "from_technique": "T1213",
-        "to_technique": "T1005",
-        "source_name": "CISA AA23-059A Red Team Shares Key Findings",
-        "basis": "Information-repository discovery leading to local/share data collection is adapted to finance-share reveal."
+        "action_type": "unlock",
+        "asset_id": "finance-share"
       }
     ]
   },
@@ -380,13 +346,11 @@
         "weight": 0.7
       }
     ],
-    "real_world_basis": "Source-derived from official ATT&CK/CISA patterns where admin, logs, and service enumeration guide follow-on access. The local /admin path is the honeynet-specific admin surface.",
-    "transition_basis": [
+    "reference_id": "mitre-admin-web-discovery",
+    "expected_reveals": [
       {
-        "from_technique": "T1654",
-        "to_technique": "T1046",
-        "source_name": "MITRE ATT&CK Log Enumeration and CISA red-team service-enumeration context",
-        "basis": "Admin/log/service discovery is adapted into web-admin-console reveal rather than an arbitrary new asset."
+        "action_type": "unlock",
+        "asset_id": "web-admin-console"
       }
     ]
   },
@@ -429,14 +393,202 @@
         "weight": 0.7
       }
     ],
-    "real_world_basis": "Source-derived from CISA AA23-059A: the red team found SSH passwords in bash history and attempted SSH-style access through a tunnel. The local password breadcrumb maps that behaviour to SSH canary reveal.",
-    "transition_basis": [
+    "reference_id": "cisa-red-team-aa23-059a",
+    "expected_reveals": [
       {
-        "from_technique": "T1552.001",
-        "to_technique": "T1021.004",
-        "source_name": "CISA AA23-059A Red Team Shares Key Findings",
-        "basis": "Credentials in files/history followed by SSH remote-service attempt is a directly source-derived transition."
+        "action_type": "unlock",
+        "asset_id": "ssh-canary"
       }
     ]
+  },
+  {
+    "scenario_id": "config-git-active-repo-db-clue",
+    "title": "Configuration case: active repo browsing exposes DB credential clue",
+    "scenario_type": "configuration",
+    "reference_id": "cisa-red-team-aa23-059a",
+    "expected_behavior": "When the attacker is actively browsing git-internal, the controller may add a repository-local DB credential clue instead of opening a new unrelated port.",
+    "initial_unlocked_assets": [
+      "git-internal"
+    ],
+    "expected_reasonable_assets": [
+      "git-internal"
+    ],
+    "expected_hidden_assets": [
+      "finance-share",
+      "malware-sink"
+    ],
+    "useful_followup_assets": [
+      "git-internal"
+    ],
+    "diagnostic_followup_assets": [
+      "git-internal"
+    ],
+    "expected_reveals": [
+      {
+        "action_type": "configure",
+        "asset_id": "git-internal",
+        "configuration_id": "git-db-credential-clue"
+      }
+    ],
+    "evidence_sequence": [
+      {
+        "evidence_id": "config-git-e1",
+        "asset_id": "git-internal",
+        "internal_http_path": "/config/application-prod.yml",
+        "internal_http_indicator": "path:/config",
+        "tactic": "Collection",
+        "technique": "T1213",
+        "weight": 0.95
+      },
+      {
+        "evidence_id": "config-git-e2",
+        "asset_id": "git-internal",
+        "internal_http_path": "/k8s/values-prod.yaml",
+        "internal_http_indicator": "path:.yaml",
+        "tactic": "Discovery",
+        "technique": "T1083",
+        "weight": 0.85
+      },
+      {
+        "evidence_id": "config-git-e3",
+        "asset_id": "git-internal",
+        "internal_http_path": "/config/application-prod.yml",
+        "internal_http_indicator": "combined:password",
+        "tactic": "Credential Access",
+        "technique": "T1552.001",
+        "weight": 0.95
+      }
+    ]
+  },
+  {
+    "scenario_id": "config-finance-active-archive-index",
+    "title": "Configuration case: active share browsing exposes sensitive archive index",
+    "scenario_type": "configuration",
+    "reference_id": "cisa-red-team-aa23-059a",
+    "expected_behavior": "When the attacker is still browsing finance-share, a sensitive archive index can be added to that same surface.",
+    "initial_unlocked_assets": [
+      "finance-share"
+    ],
+    "expected_reasonable_assets": [
+      "finance-share"
+    ],
+    "expected_hidden_assets": [
+      "ops-db",
+      "malware-sink"
+    ],
+    "useful_followup_assets": [
+      "finance-share"
+    ],
+    "diagnostic_followup_assets": [
+      "finance-share"
+    ],
+    "expected_reveals": [
+      {
+        "action_type": "configure",
+        "asset_id": "finance-share",
+        "configuration_id": "finance-backup-archive-index"
+      }
+    ],
+    "evidence_sequence": [
+      {
+        "evidence_id": "config-finance-e1",
+        "asset_id": "finance-share",
+        "internal_http_path": "/finance/archive/2024/payroll-archive.zip",
+        "internal_http_indicator": "path:.zip",
+        "tactic": "Collection",
+        "technique": "T1005",
+        "weight": 0.95
+      }
+    ]
+  },
+  {
+    "scenario_id": "config-malware-active-dionaea-upgrade",
+    "title": "Configuration case: active payload sink upgrades to capture backend",
+    "scenario_type": "configuration",
+    "reference_id": "cisa-lockbit-tool-transfer",
+    "expected_behavior": "When the attacker is actively downloading or staging payloads from malware-sink, the controller can switch the same path to a higher-interaction capture backend.",
+    "initial_unlocked_assets": [
+      "malware-sink"
+    ],
+    "expected_reasonable_assets": [
+      "dionaea-capture"
+    ],
+    "expected_hidden_assets": [
+      "finance-share",
+      "ops-db"
+    ],
+    "useful_followup_assets": [
+      "dionaea-capture"
+    ],
+    "diagnostic_followup_assets": [
+      "dionaea-capture"
+    ],
+    "expected_reveals": [
+      {
+        "action_type": "configure",
+        "asset_id": "malware-sink",
+        "target_asset_id": "dionaea-capture",
+        "configuration_id": "malware-dionaea-same-port-upgrade"
+      }
+    ],
+    "evidence_sequence": [
+      {
+        "evidence_id": "config-malware-e1",
+        "asset_id": "malware-sink",
+        "internal_http_path": "/downloads/agent-update.bin",
+        "internal_http_indicator": "path:.bin",
+        "tactic": "Command and Control",
+        "technique": "T1105",
+        "weight": 0.95
+      },
+      {
+        "evidence_id": "config-malware-e2",
+        "asset_id": "malware-sink",
+        "internal_http_path": "/downloads/agent-update.bin",
+        "internal_http_indicator": "path:.bin",
+        "tactic": "Execution",
+        "technique": "T1204.002",
+        "weight": 0.8
+      }
+    ]
+  },
+  {
+    "scenario_id": "config-stale-git-not-active-no-reveal",
+    "title": "Negative configuration case: stale repo clue after attacker leaves",
+    "scenario_type": "configuration-negative",
+    "reference_id": "active-path-negative-control",
+    "expected_behavior": "A configuration clue must not be added to git-internal after the attacker has moved to a different active asset path.",
+    "initial_unlocked_assets": [
+      "git-internal"
+    ],
+    "expected_no_reveal": true,
+    "expected_reasonable_assets": [],
+    "expected_hidden_assets": [
+      "git-internal",
+      "ops-db",
+      "malware-sink"
+    ],
+    "useful_followup_assets": [],
+    "diagnostic_followup_assets": [],
+    "profile": {
+      "conf_by_technique": {
+        "T1213": 0.95
+      },
+      "recent_techniques": [
+        "T1213"
+      ],
+      "recent_evidence_ids": [
+        "config-stale-e1"
+      ],
+      "recent_internal_http_paths": [
+        "/finance/archive/2024/payroll-archive.zip"
+      ],
+      "recent_internal_http_indicators": [
+        "path:.zip"
+      ],
+      "recent_asset_ids": [
+        "finance-share"
+      ]
+    }
   }
 ]

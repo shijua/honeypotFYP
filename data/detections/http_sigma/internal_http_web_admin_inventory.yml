@@ -1,0 +1,20 @@
+title: Internal HTTP Web Admin Software Inventory
+id: honeynet-internal-http-web-admin-inventory
+status: experimental
+logsource:
+  product: honeynet
+  category: web
+honeynet.rule_name: internal_http_web_admin_inventory
+honeynet.evidence_label: internal-http admin software inventory access
+detection:
+  surface:
+    honeynet.surface: internal
+  asset:
+    honeynet.asset_id: web-admin-console
+  selection:
+    url.path|contains:
+      - /api/inventory.json
+  condition: surface and asset and selection
+tags:
+  - attack.discovery
+  - attack.t1518

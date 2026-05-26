@@ -237,6 +237,7 @@ def test_tick_reveals_follow_on_configuration_for_open_asset() -> None:
                 conf_by_technique={"T1213": 0.95},
                 recent_techniques=["T1213"],
                 recent_evidence_ids=["e-config"],
+                recent_asset_ids=["git-internal"],
             ),
         )
     )
@@ -247,6 +248,57 @@ def test_tick_reveals_follow_on_configuration_for_open_asset() -> None:
     details = response.decision_events[0].details
     assert details["configuration_reveal"]["configuration_id"] == "git-db-credential-clue"
     assert details["candidate_type"] == "configuration"
+
+
+def test_tick_does_not_configure_asset_when_attacker_left_active_path() -> None:
+    assets = [
+        AssetDefinition(
+            asset_id="git-internal",
+            asset_name="Internal Git",
+            exposure_type="internal",
+            interaction_level="medium",
+            covers_tactics=["Discovery", "Credential Access"],
+            dependencies=[],
+            default_settings={
+                "selection_profile": {
+                    "asset_group": "developer",
+                    "covered_techniques": ["T1213"],
+                    "telemetry_value": 0.8,
+                },
+                "configuration_variants": [
+                    {
+                        "configuration_id": "git-db-credential-clue",
+                        "kind": "content",
+                        "required_markers": ["any_techniques:T1213"],
+                        "covered_techniques": ["T1213", "T1552.001"],
+                        "telemetry_value": 0.95,
+                    }
+                ],
+            },
+        )
+    ]
+    service = ControllerService(
+        InMemoryAssetRepository(assets),
+        InMemoryTechniquePriorRepository(),
+        config=RuntimeConfig(),
+    )
+
+    response = service.tick(
+        ControllerTickRequest(
+            attacker_key="198.51.100.37",
+            binding_id="binding-stale-config",
+            unlocked_asset_ids=["git-internal"],
+            profile=ProfileSnapshot(
+                attacker_key="198.51.100.37",
+                conf_by_technique={"T1213": 0.95},
+                recent_techniques=["T1213"],
+                recent_evidence_ids=["e-stale"],
+                recent_asset_ids=["finance-share"],
+            ),
+        )
+    )
+
+    assert response.actions[0].action_type == "noop"
 
 
 def test_tick_records_same_port_upgrade_as_configuration_reveal() -> None:
@@ -312,6 +364,7 @@ def test_tick_records_same_port_upgrade_as_configuration_reveal() -> None:
                 recent_techniques=["T1105"],
                 recent_internal_http_paths=["/downloads/agent-update.bin"],
                 recent_evidence_ids=["e-upgrade"],
+                recent_asset_ids=["malware-sink"],
             ),
         )
     )

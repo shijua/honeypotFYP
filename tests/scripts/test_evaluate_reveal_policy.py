@@ -166,6 +166,8 @@ def test_reveal_policy_evaluator_compares_baselines(tmp_path: Path) -> None:
     assert report["policies"]["controller"]["reveal_correctness"] == 1.0
     assert report["policies"]["controller"]["decision_trace_completeness_rate"] == 1.0
     assert report["policies"]["controller"]["correct_no_reveal_rate"] == 1.0
+    assert report["policies"]["controller"]["unlock_reveal_count"] == 2
+    assert report["policies"]["controller"]["configuration_reveal_count"] == 0
     assert "prior_influence_rate" in report["policies"]["controller"]
     assert "diagnostic_or_useful_per_reveal" in report["policies"]["controller"]
     assert report["policies"]["passive"]["avg_opened_assets"] == 0

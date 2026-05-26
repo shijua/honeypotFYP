@@ -1,0 +1,20 @@
+title: Internal HTTP VPN Tunnel Routes
+id: honeynet-internal-http-vpn-tunnel-routes
+status: experimental
+logsource:
+  product: honeynet
+  category: web
+honeynet.rule_name: internal_http_vpn_tunnel_routes
+honeynet.evidence_label: internal-http VPN tunnel route policy access
+detection:
+  surface:
+    honeynet.surface: internal
+  asset:
+    honeynet.asset_id: vpn-appliance
+  selection:
+    url.path|contains:
+      - /policy/tunnel-routes.txt
+  condition: surface and asset and selection
+tags:
+  - attack.command_and_control
+  - attack.t1572

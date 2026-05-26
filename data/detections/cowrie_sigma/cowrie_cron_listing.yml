@@ -1,0 +1,15 @@
+title: Cowrie Cron Listing
+id: honeynet-cowrie-cron-listing
+status: experimental
+logsource:
+  product: linux
+  category: process_creation
+detection:
+  selection:
+    CommandLine|contains:
+      - crontab -l
+  condition: selection
+tags:
+  - attack.execution
+  - attack.t1053
+level: medium

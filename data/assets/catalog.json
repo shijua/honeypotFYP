@@ -1641,14 +1641,13 @@
       "selection_profile": {
         "tactic_difficulties": {
           "Credential Access": 3,
-          "Discovery": 2,
-          "Collection": 3
+          "Discovery": 2
         },
         "reveal_outputs": [
           "mail domains",
           "mailbox names",
           "SMTP command telemetry",
-          "archive mailbox hints"
+          "recipient probing telemetry"
         ],
         "selection_notes": "Use after mail hostnames, SMTP probing, leaked accounts, or address enumeration.",
         "asset_group": "mail",
@@ -1667,8 +1666,8 @@
           ],
           "any_techniques": [
             "T1087.001",
-            "T1110",
-            "T1114"
+            "T1087.003",
+            "T1110"
           ]
         },
         "telemetry_value": 0.75
@@ -1686,11 +1685,11 @@
           "kind": "service-configuration",
           "required_markers": [
             "any_techniques:T1046",
-            "any_techniques:T1087.001"
+            "any_techniques:T1087.003"
           ],
           "covered_techniques": [
             "T1046",
-            "T1087.001"
+            "T1087.003"
           ],
           "telemetry_value": 0.75,
           "reveal_outputs": [
@@ -1701,30 +1700,27 @@
           "reason": "Mail hostname or address-enumeration behaviour can justify SMTP domain hints."
         },
         {
-          "configuration_id": "mail-mailbox-archive-reference",
-          "kind": "content",
+          "configuration_id": "mail-smtp-auth-prompt",
+          "kind": "service-configuration",
           "required_markers": [
-            "any_techniques:T1114",
             "any_techniques:T1110"
           ],
           "covered_techniques": [
-            "T1114",
             "T1110"
           ],
           "telemetry_value": 0.8,
           "reveal_outputs": [
-            "mailbox archive reference",
+            "SMTP auth prompt",
             "mail login clue",
-            "mailbox path follow-up"
+            "credential attempt telemetry"
           ],
-          "reason": "Leaked account or credential-reuse interest can justify mailbox/archive references."
+          "reason": "Leaked account or credential-reuse interest can justify SMTP authentication telemetry."
         }
       ]
     },
     "covers_tactics": [
       "Credential Access",
-      "Discovery",
-      "Collection"
+      "Discovery"
     ],
     "dependencies": [
       "internal-portal"

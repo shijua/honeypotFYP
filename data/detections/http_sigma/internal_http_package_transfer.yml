@@ -14,7 +14,6 @@ detection:
   selection:
     url.path|contains:
       - /downloads/
-      - /upload/
   condition: surface and asset and selection
 tags:
   - attack.command_and_control

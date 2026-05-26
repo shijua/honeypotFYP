@@ -136,6 +136,7 @@ def evaluate_reveal_policies(
         report["ok"] = bool(scenarios) and (
             controller["hidden_violation_rate"] == 0
             and controller["irrelevant_reveal_rate"] == 0
+            and controller["missing_expected_reveal_count"] == 0
             and controller["correct_no_reveal_rate"] == 1.0
         )
     return report
@@ -197,12 +198,16 @@ def evaluate_scenario(
     request = scenario_request(scenario)
     if policy == "all-open":
         opened_assets, decision_events = _all_open_reveals(assets, request)
+        reveal_actions = _unlock_action_summaries(opened_assets)
     elif policy == "passive":
         opened_assets, decision_events = _passive_no_reveal(request)
+        reveal_actions = []
     elif policy == "random-eligible":
         opened_assets, decision_events = _random_eligible_reveals(assets, request)
+        reveal_actions = _unlock_action_summaries(opened_assets)
     elif policy == "gate-only":
         opened_assets, decision_events = _gate_only_reveals(assets, request)
+        reveal_actions = _unlock_action_summaries(opened_assets)
     elif policy == "top-recommendation":
         opened_assets, decision_events = _top_recommendation_reveals(
             assets,
@@ -210,6 +215,7 @@ def evaluate_scenario(
             prior_path=prior_path,
             config=config,
         )
+        reveal_actions = _unlock_action_summaries(opened_assets)
     else:
         response = ControllerService(
             FileAssetRepository(catalog_path),
@@ -217,6 +223,7 @@ def evaluate_scenario(
             config=config,
         ).tick(request)
         opened_assets = _controller_opened_assets(response.actions)
+        reveal_actions = _controller_reveal_actions(response.actions)
         decision_events = [event.model_dump(mode="json") for event in response.decision_events]
 
     reasonable = set(string_list(scenario.get("expected_reasonable_assets")))
@@ -238,18 +245,26 @@ def evaluate_scenario(
     useful_reveals = opened_set & useful
     diagnostic_or_useful_reveals = opened_set & (useful | diagnostic)
     expected_no_reveal = bool(scenario.get("expected_no_reveal"))
+    missing_expected_reveals = _missing_expected_reveals(
+        reveal_actions,
+        _expected_reveals(scenario),
+    )
     gate_opened, _gate_events = _gate_only_reveals(assets, request)
     prior_influenced = policy == "controller" and opened_assets != gate_opened
     return {
         "scenario_id": str(scenario.get("scenario_id") or scenario.get("case_id") or "scenario"),
         "policy": policy,
         "opened_assets": opened_assets,
+        "reveal_actions": reveal_actions,
         "opened_asset_count": len(opened_assets),
+        "unlock_reveal_count": sum(1 for action in reveal_actions if action["action_type"] == "unlock"),
+        "configuration_reveal_count": sum(1 for action in reveal_actions if action["action_type"] == "configure"),
         "reasonable_reveals": sorted(reasonable_reveals),
         "irrelevant_reveals": sorted(irrelevant_reveals),
         "hidden_violations": sorted(hidden_violations),
         "useful_reveals": sorted(useful_reveals),
         "diagnostic_or_useful_reveals": sorted(diagnostic_or_useful_reveals),
+        "missing_expected_reveals": missing_expected_reveals,
         "expected_no_reveal": expected_no_reveal,
         "correct_no_reveal": expected_no_reveal and not opened_assets,
         "prior_influenced": prior_influenced,
@@ -298,6 +313,64 @@ def _controller_opened_assets(actions: list[Any]) -> list[str]:
     return dedupe_preserve(opened)
 
 
+def _controller_reveal_actions(actions: list[Any]) -> list[dict[str, str]]:
+    """Return compact action summaries for unlock-vs-config evaluation.
+
+    Example:
+        configure malware-sink -> dionaea-capture records action_type,
+        source asset, target asset, and configuration id.
+    """
+    summaries: list[dict[str, str]] = []
+    for action in actions:
+        action_type = getattr(action, "action_type", None)
+        action_type_value = getattr(action_type, "value", action_type)
+        if action_type_value not in {"unlock", "configure"}:
+            continue
+        asset_id = getattr(action, "asset_id", None)
+        if not isinstance(asset_id, str):
+            continue
+        summary = {"action_type": str(action_type_value), "asset_id": asset_id}
+        target_asset_id = getattr(action, "target_asset_id", None)
+        configuration_id = getattr(action, "configuration_id", None)
+        if isinstance(target_asset_id, str):
+            summary["target_asset_id"] = target_asset_id
+        if isinstance(configuration_id, str):
+            summary["configuration_id"] = configuration_id
+        summaries.append(summary)
+    return summaries
+
+
+def _unlock_action_summaries(asset_ids: list[str]) -> list[dict[str, str]]:
+    return [{"action_type": "unlock", "asset_id": asset_id} for asset_id in asset_ids]
+
+
+def _expected_reveals(scenario: dict[str, Any]) -> list[dict[str, str]]:
+    reveals = scenario.get("expected_reveals")
+    if not isinstance(reveals, list):
+        return []
+    return [
+        {
+            key: value
+            for key, value in reveal.items()
+            if key in {"action_type", "asset_id", "target_asset_id", "configuration_id"}
+            and isinstance(value, str)
+        }
+        for reveal in reveals
+        if isinstance(reveal, dict)
+    ]
+
+
+def _missing_expected_reveals(
+    actual: list[dict[str, str]],
+    expected: list[dict[str, str]],
+) -> list[str]:
+    missing = []
+    for reveal in expected:
+        if not any(all(action.get(key) == value for key, value in reveal.items()) for action in actual):
+            missing.append(json.dumps(reveal, sort_keys=True))
+    return missing
+
+
 def _revealed_configurations(value: object) -> dict[str, list[str]]:
     if not isinstance(value, dict):
         return {}
@@ -333,6 +406,7 @@ def profile_from_evidence_sequence(attacker_key: str, raw_events: object) -> Pro
         recent_internal_http_paths=dedupe_preserve(_values(events, "internal_http_path")),
         recent_internal_http_rules=dedupe_preserve(_values(events, "internal_http_rule")),
         recent_internal_http_indicators=dedupe_preserve(_values(events, "internal_http_indicator")),
+        recent_asset_ids=dedupe_preserve(_values(events, "asset_id", "source_asset_id")),
     )
 
 
@@ -540,11 +614,14 @@ def _decision_trace_complete(decision_events: list[dict[str, Any]]) -> bool:
 
 def _aggregate_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
     opened = sum(int(row["opened_asset_count"]) for row in rows)
+    unlock_reveals = sum(int(row["unlock_reveal_count"]) for row in rows)
+    configuration_reveals = sum(int(row["configuration_reveal_count"]) for row in rows)
     reasonable = sum(len(row["reasonable_reveals"]) for row in rows)
     irrelevant = sum(len(row["irrelevant_reveals"]) for row in rows)
     hidden = sum(len(row["hidden_violations"]) for row in rows)
     useful = sum(len(row["useful_reveals"]) for row in rows)
     diagnostic_or_useful = sum(len(row["diagnostic_or_useful_reveals"]) for row in rows)
+    missing_expected_reveals = sum(len(row["missing_expected_reveals"]) for row in rows)
     expected_no_reveal = sum(1 for row in rows if row["expected_no_reveal"])
     correct_no_reveal = sum(1 for row in rows if row["correct_no_reveal"])
     prior_influenced = sum(1 for row in rows if row["prior_influenced"])
@@ -556,12 +633,19 @@ def _aggregate_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "scenario_count": len(rows),
         "opened_asset_count": opened,
+        "unlock_reveal_count": unlock_reveals,
+        "configuration_reveal_count": configuration_reveals,
         "avg_opened_assets": _ratio(opened, len(rows)),
         "reveal_correctness": _ratio(reasonable, opened),
         "irrelevant_reveal_rate": _ratio(irrelevant, opened),
         "hidden_violation_rate": _ratio(hidden, opened),
         "useful_evidence_per_reveal": _ratio(useful, opened),
         "diagnostic_or_useful_per_reveal": _ratio(diagnostic_or_useful, opened),
+        "missing_expected_reveal_count": missing_expected_reveals,
+        "expected_reveal_match_rate": _ratio(
+            sum(1 for row in rows if not row["missing_expected_reveals"]),
+            len(rows),
+        ),
         "expected_no_reveal_count": expected_no_reveal,
         "correct_no_reveal_rate": _ratio(correct_no_reveal, expected_no_reveal),
         "prior_influence_rate": _ratio(prior_influenced, len(rows)),

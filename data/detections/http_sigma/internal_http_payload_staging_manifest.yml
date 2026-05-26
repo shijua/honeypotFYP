@@ -1,0 +1,20 @@
+title: Internal HTTP Payload Capability Manifest
+id: honeynet-internal-http-payload-staging-manifest
+status: experimental
+logsource:
+  product: honeynet
+  category: web
+honeynet.rule_name: internal_http_payload_staging_manifest
+honeynet.evidence_label: internal-http payload capability manifest access
+detection:
+  surface:
+    honeynet.surface: internal
+  asset:
+    honeynet.asset_id: malware-sink
+  selection:
+    url.path|contains:
+      - /staging/manifest.json
+  condition: surface and asset and selection
+tags:
+  - attack.resource_development
+  - attack.t1608

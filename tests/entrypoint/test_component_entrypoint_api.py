@@ -76,10 +76,9 @@ def test_entrypoint_ingests_normalized_internal_asset_event(
     assert payload["observation"]["surface"] == "internal"
     assert payload["observation"]["asset_id"] == "malware-sink"
     assert payload["observation"]["matched_rules"] == [
-        "internal_http_artifact_access",
         "internal_http_package_transfer",
     ]
-    assert payload["profile"]["recent_techniques"] == ["T1005", "T1105"]
+    assert payload["profile"]["recent_techniques"] == ["T1105"]
     assert payload["profile"]["recent_internal_http_paths"] == [
         "/downloads/agent-update.bin"
     ]
