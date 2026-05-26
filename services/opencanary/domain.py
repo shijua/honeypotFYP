@@ -128,6 +128,7 @@ class OpenCanaryService:
                         "node_id": event.node_id,
                         "username": username,
                         "password_seen": password_seen,
+                        "asset_id": _text_from_logdata(event.logdata, "ASSET_ID", "asset_id"),
                         **profile_context,
                     },
                 ),
@@ -200,6 +201,8 @@ def _profile_tags(
             ),
             *base_tags,
         ])
+    if service == "smtp":
+        return dedupe_preserve([*_smtp_tags(event.logdata), *base_tags])
     if _is_login_probe(
         event=event,
         service=service,
@@ -222,8 +225,6 @@ def _profile_tags(
         ])
     if service == "redis":
         return dedupe_preserve([*_redis_tags(event.logdata), *base_tags])
-    if service == "smtp":
-        return dedupe_preserve([*_smtp_tags(event.logdata), *base_tags])
     return dedupe_preserve(["mitre_discovery", "T1046", *base_tags])
 
 
@@ -279,7 +280,10 @@ def _smtp_tags(logdata: dict[str, Any]) -> list[str]:
         tags.extend(["mitre_credential_access", "T1110"])
     if _has_any_command(logdata, _SMTP_ACCOUNT_DISCOVERY_COMMANDS):
         tags.extend(["mitre_discovery", "T1087.003"])
-    elif not tags or _has_any_command(logdata, _SMTP_DISCOVERY_COMMANDS):
+    elif not tags and (
+        not _commands_from_logdata(logdata)
+        or _has_any_command(logdata, _SMTP_DISCOVERY_COMMANDS)
+    ):
         tags.extend(["mitre_discovery", "T1046"])
     return tags
 

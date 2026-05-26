@@ -137,7 +137,8 @@ services:
     image: python:3.10-slim
     working_dir: /app
     command: >
-      bash -lc "python scripts/runtime/adaptive_controller_loop.py
+      bash -lc "pip install -q pydantic &&
+      python scripts/runtime/adaptive_controller_loop.py
       --state-dir data/runtime
       --controller-url http://controller:8003
       --orchestrator-url http://orchestrator:8005

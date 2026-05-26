@@ -8,6 +8,7 @@ import pytest
 from services.asset_gateway.app import (
     AssetRoute,
     _internal_portal_session_result,
+    _parse_ftp_commands,
     _parse_http_request,
     _parse_smtp_commands,
     _protocol_observer,
@@ -193,6 +194,36 @@ def test_parse_smtp_commands_extracts_command_verbs_only() -> None:
     )
 
     assert commands == ["HELO", "MAIL", "RCPT"]
+
+
+def test_parse_ftp_commands_extracts_command_verbs_only() -> None:
+    commands = _parse_ftp_commands(
+        b"USER anonymous\r\nPASS anonymous\r\nRETR finance.zip\r\nSTOR drop.zip\r\n"
+    )
+
+    assert commands == ["USER", "PASS", "RETR", "STOR"]
+
+
+def test_ftp_observer_writes_command_event(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    events_file = tmp_path / "internal_protocol_events.jsonl"
+    monkeypatch.setenv("HONEYPOT_INTERNAL_PROTOCOL_EVENTS_FILE", str(events_file))
+    route = AssetRoute(
+        attacker_key="198.51.100.10",
+        binding_id="binding-a",
+        asset_id="ftp-archive",
+        public_port=12121,
+        backend_host="ftp-archive",
+        backend_port=21,
+    )
+
+    observer = _protocol_observer(route, "198.51.100.10")
+
+    assert observer is not None
+    observer(b"USER anonymous\r\nPASS anonymous\r\nRETR finance.zip\r\n")
+    event = json.loads(events_file.read_text(encoding="utf-8").strip())
+    assert event["src_host"] == "198.51.100.10"
+    assert event["logdata"]["SERVICE"] == "ftp"
+    assert event["logdata"]["COMMANDS"] == ["USER", "PASS", "RETR"]
 
 
 def test_high_interaction_observer_writes_gateway_probe(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

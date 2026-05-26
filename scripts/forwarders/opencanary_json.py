@@ -71,6 +71,7 @@ def attribute_asset_gateway_source(
         logdata = dict(logdata)
     if original_src_host:
         logdata["ASSET_GATEWAY_PROXY_SRC_HOST"] = original_src_host
+    logdata["ASSET_ID"] = str(matches[0].get("asset_id", ""))
     logdata["ASSET_GATEWAY_BACKEND_HOST"] = str(matches[0].get("backend_host", ""))
     logdata["ASSET_GATEWAY_PUBLIC_PORT"] = matches[0].get("public_port", "")
     attributed["logdata"] = logdata

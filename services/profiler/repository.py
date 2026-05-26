@@ -62,10 +62,11 @@ class FileEvidenceRepository:
         attacker_key: str,
         evidences: list[TechniqueEvidence],
     ) -> list[TechniqueEvidence]:
-        payload = self._store.read()
-        bucket = payload.setdefault("records", {}).setdefault(attacker_key, [])
-        bucket.extend(evidence.model_dump(mode="json") for evidence in evidences)
-        self._store.write(payload)
+        self._store.extend_list_in_object(
+            "records",
+            attacker_key,
+            (evidence.model_dump(mode="json") for evidence in evidences),
+        )
         return evidences
 
     def list_by_attacker(self, attacker_key: str) -> Iterable[TechniqueEvidence]:
@@ -90,9 +91,9 @@ class FileProfileRepository:
         return ProfileSnapshot.model_validate(item)
 
     def upsert(self, snapshot: ProfileSnapshot) -> ProfileSnapshot:
-        payload = self._store.read()
-        payload.setdefault("profiles", {})[snapshot.attacker_key] = snapshot.model_dump(
-            mode="json"
+        self._store.set_object_item(
+            "profiles",
+            snapshot.attacker_key,
+            snapshot.model_dump(mode="json"),
         )
-        self._store.write(payload)
         return snapshot

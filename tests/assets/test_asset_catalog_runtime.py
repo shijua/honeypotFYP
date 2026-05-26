@@ -272,19 +272,19 @@ def test_web_admin_console_has_no_default_external_lab_upgrade() -> None:
     assert "upgrade_candidates" not in selection_profile
 
 
-def test_high_interaction_assets_declare_real_runtime_and_gateway_ports() -> None:
+def test_runtime_capture_assets_declare_real_runtime_and_gateway_ports() -> None:
     assets = _catalog_by_id()
     expected_ports = {
-        "dionaea-capture": {18085, 1445, 11433, 12122},
-        "honeytrap-generic": {19999},
+        "dionaea-capture": ("high", {18085, 1445, 11433, 12122}),
+        "honeytrap-generic": ("medium", {19999}),
     }
 
-    for asset_id, public_ports in expected_ports.items():
+    for asset_id, (interaction_level, public_ports) in expected_ports.items():
         asset = assets[asset_id]
         runtime = asset.default_settings["runtime"]
         mappings = runtime["port_mappings"]
 
-        assert asset.interaction_level == "high"
+        assert asset.interaction_level == interaction_level
         assert asset.telemetry_source == "high_interaction"
         assert runtime["backend"] in {"docker", "compose"}
         assert {item["requested_host_port"] for item in mappings} == public_ports

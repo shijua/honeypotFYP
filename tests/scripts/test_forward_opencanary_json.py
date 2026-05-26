@@ -101,6 +101,7 @@ def test_asset_gateway_routes_restore_original_attacker_ip(tmp_path) -> None:
 
     assert attributed["src_host"] == "198.51.100.77"
     assert attributed["logdata"]["ASSET_GATEWAY_PROXY_SRC_HOST"] == "172.25.0.3"
+    assert attributed["logdata"]["ASSET_ID"] == "redis-cache"
     assert attributed["logdata"]["ASSET_GATEWAY_PUBLIC_PORT"] == 16379
 
 

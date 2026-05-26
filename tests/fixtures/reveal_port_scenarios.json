@@ -492,7 +492,7 @@
   {
     "scenario_id": "admin-jumpbox-after-git",
     "title": "Admin jumpbox after Git",
-    "expected_behavior": "Shell evidence after Git unlock should select admin-jumpbox and expose port 2222.",
+    "expected_behavior": "Shell evidence after Git unlock should select admin-jumpbox and expose port 10222.",
     "attacker_key": "198.51.100.223",
     "initial_unlocked_assets": [
       "git-internal"
@@ -503,7 +503,7 @@
     "expected_routes": [
       {
         "asset_id": "admin-jumpbox",
-        "public_port": 2222
+        "public_port": 10222
       }
     ],
     "profile": {

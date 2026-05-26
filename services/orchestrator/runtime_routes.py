@@ -102,12 +102,6 @@ def upsert_asset_gateway_routes(
     if not isinstance(routes, list):
         return
 
-    store = JsonFileStore(asset_gateway_routes_path(), default_data={"routes": []})
-    payload = store.read()
-    existing_routes = payload.get("routes", [])
-    existing_routes = existing_routes if isinstance(existing_routes, list) else []
-
-    replacement_keys: set[tuple[str, str, int]] = set()
     new_routes: list[dict[str, object]] = []
     protocol = str(asset.protocols[0]) if asset.protocols else "tcp"
     updated_at = utcnow().isoformat()
@@ -124,7 +118,6 @@ def upsert_asset_gateway_routes(
             continue
         if not isinstance(backend_host, str) or not backend_host:
             continue
-        replacement_keys.add((binding_id, asset.asset_id, public_port))
         new_routes.append(
             {
                 "schema_version": "v1",
@@ -144,19 +137,12 @@ def upsert_asset_gateway_routes(
     if not new_routes:
         return
 
-    preserved_routes = []
-    for route in existing_routes:
-        if not isinstance(route, dict):
-            continue
-        key = (
-            str(route.get("binding_id", "")),
-            str(route.get("asset_id", "")),
-            int(route.get("public_port", 0) or 0),
-        )
-        if key not in replacement_keys:
-            preserved_routes.append(route)
-    payload["routes"] = [*preserved_routes, *new_routes]
-    store.write(payload)
+    store = JsonFileStore(asset_gateway_routes_path(), default_data={"routes": []})
+    store.replace_list_items(
+        "routes",
+        new_routes,
+        ("binding_id", "asset_id", "public_port"),
+    )
 
 
 def asset_gateway_routes_path() -> Path:

@@ -31,7 +31,7 @@ ssh -N \
   -L 127.0.0.1:11433:146.169.44.23:11433 \
   -L 127.0.0.1:12122:146.169.44.23:12122 \
   -L 127.0.0.1:19999:146.169.44.23:19999 \
-  -L 127.0.0.1:10222:146.169.44.23:2222 \
+  -L 127.0.0.1:10222:146.169.44.23:10222 \
   vm
 ```
 
@@ -211,9 +211,9 @@ curl -s "http://146.169.44.23:8090/api/summary" | jq '{asset_gateway_routes, rec
 
 Expected: static HTTP assets produce internal HTTP evidence; Git/MySQL/Redis/FTP/SSH/Telnet/SMTP produce `recent_opencanary_observations` and update attacker tactics/techniques.
 
-## 6. High-Interaction Runtime Smoke
+## 6. High-Interaction And Capture Runtime Smoke
 
-Use this after the fixed-port smoke when you want to verify upgraded high-interaction backends. These commands force-unlock the Docker-backed high-interaction assets for the same attacker key, then probe their gateway-managed ports.
+Use this after the fixed-port smoke when you want to verify upgraded capture backends. These commands force-unlock Dionaea plus the generic TCP capture asset for the same attacker key, then probe their gateway-managed ports.
 
 ```bash
 TEST_ATTACKER_KEY="$(
@@ -234,7 +234,7 @@ printf "\x00\x00\x00\x90" | nc -w 3 146.169.44.23 1445 || true
 printf "\x12\x01\x00\x34" | nc -w 3 146.169.44.23 11433 || true
 printf "USER anonymous\r\nPASS anonymous\r\nQUIT\r\n" | nc -w 3 146.169.44.23 12122 || true
 
-# Generic Honeytrap port
+# Generic TCP capture port
 printf "payload upload test\r\n" | nc -w 3 146.169.44.23 19999 || true
 ```
 
@@ -246,9 +246,138 @@ curl -s "http://146.169.44.23:8090/api/summary" | jq '{recent_high_interaction_o
 .venv/bin/python scripts/validation/asset_telemetry.py --asset-id dionaea-capture --asset-id honeytrap-generic --require-observed
 ```
 
-Expected: the three assets have runtime records, asset-gateway routes, dashboard running state, and either `recent_high_interaction_observations` or raw high-interaction/internal HTTP telemetry. If a third-party image is unavailable, the validation report should show the failed runtime instead of silently passing.
+Expected: the selected assets have runtime records, asset-gateway routes, dashboard running state, and either `recent_high_interaction_observations` or raw high-interaction/internal HTTP telemetry. If a third-party image is unavailable, the validation report should show the failed runtime instead of silently passing.
 
-## 7. Debug
+## 7. Manual Technique Coverage Smoke
+
+Run the HTTP, protocol, and Cowrie blocks after section 4 and before section 6 if you want a manual smoke that touches every catalog-covered technique at least once. The Dionaea upgrade reuses `18085`, so the static `malware-sink` paths must be touched before the latest route on that port is changed to `dionaea-capture`. After those blocks, run section 6, then come back for the high-interaction and generic capture block plus the final check.
+
+Set the target once:
+
+```bash
+TARGET="146.169.44.23"
+DASHBOARD="http://${TARGET}:8090"
+```
+
+HTTP surfaces:
+
+```bash
+# Internal portal, admin, VPN, finance, and malware sink HTTP paths
+curl -i "http://${TARGET}:18080/directory/hosts.csv" || true                         # T1018
+curl -i -X POST "http://${TARGET}:18080/session" -d "username=portal.reader&token=nbp_reader_2026_04_window&auth_result=success" || true  # T1021, T1078
+curl -i "http://${TARGET}:18081/api/processes.json" || true                         # T1057
+curl -i "http://${TARGET}:18081/api/groups.json" || true                            # T1069
+curl -i "http://${TARGET}:18081/api/container-resources.json" || true               # T1082
+curl -i "http://${TARGET}:18081/api/inventory.json" || true                         # T1518
+curl -i -X POST "http://${TARGET}:18081/login" -d "username=admin&password=x" || true # T1110
+curl -i "http://${TARGET}:18082/finance/archive/2024/payroll-archive.zip" || true    # T1005
+curl -i "http://${TARGET}:18085/downloads/agent-update.bin" || true                 # T1105
+curl -i "http://${TARGET}:18085/staging/archive-plan.txt" || true                   # T1074
+curl -i "http://${TARGET}:18085/staging/manifest.json" || true                      # T1608
+curl -i -X POST "http://${TARGET}:18085/upload/" -d "filename=finance-drop.zip" || true # T1567
+curl -i "http://${TARGET}:18443/download/contractor-profile.ovpn" || true           # T1133
+curl -i "http://${TARGET}:18443/policy/tunnel-routes.txt" || true                   # T1572
+```
+
+Protocol surfaces:
+
+```bash
+# Git, Redis, FTP, SSH, Telnet, SMTP, and MySQL-facing lures
+timeout 8s git ls-remote "git://${TARGET}:19418/infra-deploy.git" || true            # T1213
+printf "INFO\r\n" | nc -w 2 "$TARGET" 16379 || true                                  # T1046
+printf "KEYS *\r\n" | nc -w 2 "$TARGET" 16379 || true                                # T1213
+printf "CONFIG GET *\r\n" | nc -w 2 "$TARGET" 16379 || true                          # T1552.001
+printf "USER anonymous\r\nPASS anonymous\r\nRETR finance-drop.zip\r\nQUIT\r\n" | nc -w 4 "$TARGET" 12121 || true # T1021, T1039, T1110
+printf "USER anonymous\r\nPASS anonymous\r\nSTOR finance-drop.zip\r\nQUIT\r\n" | nc -w 4 "$TARGET" 12121 || true # T1567.002
+tmpask="$(mktemp)"; printf '#!/bin/sh\necho wrongpass\n' > "$tmpask"; chmod +x "$tmpask"; DISPLAY=:0 SSH_ASKPASS="$tmpask" SSH_ASKPASS_REQUIRE=force setsid ssh -o NumberOfPasswordPrompts=1 -o PubkeyAuthentication=no -o PreferredAuthentications=password -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 12222 root@"$TARGET" true </dev/null || true; rm -f "$tmpask" # T1021.004, T1110
+{ sleep 1; printf "admin\r\n"; sleep 1; printf "admin123\r\n"; sleep 1; } | nc -w 8 "$TARGET" 12323 || true # T1021, T1110
+printf "EHLO tester\r\nVRFY finance\r\nAUTH LOGIN\r\nYWRtaW4=\r\nV3JvbmdQYXNz\r\nQUIT\r\n" | nc -w 4 "$TARGET" 2525 || true # T1046, T1087.003, T1110
+TARGET="$TARGET" python3 - <<'PY'
+import os
+import socket
+import struct
+
+host = os.environ["TARGET"]
+username = b"backup_reader"
+password = b"WrongPassword"
+try:
+    with socket.create_connection((host, 13306), timeout=5) as sock:
+        sock.recv(4096)
+        capabilities = 0x00000001 | 0x00000200 | 0x00008000 | 0x00080000
+        payload = struct.pack("<IIB23s", capabilities, 16777216, 33, b"\0" * 23)
+        payload += username + b"\0" + bytes([len(password)]) + password + b"mysql_native_password\0"
+        sock.sendall(struct.pack("<I", len(payload))[:3] + b"\x01" + payload)
+        print(sock.recv(4096).decode("utf-8", errors="replace"))
+except OSError as exc:
+    print(f"MySQL probe failed: {exc}")
+PY
+```
+
+After the static/protocol/Cowrie blocks complete, run section 6 if you have not already done so. Then probe high-interaction and generic capture routes:
+
+```bash
+curl -i "http://${TARGET}:18085/downloads/agent-update.bin" || true                  # T1041, T1105, T1190, T1204.002 when latest route is Dionaea
+printf "payload upload test\r\n" | nc -w 3 "$TARGET" 19999 || true                   # T1190, T1105 through generic TCP capture
+```
+
+Cowrie command surface:
+
+```bash
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 10222 root@"$TARGET"
+```
+
+Run these inside the Cowrie shell:
+
+```bash
+whoami
+id
+uname -a
+ls -la /tmp
+ip addr
+cat /etc/shadow
+grep password .env
+sudo -l
+crontab -l
+bash -i
+curl http://146.169.44.23:18085/downloads/agent-update.bin -o /tmp/agent-update.bin
+history -c
+exit
+```
+
+Expected Cowrie techniques include `T1003`, `T1016`, `T1033`, `T1053`, `T1059`, `T1070`, `T1082`, `T1083`, `T1105`, `T1548`, and `T1552.001`.
+
+Check the evidence-level result:
+
+```bash
+sleep 5
+REQUIRED='["T1003","T1005","T1016","T1018","T1021","T1021.004","T1033","T1039","T1041","T1046","T1053","T1057","T1059","T1069","T1070","T1074","T1078","T1082","T1083","T1087.003","T1105","T1110","T1133","T1190","T1204.002","T1213","T1518","T1548","T1552.001","T1567","T1567.002","T1572","T1608"]'
+jq --argjson required "$REQUIRED" '
+  (.records // {}) as $records |
+  [
+    (
+      if ($records | type) == "object" then
+        [$records[] | .[]?]
+      elif ($records | type) == "array" then
+        $records
+      else
+        []
+      end
+    )[]
+    | .tech_id?
+    | select(. != null)
+  ] | unique as $seen |
+  {seen: $seen, missing: ($required - $seen)}
+' data/runtime/evidence.json
+curl -s "${DASHBOARD}/api/summary" |
+  jq --argjson required "$REQUIRED" '
+    [ .attackers[].recent_techniques[]? ] | unique as $seen |
+    {recent_profile_techniques: $seen}
+  '
+```
+
+Expected: `missing` is empty. If `T1041` or `T1204.002` is missing, first confirm the latest `18085` route points to `dionaea-capture`; if it still points to the static `malware-sink`, rerun the high-interaction unlock in section 6.
+
+## 8. Debug
 
 ```bash
 docker-compose -p honeynet -f docker-compose.control.yml ps

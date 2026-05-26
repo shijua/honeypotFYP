@@ -31,6 +31,7 @@ def normalize_event(
     event: dict[str, object],
     *,
     asset_id: str | None = None,
+    attacker_key: str | None = None,
 ) -> dict[str, object] | None:
     """Return an adapter-safe event, or None for noisy Cowrie records.
 
@@ -50,6 +51,11 @@ def normalize_event(
         normalized["message"] = json.dumps(message, sort_keys=True)
     if asset_id and not normalized.get("asset_id"):
         normalized["asset_id"] = asset_id
+    if attacker_key:
+        original_src_ip = normalized.get("src_ip")
+        if isinstance(original_src_ip, str) and original_src_ip:
+            normalized["gateway_src_ip"] = original_src_ip
+        normalized["src_ip"] = attacker_key
     return normalized
 
 
@@ -62,11 +68,16 @@ def forward_lines(
     protocol: str,
     timeout_seconds: float,
     asset_id: str | None = None,
+    attacker_key: str | None = None,
 ) -> int:
     """Forward a finite batch of Cowrie JSON lines and return success count."""
     def _payloads() -> Iterator[dict[str, object]]:
         for event in iter_json_objects(lines, label="Cowrie JSON"):
-            normalized = normalize_event(event, asset_id=asset_id)
+            normalized = normalize_event(
+                event,
+                asset_id=asset_id,
+                attacker_key=attacker_key,
+            )
             if normalized is None:
                 print(f"Skipped noisy {event.get('eventid', '<unknown>')}", flush=True)
                 continue
@@ -94,6 +105,7 @@ def follow_log_file(
     poll_seconds: float,
     timeout_seconds: float,
     asset_id: str | None = None,
+    attacker_key: str | None = None,
 ) -> int:
     """Tail a Cowrie JSON log file and forward new events to the adapter."""
     return follow_file(
@@ -107,6 +119,7 @@ def follow_log_file(
             protocol=protocol,
             timeout_seconds=timeout_seconds,
             asset_id=asset_id,
+            attacker_key=attacker_key,
         ),
     )
 
@@ -158,6 +171,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="",
         help="Optional catalog asset id to attach to forwarded runtime Cowrie events.",
     )
+    parser.add_argument(
+        "--attacker-key",
+        default="",
+        help="Optional original attacker key for per-binding Cowrie runtimes behind asset-gateway.",
+    )
     return parser.parse_args(argv)
 
 
@@ -172,6 +190,7 @@ def main(argv: list[str] | None = None) -> int:
         poll_seconds=args.poll_seconds,
         timeout_seconds=args.timeout_seconds,
         asset_id=args.asset_id or None,
+        attacker_key=args.attacker_key or None,
     )
     if args.once:
         print(f"Forwarded {forwarded} Cowrie event(s)")

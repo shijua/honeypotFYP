@@ -648,7 +648,8 @@
           "ALL"
         ],
         "cap_add": [
-          "NET_BIND_SERVICE"
+          "NET_BIND_SERVICE",
+          "NET_ADMIN"
         ],
         "security_opt": [
           "no-new-privileges"
@@ -656,15 +657,15 @@
         "entrypoint": "/bin/sh",
         "command": [
           "-lc",
-          "mkdir -p /tmp/cowrie /tmp/cowrie/data etc && exec /usr/bin/twistd --nodaemon -y cowrie.tac --pidfile /tmp/cowrie/cowrie.pid cowrie"
+          "mkdir -p /tmp/cowrie /tmp/cowrie/data etc log/tty && printf 'root:x:*\\n' > etc/userdb.txt && sed -i 's/^auth_class = .*/auth_class = UserDB/' cowrie.cfg && exec /usr/bin/twistd --nodaemon -y cowrie.tac --pidfile /tmp/cowrie/cowrie.pid cowrie"
         ],
         "volumes": [
-          "{host_project_root}/data/runtime/high_interaction/{binding_id_short}/admin-jumpbox:/cowrie/cowrie-git/var"
+          "{host_project_root}/data/runtime/high_interaction/{binding_id_short}/admin-jumpbox/log/cowrie:/home/cowrie/cowrie/log"
         ],
         "port_mappings": [
           {
             "host": "127.0.0.1",
-            "requested_host_port": 2222,
+            "requested_host_port": 10222,
             "container_port": 22
           }
         ],
@@ -687,7 +688,7 @@
             "command": [
               "bash",
               "-lc",
-              "python scripts/forwarders/cowrie_json.py --log-file /cowrie-var/log/cowrie/cowrie.json --adapter-url http://cowrie-adapter:8011/v1/cowrie/events --asset-id admin-jumpbox --poll-seconds 0.5"
+              "PYTHONPATH=/app python scripts/forwarders/cowrie_json.py --log-file /cowrie-var/log/cowrie/cowrie.json --adapter-url http://cowrie-adapter:8011/v1/cowrie/events --asset-id admin-jumpbox --attacker-key {attacker_key} --poll-seconds 0.5"
             ]
           }
         ]
@@ -1665,7 +1666,6 @@
             "combined:password"
           ],
           "any_techniques": [
-            "T1087.001",
             "T1087.003",
             "T1110"
           ]
@@ -1919,7 +1919,7 @@
     "source_refs": [
       "mvp:static-malware-sink",
       "planned:tpotce/dionaea",
-      "planned:tpotce/honeytrap"
+      "local:generic-tcp-capture"
     ],
     "telemetry_source": "asset_runtime",
     "default_settings": {
@@ -2042,7 +2042,7 @@
               "any_techniques:T1105",
               "any_internal_http_indicators:path:.bin"
             ],
-            "reason": "Unknown binary transfer or generic TCP probing can reveal a generic Honeytrap listener without changing the existing malware-sink story."
+            "reason": "Unknown binary transfer or generic TCP probing can reveal a generic TCP capture listener without changing the existing malware-sink story."
           }
         ],
         "telemetry_value": 0.9
@@ -2113,7 +2113,7 @@
         },
         {
           "configuration_id": "malware-honeytrap-generic-listener",
-          "kind": "adjacent-high-interaction-listener",
+          "kind": "adjacent-generic-capture-listener",
           "target_asset_id": "honeytrap-generic",
           "public_port": 19999,
           "required_markers": [
@@ -2127,7 +2127,7 @@
             "T1190"
           ],
           "telemetry_value": 0.95,
-          "reason": "Unknown binary transfer or generic TCP probing can reveal a generic Honeytrap listener without changing the existing malware-sink story."
+          "reason": "Unknown binary transfer or generic TCP probing can reveal a generic TCP capture listener without changing the existing malware-sink story."
         }
       ],
       "telemetry_validation": {
@@ -2185,7 +2185,8 @@
           "ALL"
         ],
         "cap_add": [
-          "NET_BIND_SERVICE"
+          "NET_BIND_SERVICE",
+          "NET_ADMIN"
         ],
         "security_opt": [
           "no-new-privileges"
@@ -2234,7 +2235,7 @@
             "command": [
               "bash",
               "-lc",
-              "python scripts/forwarders/high_interaction_logs.py --log-file /runtime-logs/dionaea.json --adapter-url http://high-interaction-adapter:8014/v1/high-interaction/events --source dionaea --asset-id dionaea-capture --service smb --event-type backend.log --asset-routes-file data/runtime/asset_gateway_routes.json --poll-seconds 0.5"
+              "PYTHONPATH=/app python scripts/forwarders/high_interaction_logs.py --log-file /runtime-logs/dionaea.json --adapter-url http://high-interaction-adapter:8014/v1/high-interaction/events --source dionaea --asset-id dionaea-capture --service smb --event-type backend.log --asset-routes-file data/runtime/asset_gateway_routes.json --poll-seconds 0.5"
             ]
           }
         ]
@@ -2357,10 +2358,10 @@
   },
   {
     "asset_id": "honeytrap-generic",
-    "asset_name": "Honeytrap Generic TCP Backend",
+    "asset_name": "Generic TCP Capture Backend",
     "exposure_type": "internal",
-    "interaction_level": "high",
-    "description": "A Honeytrap-backed generic TCP capture service for unknown probing and payload-transfer behaviour.",
+    "interaction_level": "medium",
+    "description": "A generic TCP capture service for unknown probing and payload-transfer behaviour.",
     "template_family": "generic-capture-service",
     "protocols": [
       "tcp"
@@ -2369,13 +2370,13 @@
       80
     ],
     "source_refs": [
-      "dtagdevsec/honeytrap"
+      "local:generic-tcp-capture"
     ],
     "telemetry_source": "high_interaction",
     "default_settings": {
       "runtime": {
         "backend": "docker",
-        "image": "dtagdevsec/honeytrap:24.04.1",
+        "image": "python:3.10-slim",
         "network": "{project_name}_net_internal",
         "memory_limit": "512m",
         "pids_limit": 512,
@@ -2389,7 +2390,8 @@
           "no-new-privileges"
         ],
         "volumes": [
-          "{host_project_root}/data/runtime/high_interaction/{binding_id_short}/honeytrap-generic:/opt/honeytrap/var/log"
+          "{host_project_root}:/app",
+          "{host_project_root}/data/runtime/high_interaction/{binding_id_short}/honeytrap-generic:/runtime-logs"
         ],
         "port_mappings": [
           {
@@ -2403,7 +2405,22 @@
           "host": "127.0.0.1",
           "port_setting": "host_port"
         },
-        "source": "telekom-security/honeytrap",
+        "source": "local/generic-tcp-capture",
+        "working_dir": "/app",
+        "command": [
+          "python",
+          "scripts/runtime/generic_tcp_capture.py",
+          "--host",
+          "0.0.0.0",
+          "--port",
+          "80",
+          "--log-file",
+          "/runtime-logs/honeytrap.json",
+          "--asset-id",
+          "honeytrap-generic",
+          "--service",
+          "tcp"
+        ],
         "sidecar_forwarders": [
           {
             "name": "honeytrap-forwarder",
@@ -2417,13 +2434,13 @@
             "command": [
               "bash",
               "-lc",
-              "python scripts/forwarders/high_interaction_logs.py --log-file /runtime-logs/honeytrap.json --adapter-url http://high-interaction-adapter:8014/v1/high-interaction/events --source honeytrap --asset-id honeytrap-generic --service tcp --event-type backend.log --asset-routes-file data/runtime/asset_gateway_routes.json --poll-seconds 0.5"
+              "PYTHONPATH=/app python scripts/forwarders/high_interaction_logs.py --log-file /runtime-logs/honeytrap.json --adapter-url http://high-interaction-adapter:8014/v1/high-interaction/events --source honeytrap --asset-id honeytrap-generic --service tcp --event-type backend.log --asset-routes-file data/runtime/asset_gateway_routes.json --poll-seconds 0.5"
             ]
           }
         ]
       },
       "image_references": [
-        "dtagdevsec/honeytrap:24.04.1"
+        "python:3.10-slim"
       ],
       "real_backend": true,
       "upgrade_source": "malware-sink",
@@ -2474,7 +2491,7 @@
         "event_file": "high_interaction_observations.json",
         "match": "asset_id",
         "source": "honeytrap",
-        "expected_trigger": "TCP/HTTP probe through upgraded high-interaction asset-gateway route"
+        "expected_trigger": "TCP/HTTP probe through the generic TCP capture asset-gateway route"
       },
       "configuration_variants": [
         {

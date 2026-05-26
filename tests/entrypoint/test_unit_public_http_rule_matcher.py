@@ -163,7 +163,7 @@ def test_internal_http_sigma_asset_paths_exist() -> None:
             "/staging/manifest.json",
             "malware-sink",
             "internal_http_payload_staging_manifest",
-            ("mitre_command_and_control", "T1608"),
+            ("mitre_resource_development", "T1608"),
         ),
         (
             "/staging/archive-plan.txt",

@@ -54,12 +54,12 @@ class FileGatewayRouteRepository:
         return None
 
     def upsert(self, state: GatewayBindingState) -> GatewayBindingState:
-        states = self._states_by_binding()
-        states[state.binding_id] = state
-        payload = {
-            "routes": [item.model_dump(mode="json") for item in states.values()],
-        }
-        self._store.write(payload)
+        self._store.upsert_list_item(
+            "routes",
+            "binding_id",
+            state.binding_id,
+            state.model_dump(mode="json"),
+        )
         return state
 
     def list_all(self) -> Iterable[GatewayBindingState]:

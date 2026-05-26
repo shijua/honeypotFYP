@@ -37,6 +37,25 @@ def test_normalize_event_skips_empty_command_input() -> None:
     assert normalized is None
 
 
+def test_normalize_event_can_restore_asset_gateway_attacker_key() -> None:
+    event = {
+        "eventid": "cowrie.command.input",
+        "input": "id",
+        "src_ip": "192.168.112.3",
+    }
+
+    normalized = normalize_event(
+        event,
+        asset_id="admin-jumpbox",
+        attacker_key="146.169.44.23",
+    )
+
+    assert normalized is not None
+    assert normalized["src_ip"] == "146.169.44.23"
+    assert normalized["gateway_src_ip"] == "192.168.112.3"
+    assert normalized["asset_id"] == "admin-jumpbox"
+
+
 def test_follow_log_file_creates_missing_file_in_tail_mode(tmp_path) -> None:
     log_file = tmp_path / "log" / "cowrie" / "cowrie.json"
 

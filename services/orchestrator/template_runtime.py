@@ -59,17 +59,12 @@ class FileTemplateRuntimeRepository:
         self._store = JsonFileStore(path, default_data={"records": []})
 
     def upsert(self, record: AssetRuntimeRecord) -> AssetRuntimeRecord:
-        payload = self._store.read()
-        records = {
-            item["runtime_id"]: AssetRuntimeRecord.model_validate(item)
-            for item in payload.get("records", [])
-        }
-        records[record.runtime_id] = record
-        payload["records"] = [
-            item.model_dump(mode="json")
-            for item in records.values()
-        ]
-        self._store.write(payload)
+        self._store.upsert_list_item(
+            "records",
+            "runtime_id",
+            record.runtime_id,
+            record.model_dump(mode="json"),
+        )
         return record
 
     def list_by_binding(self, binding_id: str) -> Iterable[AssetRuntimeRecord]:
@@ -230,6 +225,7 @@ class DockerTemplateRuntime:
                 asset=asset,
                 runtime=runtime,
                 main_container_name=container_name,
+                attacker_key=attacker_key,
             )
             return self._record_running_container(
                 binding_id=binding_id,
@@ -263,6 +259,7 @@ class DockerTemplateRuntime:
             asset=asset,
             runtime=runtime,
             main_container_name=container_name,
+            attacker_key=attacker_key,
         )
         return self._record_running_container(
             binding_id=binding_id,
@@ -407,6 +404,7 @@ class DockerTemplateRuntime:
             runtime_settings["read_only"] = True
 
         _append_runtime_list_option(docker_args, runtime_settings, runtime, "tmpfs", "--tmpfs")
+        _prepare_runtime_volume_sources(runtime, format_context)
         _append_runtime_list_option(docker_args, runtime_settings, runtime, "volumes", "-v", format_context)
 
         port_records = resolve_port_mappings(
@@ -507,6 +505,7 @@ class DockerTemplateRuntime:
         asset: AssetDefinition,
         runtime: dict[str, object],
         main_container_name: str,
+        attacker_key: str | None,
     ) -> list[str]:
         """Start catalog-declared log forwarders next to a runtime container.
 
@@ -528,6 +527,7 @@ class DockerTemplateRuntime:
         format_context = {
             **_runtime_format_context(binding_id, asset.asset_id),
             "main_container_name": main_container_name,
+            "attacker_key": attacker_key or "",
         }
         for sidecar in sidecars:
             if not isinstance(sidecar, dict):
@@ -1043,6 +1043,40 @@ def _append_runtime_list_option(
         settings[key] = normalized
 
 
+def _prepare_runtime_volume_sources(
+    runtime: dict[str, object],
+    context: dict[str, str],
+) -> None:
+    """Create writable host log directories before Docker bind-mounts them.
+
+    Some high-interaction images drop privileges after startup. If Docker creates
+    the bind source implicitly, it is root-owned and those backends cannot write
+    their JSON/text logs. Limit the chmod to runtime artifact directories so
+    catalog config files and repo source mounts are left untouched.
+    """
+    volumes = runtime.get("volumes", [])
+    if not isinstance(volumes, list):
+        return
+    for raw_volume in volumes:
+        volume = _format_runtime_string(str(raw_volume), context)
+        source = volume.split(":", 1)[0]
+        if "/data/runtime/high_interaction/" not in source:
+            continue
+        local_source = _container_visible_host_path(source, context)
+        path = Path(local_source)
+        path.mkdir(parents=True, exist_ok=True)
+        path.chmod(0o777)
+
+
+def _container_visible_host_path(source: str, context: dict[str, str]) -> str:
+    """Map a Docker host bind path back to the orchestrator-visible mount path."""
+    host_root = context.get("host_project_root", "")
+    container_root = context.get("container_project_root", "")
+    if host_root and container_root and source.startswith(host_root):
+        return f"{container_root}{source[len(host_root):]}"
+    return source
+
+
 def _append_env_args(
     args: list[str],
     env: object,
@@ -1477,9 +1511,52 @@ def _container_project_root() -> Path:
 def _host_project_root() -> Path:
     """Return the repository path visible to the host Docker daemon."""
     raw_path = os.environ.get("HONEYPOT_HOST_PROJECT_ROOT", "").strip()
+    if raw_path and raw_path != "." and "$" not in raw_path:
+        return Path(raw_path).resolve()
+    inferred = _host_mount_source_for_container_path(_container_project_root())
+    if inferred is not None:
+        return inferred
     if raw_path:
         return Path(raw_path).resolve()
     return _container_project_root()
+
+
+def _host_mount_source_for_container_path(container_path: Path) -> Path | None:
+    """Infer the host bind-mount source for the orchestrator repo mount.
+
+    This keeps Docker-backed assets working even when the stack was started
+    directly with compose and `HOST_PROJECT_ROOT` was not exported.
+    """
+    container_id = os.environ.get("HOSTNAME", "").strip()
+    if not container_id or shutil.which("docker") is None:
+        return None
+    result = subprocess.run(
+        ["docker", "inspect", container_id],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return None
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, list) or not payload:
+        return None
+    mounts = payload[0].get("Mounts", []) if isinstance(payload[0], dict) else []
+    if not isinstance(mounts, list):
+        return None
+    container_path_text = str(container_path)
+    for mount in mounts:
+        if not isinstance(mount, dict):
+            continue
+        if str(mount.get("Destination", "")) != container_path_text:
+            continue
+        source = str(mount.get("Source", "")).strip()
+        if source:
+            return Path(source).resolve()
+    return None
 
 
 def _container_status(container_name: str) -> str:

@@ -379,7 +379,7 @@ def test_docker_template_runtime_starts_catalog_driven_cowrie_asset(
                 "port_mappings": [
                     {
                         "host": "127.0.0.1",
-                        "requested_host_port": 2222,
+                        "requested_host_port": 10222,
                         "container_port": 22,
                     }
                 ],
@@ -401,7 +401,7 @@ def test_docker_template_runtime_starts_catalog_driven_cowrie_asset(
     assert "mkdir -p /tmp/cowrie /tmp/cowrie/data etc && exec cowrie" in captured_args
     assert record.settings["runtime_backend"] == "docker"
     assert record.settings["asset_gateway_managed"] is True
-    assert record.settings["host_port"] == 2222
+    assert record.settings["host_port"] == 10222
     assert record.settings["container_port"] == 22
     assert record.settings["backend_port"] == 22
 

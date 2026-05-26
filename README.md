@@ -231,7 +231,7 @@ Current service roles:
 | `public-portal-forwarder` | telemetry bridge | none | Tails public portal nginx access logs and posts them to `entrypoint-observer` |
 | `entrypoint-observer` | public website backend + direct HTTP test entrypoint | `8083` | Receives public portal breadcrumbs and handles explicit low-interaction HTTP probes |
 | `cowrie` | attacker-facing entrypoint | `2222` | SSH interaction and command telemetry |
-| `asset-gateway` | adaptive asset data plane | `18080`, `19418`, `13306`, `16379`, `18081`, `12121`, `12222`, `12323`, `2525`, `18082`, `18443`, `18085` | Owns fixed external ports, forwards each attacker to the backend selected by source IP, and writes internal HTTP artifact events to JSONL |
+| `asset-gateway` | adaptive asset data plane | `18080`, `19418`, `13306`, `16379`, `18081`, `12121`, `12222`, `12323`, `2525`, `18082`, `18443`, `18085`, `10222` | Owns fixed external ports, forwards each attacker to the backend selected by source IP, and writes internal HTTP artifact events to JSONL |
 | `internal-http-forwarder` | telemetry bridge | none | Tails `data/runtime/internal_http_events.jsonl` and posts internal HTTP asset events to `entrypoint-observer` |
 | `opencanary-adapter` + `opencanary-forwarder` | adaptive asset telemetry | none | Collect logs from OpenCanary-backed internal assets after they are unlocked |
 | `internal-portal` | internal baseline service | internal only; reached through `asset-gateway` on `18080` when dynamically unlocked | First internal asset in the adaptive path |
@@ -257,7 +257,7 @@ MAIL_RELAY_PORT=2525
 FINANCE_SHARE_PORT=18082
 VPN_APPLIANCE_PORT=18443
 MALWARE_SINK_PORT=18085
-ASSET_GATEWAY_PORTS=18080,19418,13306,16379,18081,12121,12222,12323,2525,18082,18443,18085
+ASSET_GATEWAY_PORTS=18080,19418,13306,16379,18081,12121,12222,12323,2525,18082,18443,18085,1445,11433,12122,19999,10222
 ```
 
 Static internal breadcrumb examples after the matching source IP has unlocked the relevant asset:

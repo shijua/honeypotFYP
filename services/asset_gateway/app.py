@@ -169,6 +169,14 @@ async def _handle_connection(
             )
             return
 
+    protocol_observer = _protocol_observer(route, client_ip)
+    observed_initial_data = False
+    if initial_client_data and protocol_observer is not None and _high_interaction_source(route.asset_id):
+        # HTTP capture backends may close before proxying succeeds; record the
+        # attacker request once it is observed at the gateway.
+        protocol_observer(initial_client_data)
+        observed_initial_data = True
+
     try:
         backend_reader, backend_writer = await asyncio.open_connection(
             route.backend_host,
@@ -179,9 +187,8 @@ async def _handle_connection(
         await client_writer.wait_closed()
         return
 
-    protocol_observer = _protocol_observer(route, client_ip)
     if initial_client_data:
-        if protocol_observer is not None:
+        if protocol_observer is not None and not observed_initial_data:
             protocol_observer(initial_client_data)
         backend_writer.write(initial_client_data)
         await backend_writer.drain()
@@ -444,6 +451,8 @@ def _protocol_observer(
     """Return a client-to-backend observer for protocols the gateway can parse."""
     if route.asset_id == "mail-relay" or route.public_port == 2525:
         return lambda data: _report_smtp_commands(data, route=route, client_ip=client_ip)
+    if route.asset_id == "ftp-archive" or route.public_port == 12121:
+        return lambda data: _report_ftp_commands(data, route=route, client_ip=client_ip)
     source = _high_interaction_source(route.asset_id)
     if source:
         return lambda data: _report_high_interaction_probe(
@@ -486,6 +495,70 @@ def _report_smtp_commands(
         "logdata": logdata,
     }
     _append_jsonl(_internal_protocol_events_path(), event)
+
+
+def _report_ftp_commands(
+    data: bytes,
+    *,
+    route: AssetRoute,
+    client_ip: str,
+) -> None:
+    """Write FTP command verbs as OpenCanary-shaped protocol events."""
+    commands = _parse_ftp_commands(data)
+    if not commands:
+        return
+    logdata: dict[str, object] = {
+        "SERVICE": "ftp",
+        "ASSET_ID": route.asset_id,
+        "COMMANDS": commands,
+        "ASSET_GATEWAY_PUBLIC_PORT": route.public_port,
+        "ASSET_GATEWAY_BACKEND_HOST": route.backend_host,
+    }
+    if "USER" in commands:
+        logdata["USERNAME"] = "observed"
+    if "PASS" in commands:
+        logdata["PASSWORD"] = "[redacted]"
+
+    event = {
+        "src_host": client_ip,
+        "dst_host": route.backend_host,
+        "dst_port": route.backend_port,
+        "utc_time": utcnow().astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "logtype": 21001,
+        "node_id": f"asset-gateway-{route.asset_id}",
+        "logdata": logdata,
+    }
+    _append_jsonl(_internal_protocol_events_path(), event)
+
+
+def _parse_ftp_commands(data: bytes) -> list[str]:
+    """Extract FTP command verbs from client data without storing arguments."""
+    text = data.decode("iso-8859-1", errors="ignore")
+    commands: list[str] = []
+    valid_commands = {
+        "APPE",
+        "CWD",
+        "FEAT",
+        "LIST",
+        "MLSD",
+        "NLST",
+        "PASS",
+        "PWD",
+        "QUIT",
+        "RETR",
+        "STOR",
+        "STOU",
+        "SYST",
+        "USER",
+    }
+    for raw_line in text.replace("\r", "\n").split("\n"):
+        parts = raw_line.strip().split()
+        if not parts:
+            continue
+        command = parts[0].upper()
+        if command in valid_commands:
+            commands.append(command)
+    return dedupe_preserve(commands)
 
 
 def _parse_smtp_commands(data: bytes) -> list[str]:

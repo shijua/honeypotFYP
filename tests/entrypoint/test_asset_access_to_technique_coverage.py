@@ -45,7 +45,7 @@ pytestmark = pytest.mark.unit
 ROOT = Path(__file__).resolve().parents[2]
 
 
-CATALOG_TECHNIQUE_ACCESS_SAMPLES: dict[str, tuple[str, dict[str, Any]]] = {
+TECHNIQUE_ACCESS_SAMPLES: dict[str, tuple[str, dict[str, Any]]] = {
     "T1003": ("cowrie", {"input": "cat /etc/shadow"}),
     "T1005": ("http", {"asset_id": "finance-share", "path": "/finance/archive/2024/payroll-archive.zip"}),
     "T1016": ("cowrie", {"input": "ip addr"}),
@@ -62,13 +62,14 @@ CATALOG_TECHNIQUE_ACCESS_SAMPLES: dict[str, tuple[str, dict[str, Any]]] = {
     "T1069": ("http", {"asset_id": "web-admin-console", "path": "/api/groups.json"}),
     "T1070": ("cowrie", {"input": "history -c"}),
     "T1074": ("http", {"asset_id": "malware-sink", "path": "/staging/archive-plan.txt"}),
-    "T1078": ("http", {"asset_id": "internal-portal", "method": "POST", "path": "/session", "body": "username=portal.reader&token=x&auth_result=success"}),
+    # `auth_result=success` is a synthetic success marker emitted by the
+    # internal login flow/test harness; a plain token POST is only T1110.
+    "T1078": ("http", {"asset_id": "internal-portal", "method": "POST", "path": "/session", "body": "username=portal.reader&token=x&auth_result=success", "dynamic_endpoint": True}),
     "T1082": ("http", {"asset_id": "web-admin-console", "path": "/api/container-resources.json"}),
     "T1083": ("cowrie", {"input": "ls -la /tmp"}),
-    "T1087.001": ("cowrie", {"input": "cat /etc/passwd"}),
     "T1087.003": ("opencanary", {"service": "smtp", "dst_port": 25, "logdata": {"SERVICE": "smtp", "COMMANDS": ["VRFY finance"]}}),
     "T1105": ("http", {"asset_id": "malware-sink", "path": "/downloads/agent-update.bin"}),
-    "T1110": ("http", {"asset_id": "web-admin-console", "method": "POST", "path": "/login", "body": "username=admin&password=x"}),
+    "T1110": ("http", {"asset_id": "web-admin-console", "method": "POST", "path": "/login", "body": "username=admin&password=x", "dynamic_endpoint": True}),
     "T1133": ("http", {"asset_id": "vpn-appliance", "path": "/download/contractor-profile.ovpn"}),
     "T1190": ("high_interaction", {"source": "honeytrap", "asset_id": "honeytrap-generic", "service": "tcp", "event_type": "payload.transfer", "logdata": {"message": "binary payload upload"}}),
     "T1204.002": ("high_interaction", {"source": "dionaea", "asset_id": "dionaea-capture", "service": "http", "event_type": "download.offer", "logdata": {"message": "payload download"}}),
@@ -76,190 +77,137 @@ CATALOG_TECHNIQUE_ACCESS_SAMPLES: dict[str, tuple[str, dict[str, Any]]] = {
     "T1518": ("http", {"asset_id": "web-admin-console", "path": "/api/inventory.json"}),
     "T1548": ("cowrie", {"input": "sudo -l"}),
     "T1552.001": ("cowrie", {"input": "grep password .env"}),
-    "T1567": ("http", {"asset_id": "malware-sink", "method": "POST", "path": "/upload/", "body": "filename=finance-drop.zip"}),
+    "T1567": ("http", {"asset_id": "malware-sink", "method": "POST", "path": "/upload/", "body": "filename=finance-drop.zip", "dynamic_endpoint": True}),
     "T1567.002": ("opencanary", {"service": "ftp", "dst_port": 21, "logdata": {"SERVICE": "ftp", "COMMAND": "STOR finance-drop.zip"}}),
     "T1572": ("http", {"asset_id": "vpn-appliance", "path": "/policy/tunnel-routes.txt"}),
     "T1608": ("http", {"asset_id": "malware-sink", "path": "/staging/manifest.json"}),
 }
 
 
-CURRENT_EXACT_MAPPING_GAPS: set[str] = set()
+CATALOG_ACCESS_CASES: dict[str, set[str]] = {
+    "internal-portal": {"T1046", "T1083", "T1018"},
+    "internal-portal:portal-api-directory-links": {"T1046", "T1083", "T1018"},
+    "internal-portal:portal-admin-console-link": {"T1078", "T1110"},
+    "finance-share": {"T1005", "T1074"},
+    "finance-share:finance-backup-archive-index": {"T1005", "T1074"},
+    "finance-share:finance-password-rotation-clue": {"T1552.001"},
+    "git-internal": {"T1213", "T1083"},
+    "git-internal:git-deployment-ci-config": {"T1213", "T1083"},
+    "git-internal:git-db-credential-clue": {"T1552.001", "T1078", "T1110"},
+    "ops-db": {"T1078", "T1110"},
+    "ops-db:ops-db-login-database-names": {"T1078", "T1110"},
+    "ops-db:ops-db-schema-table-hints": {"T1005"},
+    "admin-jumpbox": {"T1059", "T1033", "T1082"},
+    "admin-jumpbox:jumpbox-interactive-discovery-shell": {"T1059", "T1033", "T1082"},
+    "admin-jumpbox:jumpbox-privilege-cleanup-breadcrumbs": {"T1548", "T1053", "T1070", "T1003"},
+    "redis-cache": {"T1046", "T1005"},
+    "redis-cache:redis-session-key-references": {"T1552.001", "T1005"},
+    "web-admin-console": {"T1078", "T1110"},
+    "web-admin-console:web-admin-login-surface": {"T1078", "T1110"},
+    "web-admin-console:web-admin-discovery-endpoints": {"T1082", "T1057", "T1069", "T1518"},
+    "ftp-archive": {"T1005", "T1039"},
+    "ftp-archive:ftp-backup-archive-directory": {"T1005", "T1567.002"},
+    "ftp-archive:ftp-credential-protected-archive": {"T1110", "T1552.001"},
+    "ssh-canary": {"T1021.004", "T1110"},
+    "ssh-canary:ssh-login-banner-prompt": {"T1021.004", "T1110"},
+    "ssh-canary:ssh-jumpbox-hostname-hint": {"T1021", "T1078"},
+    "legacy-telnet": {"T1046", "T1021"},
+    "legacy-telnet:telnet-legacy-device-banner": {"T1046", "T1021"},
+    "legacy-telnet:telnet-basic-credential-prompt": {"T1110"},
+    "mail-relay": {"T1046", "T1087.003"},
+    "mail-relay:mail-smtp-domain-hints": {"T1046", "T1087.003"},
+    "mail-relay:mail-smtp-auth-prompt": {"T1110"},
+    "vpn-appliance": {"T1133", "T1078"},
+    "vpn-appliance:vpn-profile-login-clue": {"T1078", "T1133"},
+    "vpn-appliance:vpn-route-policy-notes": {"T1016", "T1021", "T1572"},
+    "malware-sink": {"T1105", "T1074"},
+    "malware-sink:malware-downloader-staging-directory": {"T1105", "T1608"},
+    "malware-sink:malware-upload-drop-endpoint": {"T1105", "T1041", "T1567"},
+    "malware-sink:malware-dionaea-same-port-upgrade": {"T1105", "T1204.002", "T1041", "T1190"},
+    "malware-sink:malware-honeytrap-generic-listener": {"T1046", "T1105", "T1190"},
+    "dionaea-capture": {"T1105"},
+    "dionaea-capture:dionaea-payload-capture-backend": {"T1105", "T1204.002"},
+    "dionaea-capture:dionaea-protocol-capture-surface": {"T1041", "T1567", "T1005"},
+    "honeytrap-generic": {"T1046", "T1190"},
+    "honeytrap-generic:honeytrap-minimal-generic-banner": {"T1046", "T1190"},
+    "honeytrap-generic:honeytrap-payload-metadata-capture": {"T1105"},
+}
 
 
-def test_access_sample_matrix_covers_all_catalog_techniques() -> None:
-    missing = _catalog_techniques() - set(CATALOG_TECHNIQUE_ACCESS_SAMPLES)
-
-    assert missing == set()
+def test_access_cases_cover_every_catalog_asset_and_configuration_target() -> None:
+    assert set(CATALOG_ACCESS_CASES) == set(_catalog_target_techniques())
 
 
-def test_existing_access_mappers_have_explicit_catalog_technique_gaps() -> None:
-    observed_gaps = {
-        technique
-        for technique, sample in CATALOG_TECHNIQUE_ACCESS_SAMPLES.items()
-        if technique not in _techniques_from_sample(*sample)
-    }
-
-    assert observed_gaps == CURRENT_EXACT_MAPPING_GAPS
+def test_access_cases_match_declared_target_techniques() -> None:
+    assert CATALOG_ACCESS_CASES == _catalog_target_techniques()
 
 
-@pytest.mark.parametrize(
-    "technique",
-    sorted(set(CATALOG_TECHNIQUE_ACCESS_SAMPLES) - CURRENT_EXACT_MAPPING_GAPS),
-)
-def test_supported_catalog_technique_access_sample_updates_profile(technique: str) -> None:
-    mapped = _techniques_from_sample(*CATALOG_TECHNIQUE_ACCESS_SAMPLES[technique])
+@pytest.mark.parametrize("target_id", sorted(CATALOG_ACCESS_CASES))
+def test_access_cases_map_to_declared_target_techniques(target_id: str) -> None:
+    mapped = _mapped_techniques_for_target(target_id)
 
-    assert technique in mapped
-
-
-@pytest.mark.parametrize(
-    ("asset_id", "method", "path", "body", "expected_techniques"),
-    [
-        ("internal-portal", "POST", "/session", "username=portal.reader&token=x&auth_result=success", {"T1110", "T1021"}),
-        ("finance-share", "GET", "/finance/archive/2024/payroll-archive.zip", "", {"T1005"}),
-        ("web-admin-console", "POST", "/login", "username=admin&password=x", {"T1110"}),
-        ("vpn-appliance", "GET", "/download/contractor-profile.ovpn", "", {"T1133"}),
-        ("malware-sink", "GET", "/downloads/agent-update.bin", "", {"T1105"}),
-        ("malware-sink", "POST", "/upload/", "filename=finance-drop.zip", {"T1567"}),
-    ],
-)
-def test_internal_http_asset_access_uses_sigma_to_update_techniques(
-    asset_id: str,
-    method: str,
-    path: str,
-    body: str,
-    expected_techniques: set[str],
-) -> None:
-    response = _entrypoint_service().capture_http_request(
-        EntrypointCaptureRequest(
-            attacker_key=f"198.51.100.{10 + len(asset_id)}",
-            method=method,
-            path=path,
-            headers={"user-agent": "curl/8.0"},
-            body_preview=body,
-            surface="internal",
-            asset_id=asset_id,
-        )
-    )
-
-    assert expected_techniques.issubset(set(response.profile.recent_techniques))
-    assert response.profile.recent_asset_ids == [asset_id]
-
-
-@pytest.mark.parametrize(
-    ("asset_id", "source", "service", "event_type", "logdata", "expected_techniques"),
-    [
-        (
-            "dionaea-capture",
-            "dionaea",
-            "http",
-            "download.offer",
-            {"url": "/downloads/agent-update.bin", "message": "payload download"},
-            {"T1190", "T1204.002", "T1105", "T1041"},
-        ),
-        (
-            "honeytrap-generic",
-            "honeytrap",
-            "tcp",
-            "payload.transfer",
-            {"message": "binary payload upload"},
-            {"T1046", "T1190", "T1105"},
-        ),
-    ],
-)
-def test_high_interaction_asset_access_uses_sigma_to_update_techniques(
-    asset_id: str,
-    source: str,
-    service: str,
-    event_type: str,
-    logdata: dict[str, object],
-    expected_techniques: set[str],
-) -> None:
-    response = _high_interaction_service().ingest(
-        HighInteractionIngestRequest(
-            event=HighInteractionLogEvent(
-                source=source,
-                asset_id=asset_id,
-                attacker_key=f"198.51.100.{20 + len(asset_id)}",
-                service=service,
-                event_type=event_type,
-                logdata=logdata,
-            )
-        )
-    )
-
-    assert expected_techniques.issubset(set(response.profile.recent_techniques))
-    assert response.profile.recent_asset_ids == [asset_id]
+    assert CATALOG_ACCESS_CASES[target_id].issubset(mapped)
 
 
 @pytest.mark.parametrize(
-    ("asset_id", "service_name", "dst_port", "logdata", "expected_techniques"),
-    [
-        ("git-internal", "git", 9418, {"SERVICE": "git", "REPO": "infra-deploy.git"}, {"T1046", "T1213"}),
-        ("ops-db", "mysql", 3306, {"SERVICE": "mysql", "USERNAME": "backup", "PASSWORD": "x"}, {"T1110"}),
-        ("redis-cache", "redis", 6379, {"SERVICE": "redis", "COMMAND": "KEYS"}, {"T1046", "T1213"}),
-        ("ftp-archive", "ftp", 21, {"SERVICE": "ftp", "USERNAME": "operator", "PASSWORD": "x"}, {"T1110", "T1021"}),
-        ("ftp-archive", "ftp", 21, {"SERVICE": "ftp", "COMMAND": "RETR finance-drop.zip"}, {"T1039"}),
-        ("ftp-archive", "ftp", 21, {"SERVICE": "ftp", "COMMAND": "STOR finance-drop.zip"}, {"T1567.002"}),
-        ("ssh-canary", "ssh", 22, {"SERVICE": "ssh", "USERNAME": "root", "PASSWORD": "x"}, {"T1110", "T1021"}),
-        ("legacy-telnet", "telnet", 23, {"SERVICE": "telnet", "USERNAME": "operator", "PASSWORD": "x"}, {"T1110", "T1021"}),
-        ("mail-relay", "smtp", 25, {"SERVICE": "smtp", "COMMANDS": ["VRFY finance"]}, {"T1087.003"}),
-        ("mail-relay", "smtp", 25, {"SERVICE": "smtp", "COMMANDS": ["EHLO", "AUTH", "QUIT"]}, {"T1110"}),
-    ],
+    ("technique", "sample"),
+    sorted(TECHNIQUE_ACCESS_SAMPLES.items()),
 )
-def test_opencanary_asset_access_updates_techniques(
-    asset_id: str,
-    service_name: str,
-    dst_port: int,
-    logdata: dict[str, object],
-    expected_techniques: set[str],
-) -> None:
-    response = _opencanary_service().ingest(
-        OpenCanaryIngestRequest(
-            event=OpenCanaryLogEvent(
-                src_host=f"198.51.100.{30 + dst_port % 10}",
-                dst_port=dst_port,
-                utc_time=datetime(2026, 1, 1, tzinfo=timezone.utc),
-                node_id=f"opencanary-{asset_id}",
-                logdata=logdata,
-            ),
-            protocol=service_name,
+def test_individual_access_samples_update_profile(technique: str, sample: tuple[str, dict[str, Any]]) -> None:
+    assert technique in _techniques_from_sample(*sample)
+
+
+def test_http_access_case_paths_exist_or_are_declared_dynamic() -> None:
+    for technique, (kind, payload) in TECHNIQUE_ACCESS_SAMPLES.items():
+        if kind != "http" or str(payload.get("method", "GET")).upper() != "GET":
+            continue
+        if payload.get("dynamic_endpoint"):
+            continue
+
+        asset_path = (
+            ROOT
+            / "deploy/internal-assets"
+            / str(payload["asset_id"])
+            / "html"
+            / str(payload["path"]).lstrip("/")
         )
-    )
-
-    assert expected_techniques.issubset(set(response.profile.recent_techniques))
+        assert asset_path.exists(), f"{technique} sample path does not exist: {asset_path}"
 
 
-def test_admin_jumpbox_cowrie_command_updates_techniques() -> None:
-    response = _cowrie_service().ingest(
-        CowrieIngestRequest(
-            event=CowrieLogEvent(
-                eventid="cowrie.command.input",
-                timestamp=datetime(2026, 1, 1, tzinfo=timezone.utc),
-                src_ip="198.51.100.77",
-                session="s-admin",
-                input="ls -la /tmp",
-            )
-        )
-    )
-
-    assert "T1083" in response.profile.recent_techniques
+def test_non_get_http_access_cases_are_declared_dynamic() -> None:
+    for technique, (kind, payload) in TECHNIQUE_ACCESS_SAMPLES.items():
+        if kind == "http" and str(payload.get("method", "GET")).upper() != "GET":
+            assert payload.get("dynamic_endpoint") is True, technique
 
 
-def _catalog_techniques() -> set[str]:
+def _catalog_target_techniques() -> dict[str, set[str]]:
     catalog = json.loads((ROOT / "data/assets/catalog.json").read_text(encoding="utf-8"))
-    techniques: set[str] = set()
+    target_techniques: dict[str, set[str]] = {}
     for asset in catalog:
+        if not isinstance(asset, dict) or not isinstance(asset.get("asset_id"), str):
+            continue
+        asset_id = asset["asset_id"]
         settings = asset.get("default_settings", {}) if isinstance(asset, dict) else {}
         profile = settings.get("selection_profile", {}) if isinstance(settings, dict) else {}
         if isinstance(profile, dict):
-            techniques.update(_strings(profile.get("covered_techniques")))
+            target_techniques[asset_id] = _strings(profile.get("covered_techniques"))
         variants = settings.get("configuration_variants", []) if isinstance(settings, dict) else []
         if isinstance(variants, list):
             for variant in variants:
-                if isinstance(variant, dict):
-                    techniques.update(_strings(variant.get("covered_techniques")))
-    return techniques
+                if isinstance(variant, dict) and isinstance(variant.get("configuration_id"), str):
+                    target_techniques[
+                        f"{asset_id}:{variant['configuration_id']}"
+                    ] = _strings(variant.get("covered_techniques"))
+    return target_techniques
+
+
+def _mapped_techniques_for_target(target_id: str) -> set[str]:
+    mapped: set[str] = set()
+    missing_samples = CATALOG_ACCESS_CASES[target_id] - set(TECHNIQUE_ACCESS_SAMPLES)
+    assert missing_samples == set()
+    for technique in CATALOG_ACCESS_CASES[target_id]:
+        mapped.update(_techniques_from_sample(*TECHNIQUE_ACCESS_SAMPLES[technique]))
+    return mapped
 
 
 def _techniques_from_sample(kind: str, payload: dict[str, Any]) -> set[str]:

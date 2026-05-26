@@ -31,7 +31,7 @@ Engineering route validation. These scenarios verify that a selected asset maps 
 | Bootstrap | `bootstrap-internal-portal` | First internal discovery surface opens on `18080`. |
 | Breadcrumb services | `git-env-breadcrumb`, `finance-backup-breadcrumb`, `ssh-password-breadcrumb` | Common evidence breadcrumbs select the expected fixed-port asset. |
 | Admin and remote access | `web-admin-probe`, `vpn-admin-probe` | Admin and VPN surfaces map to their fixed ports. |
-| High-interaction upgrades | `dionaea-malware-upgrade`, `honeytrap-generic-probe` | Upgrade targets expose the expected same-story backend ports. |
+| Capture and upgrade backends | `dionaea-malware-upgrade`, `honeytrap-generic-probe` | Upgrade or capture targets expose the expected same-story backend ports. |
 | Payload/exploit follow-up | `malware-exploit-probe`, `web-exploit-payload-probe`, `generic-transfer-honeytrap` | Exploit or transfer evidence opens the payload sink or generic capture route. |
 
 ## Official Source Links

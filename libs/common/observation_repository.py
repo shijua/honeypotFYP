@@ -26,9 +26,7 @@ class FileObservationRepository(Generic[ObservationT]):
         self._model_type = model_type
 
     def add(self, observation: ObservationT) -> ObservationT:
-        payload = self._store.read()
-        payload.setdefault("observations", []).append(observation.model_dump(mode="json"))
-        self._store.write(payload)
+        self._store.append_to_list("observations", observation.model_dump(mode="json"))
         return observation
 
     def list_recent(self, limit: int = 100) -> Iterable[ObservationT]:

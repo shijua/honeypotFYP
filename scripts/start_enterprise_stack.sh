@@ -60,7 +60,8 @@ ASSET_GATEWAY_PORTS="$(
     "${DIONAEA_SMB_PORT:-1445}" \
     "${DIONAEA_MSSQL_PORT:-11433}" \
     "${DIONAEA_FTP_PORT:-12122}" \
-    "${HONEYTRAP_GENERIC_PORT:-19999}"
+    "${HONEYTRAP_GENERIC_PORT:-19999}" \
+    "${ADMIN_JUMPBOX_PORT:-10222}"
 )"
 export PROJECT_NAME HOST_PROJECT_ROOT ASSET_GATEWAY_PORTS
 RESET_BEFORE_START="${RESET_BEFORE_START:-1}"
@@ -213,6 +214,7 @@ echo "Adaptive SMTP:   ${CLIENT_TARGET_HOST:-127.0.0.1}:${MAIL_RELAY_PORT:-2525}
 echo "Finance Share:   http://${CLIENT_TARGET_HOST:-127.0.0.1}:${FINANCE_SHARE_PORT:-18082}/ after finance-share unlock"
 echo "VPN Appliance:   http://${CLIENT_TARGET_HOST:-127.0.0.1}:${VPN_APPLIANCE_PORT:-18443}/ after vpn-appliance unlock"
 echo "Malware Sink:    http://${CLIENT_TARGET_HOST:-127.0.0.1}:${MALWARE_SINK_PORT:-18085}/ after malware-sink unlock"
+echo "Admin Jumpbox:   ssh -p ${ADMIN_JUMPBOX_PORT:-10222} root@${CLIENT_TARGET_HOST:-127.0.0.1} after admin-jumpbox unlock"
 echo
 echo "For local browser access over SSH tunnel:"
 echo "  ssh -N -L 18090:127.0.0.1:${DASHBOARD_PORT:-8090} vm"

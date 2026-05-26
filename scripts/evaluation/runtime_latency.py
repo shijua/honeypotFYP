@@ -28,7 +28,7 @@ from libs.common.json_utils import read_json_value
 from scripts.evaluation.charts import write_runtime_latency_chart
 
 
-DEFAULT_ASSET_GATEWAY_PORTS = "18080,19418,13306,16379,18081,12121,12222,12323,2525,18082,18443,18085"
+DEFAULT_ASSET_GATEWAY_PORTS = "18080,19418,13306,16379,18081,12121,12222,12323,2525,18082,18443,18085,1445,11433,12122,19999,10222"
 
 
 def main() -> int:

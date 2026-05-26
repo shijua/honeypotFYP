@@ -14,7 +14,6 @@ from typing import Any, Protocol
 
 from libs.common.clock import utcnow
 from libs.common.json_store import JsonFileStore
-from libs.common.json_utils import mutable_nested_dict
 from libs.contracts.models import AssetDefinition
 
 
@@ -238,25 +237,22 @@ class FileRevealFeedbackRepository:
             Output:
                 pending contains one finance-share reveal for the attacker/binding.
         """
-        payload = self._store.read()
-        group = self._mutable_group(payload, context_key, asset_group)
-        group["revealed"] = int(group.get("revealed", 0) or 0) + 1
-        pending = payload.setdefault("pending", [])
-        if isinstance(pending, list):
-            pending.append(
-                {
-                    "ts": utcnow().isoformat().replace("+00:00", "Z"),
-                    "context_key": context_key,
-                    "asset_group": asset_group,
-                    "binding_id": binding_id,
-                    "attacker_key": attacker_key,
-                    "asset_id": asset_id,
-                    "available_assets": available_assets or [],
-                    "revealed_assets": revealed_assets or [asset_id],
-                    "status": "pending",
-                }
-            )
-        self._store.write(payload)
+        group_path = ("contexts", context_key, "asset_groups", asset_group)
+        self._store.increment_nested_int(group_path, "revealed")
+        self._store.append_to_list(
+            "pending",
+            {
+                "ts": utcnow().isoformat().replace("+00:00", "Z"),
+                "context_key": context_key,
+                "asset_group": asset_group,
+                "binding_id": binding_id,
+                "attacker_key": attacker_key,
+                "asset_id": asset_id,
+                "available_assets": available_assets or [],
+                "revealed_assets": revealed_assets or [asset_id],
+                "status": "pending",
+            },
+        )
 
     def record_outcome(
         self,
@@ -273,15 +269,5 @@ class FileRevealFeedbackRepository:
         """
         if outcome not in {"useful", "shallow", "ignored"}:
             return
-        payload = self._store.read()
-        group = self._mutable_group(payload, context_key, asset_group)
-        group[outcome] = int(group.get(outcome, 0) or 0) + 1
-        self._store.write(payload)
-
-    def _mutable_group(
-        self,
-        payload: dict[str, Any],
-        context_key: str,
-        asset_group: str,
-    ) -> dict[str, Any]:
-        return mutable_nested_dict(payload, ("contexts", context_key, "asset_groups", asset_group))
+        group_path = ("contexts", context_key, "asset_groups", asset_group)
+        self._store.increment_nested_int(group_path, outcome)

@@ -306,6 +306,31 @@ def test_smtp_auth_probe_maps_to_credential_access() -> None:
     assert evidences[0].source_ref["opencanary_commands"] == ["EHLO", "AUTH", "QUIT"]
 
 
+def test_smtp_auth_and_recipient_probe_keep_both_contexts() -> None:
+    service, _repository, evidence_repository = _service()
+
+    response = service.ingest(
+        OpenCanaryIngestRequest(
+            event=OpenCanaryLogEvent(
+                src_host="198.51.100.40",
+                dst_port=25,
+                utc_time=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                logdata={
+                    "SERVICE": "smtp",
+                    "COMMANDS": ["EHLO tester", "VRFY finance", "AUTH LOGIN"],
+                    "ASSET_ID": "mail-relay",
+                },
+            ),
+            protocol="smtp",
+        )
+    )
+
+    assert response.profile.recent_tactics == ["Credential Access", "Discovery"]
+    assert response.profile.recent_techniques == ["T1110", "T1087.003"]
+    evidences = evidence_repository.list_by_attacker("198.51.100.40")
+    assert evidences[0].source_ref["asset_id"] == "mail-relay"
+
+
 def test_git_probe_adds_collection_context() -> None:
     service, _repository, evidence_repository = _service()
 

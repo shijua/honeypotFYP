@@ -52,12 +52,12 @@ class FileBindingRepository:
         return self._records_by_binding().get(binding_id)
 
     def upsert(self, record: BindingRecord) -> BindingRecord:
-        records = self._records_by_binding()
-        records[record.binding_id] = record
-        payload = {
-            "records": [item.model_dump(mode="json") for item in records.values()],
-        }
-        self._store.write(payload)
+        self._store.upsert_list_item(
+            "records",
+            "binding_id",
+            record.binding_id,
+            record.model_dump(mode="json"),
+        )
         return record
 
     def list_all(self) -> Iterable[BindingRecord]:

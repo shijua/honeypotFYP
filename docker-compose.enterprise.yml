@@ -39,7 +39,7 @@ services:
     working_dir: /app
     command: >
       bash -lc "python -m services.asset_gateway.app
-      --ports ${ASSET_GATEWAY_PORTS:-18080,19418,13306,16379,18081,12121,12222,12323,2525,18082,18443,18085,1445,11433,12122,19999}
+      --ports ${ASSET_GATEWAY_PORTS:-18080,19418,13306,16379,18081,12121,12222,12323,2525,18082,18443,18085,1445,11433,12122,19999,10222}
       --routes data/runtime/asset_gateway_routes.json"
     environment:
       PYTHONPATH: /app
@@ -67,6 +67,7 @@ services:
       - "${HOST_BIND_ADDRESS:-127.0.0.1}:${DIONAEA_MSSQL_PORT:-11433}:11433"
       - "${HOST_BIND_ADDRESS:-127.0.0.1}:${DIONAEA_FTP_PORT:-12122}:12122"
       - "${HOST_BIND_ADDRESS:-127.0.0.1}:${HONEYTRAP_GENERIC_PORT:-19999}:19999"
+      - "${HOST_BIND_ADDRESS:-127.0.0.1}:${ADMIN_JUMPBOX_PORT:-10222}:10222"
     networks:
       - net_public
       - net_internal
@@ -112,7 +113,7 @@ services:
     image: python:3.10-slim
     working_dir: /app
     command: >
-      bash -lc "pip install -q fastapi uvicorn pydantic &&
+      bash -lc "pip install -q fastapi uvicorn pydantic PyYAML &&
       python -m uvicorn services.high_interaction.app:app --host 0.0.0.0 --port 8014"
     environment:
       PYTHONPATH: /app

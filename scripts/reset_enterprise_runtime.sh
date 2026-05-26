@@ -126,6 +126,7 @@ remove_runtime_containers() {
 }
 
 log "Stopping control and enterprise containers for project $PROJECT_NAME..."
+remove_runtime_containers
 compose_down "$CONTROL_FILE" "control"
 remove_runtime_containers
 compose_down "$ENTERPRISE_FILE" "enterprise"
