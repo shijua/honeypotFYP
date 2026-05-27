@@ -155,9 +155,9 @@ Assets may also declare `default_settings.configuration_variants`. These are fol
 
 The adaptive loop records applied reveal choices in `data/runtime/reveal_feedback.json` for evaluation and debugging. Later evidence that references the revealed `source_ref.asset_id` marks the pending reveal `useful` when it carries a tactic/technique, `shallow` when it only touches the asset, or `ignored` after `feedback_window_seconds`. The controller does not read this file for ranking.
 
-#### Evaluation metrics
+#### Evaluation layers
 
-Prior quality is first checked with `scripts/validation/attack_group_prior.py`, which ensures the generated group-technique prior is present and non-empty. Reveal correctness is evaluated with `scripts/evaluation/reveal_policy.py`, which replays scripted profiles against `passive`, `all-open`, `random-eligible`, `gate-only`, `top-recommendation`, and `controller` without starting Docker. Route correctness is evaluated with `scripts/evaluation/reveal_port_simulation.py`, which can run controller-only or live-apply checks against the asset-gateway route table. Live system overhead is measured separately with `scripts/evaluation/runtime_latency.py`, which records binding resolve latency, orchestrator apply latency, Docker-backed runtime startup as observed by the orchestrator response, and asset-gateway route visibility latency.
+The evaluation path is intentionally split by failure mode. `scripts/evaluation/reveal_policy.py` is the offline policy check: it compares reveal/no-reveal behavior without Docker. `scripts/evaluation/reveal_port_simulation.py --mode controller-only` checks whether scenario profiles select the expected asset/action/port without Docker. `scripts/evaluation/reveal_port_simulation.py --mode live-apply` starts or reuses the compose stack, applies controller actions, and verifies concrete `attacker_key + asset_id + public_port` routes in `data/runtime/asset_gateway_routes.json`. `live-apply` does not execute attacker traffic; browser, curl, SSH, FTP, SMTP, Redis, MySQL, Dionaea, and generic TCP probes belong in `ATTACK_TESTING_GUIDE.md`. `scripts/evaluation/runtime_latency.py` measures binding, orchestrator, runtime-start, and route-visibility latency.
 
 ### 7) Gateway service
 - Path: `services/gateway/*`
@@ -231,39 +231,8 @@ Additional repositories now exist for:
 7. `gateway` mirrors the current exposure/routing view for that binding, separating reachable assets from failed ones.
 8. Shared contracts keep the loop testable across service boundaries.
 
-## Testing
-- Unit: `tests/binding_service/test_unit_binding_service.py`
-- Unit: `tests/profiler/test_unit_profiler_service.py`
-- Unit: `tests/controller/test_unit_controller_service.py`
-- Unit: `tests/cowrie/test_unit_cowrie_service.py`
-- Unit: `tests/entrypoint/test_unit_entrypoint_service.py`
-- Unit: `tests/gateway/test_unit_gateway_service.py`
-- Unit: `tests/orchestrator/test_unit_orchestrator_service.py`
-- Component: `tests/binding_service/test_component_binding_api.py`
-- Component: `tests/profiler/test_component_profiler_api.py`
-- Component: `tests/controller/test_component_controller_api.py`
-- Component: `tests/cowrie/test_component_cowrie_api.py`
-- Component: `tests/entrypoint/test_component_entrypoint_api.py`
-- Component: `tests/gateway/test_component_gateway_api.py`
-- Component: `tests/orchestrator/test_component_orchestrator_api.py`
-- Contract: `tests/contracts/test_binding_contracts.py`
-- Contract: `tests/contracts/test_mvp_contracts.py`
-- Adapter: `tests/adapter/test_file_backed_runtime_adapters.py`
-- Smoke: `tests/test_mvp_smoke.py`
+## Testing And Operations
 
-## Notes
-- Default local storage is file-backed under `data/runtime/`.
-- Cowrie observations are stored in `data/runtime/cowrie_observations.json`.
-- Cowrie profiler evidence is stored separately in `data/runtime/evidence.json`; observations are intake/audit records, while evidence affects profiles and controller decisions.
-- Entrypoint observations are stored in `data/runtime/entrypoint_observations.json`.
-- Falco should later run outside honeypot containers as node/runtime telemetry, while Cowrie logs capture SSH attacker interaction telemetry.
-- Local Cowrie lab configuration lives in `deploy/cowrie/`; the log forwarder `scripts/forwarders/cowrie_json.py` bridges `cowrie.json` into the Cowrie API.
-- Orchestration records `AssetRuntimeRecord` entries and can start selected Docker-backed runtimes, but it does not manage Kubernetes pods/namespaces yet.
-- The controller now loads its asset catalog from `data/assets/catalog.json`. The catalog contains MVP template metadata such as protocol, port, family, default settings, source references, and selected Docker runtime specs. These are still MVP runtime specs, not full Docker Compose/Kubernetes manifests.
-- Current real-demo status:
-  - `internal-portal` is the first verified real internal asset and currently uses a stable `nginx:alpine` runtime.
-  - `gateway.exposed_assets` means currently reachable assets, while failed Docker starts/exited containers are tracked separately as failed assets.
-  - `redis-cache` is still a known failed Docker-backed asset in the local demo and should be treated as an unresolved runtime/integration issue.
-- Mock asset starts are converted into Falco-style `FalcoEvent` objects with `falco_rule="Honeynet asset template started"`. Real Falco will only observe these lifecycle events after a future Docker/Kubernetes adapter creates real workloads.
-- Cowrie event priority, ATT&CK tags, descriptive `cowrie_*` tags, and profiler output fields are loaded from `data/cowrie/event_mappings.json`.
-- Attack-graph generation is still planned but not implemented.
+Use `README.md` for the shortest setup and command index. Use `EVALUATION.md` for prior, policy, port, and latency evaluation. Use `ATTACK_TESTING_GUIDE.md` for live/manual traffic that should produce telemetry and ATT&CK evidence.
+
+Default local state is file-backed under `data/runtime/`. Observations are intake/audit records such as `cowrie_observations.json`, `entrypoint_observations.json`, `opencanary_observations.json`, and `high_interaction_observations.json`; profiler evidence lives in `evidence.json` and drives profile/controller behavior. Runtime route state lives in `asset_gateway_routes.json`.

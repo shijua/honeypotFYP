@@ -110,6 +110,8 @@ This also writes `/tmp/reveal_port_controller_report.svg`, a pass/fail chart for
 
 This starts or uses the running compose stack, applies unlock actions, and checks the actual asset-gateway route table. It mutates `data/runtime/*.json`.
 
+Important boundary: `live-apply` does not run attacker commands, browser clicks, curl probes, SSH sessions, FTP transfers, or shell commands. It validates the control-plane and data-plane route result: controller selection -> orchestrator apply -> Docker runtime -> `asset_gateway_routes.json`. Use `ATTACK_TESTING_GUIDE.md` after this when you need to verify real attacker traffic and ATT&CK evidence.
+
 Start clean:
 
 ```bash
@@ -133,19 +135,11 @@ jq '.summary, .scenarios[] | {scenario_id, ok, selected_assets, selected_actions
   data/runtime/reveal_port_simulation_report.json
 ```
 
-Expected: each scenario has the expected `attacker_key + asset_id + public_port` route. A failure here can mean controller selection is wrong, Docker runtime startup failed, or the asset-gateway route table was not updated.
+Expected: each scenario has the expected `attacker_key + asset_id + public_port` route. A failure here can mean controller selection is wrong, Docker runtime startup failed, or the asset-gateway route table was not updated. A pass here only means the route is open; it does not prove the backend generated telemetry.
 
 ## 5. Live Runtime Latency
 
 This measures control-plane overhead after the compose stack is running.
-
-```bash
-.venv/bin/python scripts/evaluation/runtime_latency.py \
-  --assets internal-portal,finance-share,web-admin-console,vpn-appliance,malware-sink \
-  --output /tmp/runtime_latency_report.json
-```
-
-Use a small smoke set when iterating:
 
 ```bash
 .venv/bin/python scripts/evaluation/runtime_latency.py \
@@ -165,7 +159,7 @@ This also writes `/tmp/runtime_latency_report.svg`, showing orchestrator apply t
 
 ## 6. Manual Smoke
 
-Use `ATTACK_TESTING_GUIDE.md` when you want to drive the attacker behavior yourself through browser, curl, SSH, or protocol probes. Keep dataset conversion and evaluation internals out of that file.
+Use `ATTACK_TESTING_GUIDE.md` when you want to drive attacker behavior yourself through browser, curl, SSH, FTP, SMTP, Redis, MySQL, Dionaea, or generic TCP probes. Keep dataset conversion and evaluation internals out of that file.
 
 Useful validation commands after a manual run:
 

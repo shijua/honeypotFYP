@@ -54,7 +54,9 @@ jq '.summary, .scenarios[] | {scenario_id, ok, selected_assets, expected_routes,
   data/runtime/reveal_port_simulation_report.json
 ```
 
-Expected: each passed scenario has the selected asset and the exact asset-gateway route. An unavailable third-party high-interaction image is reported as `failed_runtime_unavailable`, not silently skipped.
+Expected: each passed scenario has the selected asset and the exact asset-gateway route. This check does not run attacker commands or protocol probes; it only verifies that Docker runtimes and asset-gateway routes are created. An unavailable third-party high-interaction image is reported as `failed_runtime_unavailable`, not silently skipped.
+
+This evaluation creates routes for scripted attacker keys such as `198.51.100.x`. To probe the fixed ports from this VM shell or browser, still run section 4 with the real source IP key, normally `146.169.44.23`.
 
 ## 2. Public Signals
 
@@ -162,7 +164,9 @@ curl -i "http://146.169.44.23:18085/upload/README.txt" || true
 timeout 8s git ls-remote git://146.169.44.23:19418/infra-deploy.git || true
 printf "INFO\r\n" | nc -w 2 146.169.44.23 16379 || true
 printf "KEYS *\r\n" | nc -w 2 146.169.44.23 16379 || true
-printf "USER anonymous\r\nPASS anonymous\r\nQUIT\r\n" | nc -w 3 146.169.44.23 12121 || true
+printf "CONFIG GET *\r\n" | nc -w 2 146.169.44.23 16379 || true
+printf "USER anonymous\r\nPASS anonymous\r\nRETR finance-drop.zip\r\nQUIT\r\n" | nc -w 4 146.169.44.23 12121 || true
+printf "USER anonymous\r\nPASS anonymous\r\nSTOR finance-drop.zip\r\nQUIT\r\n" | nc -w 4 146.169.44.23 12121 || true
 timeout 8s ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 12222 root@146.169.44.23 true </dev/null || true
 { sleep 1; printf "admin\r\n"; sleep 1; printf "admin123\r\n"; sleep 1; } | nc -w 8 146.169.44.23 12323 || true
 printf "EHLO tester\r\nVRFY admin\r\nAUTH LOGIN\r\nYWRtaW4=\r\nV3JvbmdQYXNz\r\nQUIT\r\n" | nc -w 3 146.169.44.23 2525 || true
@@ -334,6 +338,7 @@ id
 uname -a
 ls -la /tmp
 ip addr
+ifconfig
 cat /etc/shadow
 grep password .env
 sudo -l
@@ -345,6 +350,51 @@ exit
 ```
 
 Expected Cowrie techniques include `T1003`, `T1016`, `T1033`, `T1053`, `T1059`, `T1070`, `T1082`, `T1083`, `T1105`, `T1548`, and `T1552.001`.
+
+Automated alternative for repeatable validation:
+
+```bash
+ask="$(mktemp)"
+printf '#!/bin/sh\necho root\n' > "$ask"
+chmod +x "$ask"
+{
+  sleep 1
+  printf 'whoami\n'
+  sleep 0.5
+  printf 'id\n'
+  sleep 0.5
+  printf 'uname -a\n'
+  sleep 0.5
+  printf 'ls -la /tmp\n'
+  sleep 0.5
+  printf 'ifconfig\n'
+  sleep 0.5
+  printf 'cat /etc/shadow\n'
+  sleep 0.5
+  printf 'grep password .env\n'
+  sleep 0.5
+  printf 'sudo -l\n'
+  sleep 0.5
+  printf 'crontab -l\n'
+  sleep 0.5
+  printf 'bash -i\n'
+  sleep 0.5
+  printf 'curl http://146.169.44.23:18085/downloads/agent-update.bin -o /tmp/agent-update.bin\n'
+  sleep 0.5
+  printf 'history -c\n'
+  sleep 0.5
+  printf 'exit\n'
+} | timeout 35s env DISPLAY=:0 SSH_ASKPASS="$ask" SSH_ASKPASS_REQUIRE=force setsid \
+  ssh -tt \
+    -o NumberOfPasswordPrompts=1 \
+    -o PubkeyAuthentication=no \
+    -o PreferredAuthentications=password \
+    -o ConnectTimeout=5 \
+    -o StrictHostKeyChecking=no \
+    -o UserKnownHostsFile=/dev/null \
+    -p 10222 root@"$TARGET" || true
+rm -f "$ask"
+```
 
 Check the evidence-level result:
 
@@ -394,7 +444,7 @@ tail -n 20 data/runtime/high_interaction_events.jsonl
 cat data/runtime/asset_gateway_routes.json | jq
 ```
 
-## 8. Cleanup
+## 9. Cleanup
 
 ```bash
 ./scripts/reset_enterprise_runtime.sh
