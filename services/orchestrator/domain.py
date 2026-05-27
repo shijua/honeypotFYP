@@ -16,6 +16,8 @@ from libs.contracts.models import (
     GatewaySyncRequest,
     OrchestratorApplyRequest,
     OrchestratorApplyResponse,
+    OrchestratorPrewarmRequest,
+    OrchestratorPrewarmResponse,
     RecycleRequest,
 )
 from services.binding_service.domain import BindingService
@@ -123,6 +125,29 @@ class OrchestratorService:
             monitoring_events=monitoring_events,
         )
 
+    def prewarm(self, request: OrchestratorPrewarmRequest) -> OrchestratorPrewarmResponse:
+        """Start warm-standby backends without changing gateway exposure."""
+        binding = self._binding_service.get(request.binding_id)
+        if self._asset_repository is None or self._template_runtime is None:
+            return OrchestratorPrewarmResponse(binding_id=binding.binding_id)
+
+        assets = self._prewarm_assets(request.asset_ids, binding.unlocked_assets)
+        runtime_events: list[AssetRuntimeRecord] = []
+        for asset in assets:
+            runtime_events.append(
+                self._template_runtime.prewarm_asset(binding.binding_id, asset)
+            )
+        return OrchestratorPrewarmResponse(
+            binding_id=binding.binding_id,
+            warmed_asset_ids=[
+                record.asset_id for record in runtime_events if record.status == "running"
+            ],
+            failed_asset_ids=[
+                record.asset_id for record in runtime_events if record.status == "failed"
+            ],
+            runtime_events=runtime_events,
+        )
+
     def _apply_unlocks(
         self,
         binding: BindingRecord,
@@ -187,6 +212,28 @@ class OrchestratorService:
             if asset.asset_id == asset_id:
                 return asset
         return None
+
+    def _prewarm_assets(
+        self,
+        requested_asset_ids: list[str],
+        unlocked_asset_ids: list[str],
+    ) -> list[AssetDefinition]:
+        """Return catalog assets allowed to start hidden warm-standby backends."""
+        if self._asset_repository is None:
+            return []
+        requested = set(requested_asset_ids)
+        unlocked = set(unlocked_asset_ids)
+        assets: list[AssetDefinition] = []
+        for asset in self._asset_repository.list_all():
+            if asset.asset_id in unlocked:
+                continue
+            if requested and asset.asset_id not in requested:
+                continue
+            runtime = asset.default_settings.get("runtime", {})
+            if not isinstance(runtime, dict) or runtime.get("warm_standby") is not True:
+                continue
+            assets.append(asset)
+        return assets
 
     def _stop_binding_runtime(self, binding_id: str) -> list[AssetRuntimeRecord]:
         """Stop any running template runtime records for this binding."""

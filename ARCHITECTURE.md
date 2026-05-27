@@ -159,6 +159,8 @@ The adaptive loop records applied reveal choices in `data/runtime/reveal_feedbac
 
 The evaluation path is intentionally split by failure mode. `scripts/evaluation/reveal_policy.py` is the offline policy check: it compares reveal/no-reveal behavior without Docker. `scripts/evaluation/reveal_port_simulation.py --mode controller-only` checks whether scenario profiles select the expected asset/action/port without Docker. `scripts/evaluation/reveal_port_simulation.py --mode live-apply` starts or reuses the compose stack, applies controller actions, and verifies concrete `attacker_key + asset_id + public_port` routes in `data/runtime/asset_gateway_routes.json`. `live-apply` does not execute attacker traffic; browser, curl, SSH, FTP, SMTP, Redis, MySQL, Dionaea, and generic TCP probes belong in `ATTACK_TESTING_GUIDE.md`. `scripts/evaluation/runtime_latency.py` measures binding, orchestrator, runtime-start, and route-visibility latency.
 
+Warm-standby runtimes are a latency optimization for selected catalog assets. The orchestrator can start their Docker backend for a binding without writing an asset-gateway route, so the attacker does not see a new port. When the controller later reveals that asset, the runtime is reused and only the gateway route is attached.
+
 ### 7) Gateway service
 - Path: `services/gateway/*`
 - Purpose: keep the live route/exposure view for each binding.
@@ -175,6 +177,7 @@ The evaluation path is intentionally split by failure mode. `scripts/evaluation/
   - update unlocked assets on the binding
   - start template runtime records from `data/assets/catalog.json`
   - start real Docker containers for supported catalog runtimes
+  - prewarm selected Docker containers without exposing routes
   - fall back to mock runtime records for unsupported templates
   - emit Falco-style monitoring events for asset lifecycle changes
   - sync route changes into the gateway state

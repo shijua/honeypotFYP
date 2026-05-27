@@ -197,3 +197,113 @@ def test_reveal_policy_loader_skips_comments(tmp_path: Path) -> None:
     scenarios.write_text('# comment\n{"scenario_id": "s1"}\n\n', encoding="utf-8")
 
     assert load_scenarios(scenarios) == [{"scenario_id": "s1"}]
+
+
+def test_reveal_policy_reports_trace_level_choice_signals(tmp_path: Path) -> None:
+    catalog = tmp_path / "catalog.json"
+    catalog.write_text(
+        json.dumps(
+            [
+                {
+                    "asset_id": "asset-main",
+                    "asset_name": "Credential Cache",
+                    "exposure_type": "internal",
+                    "interaction_level": "medium",
+                    "covers_tactics": ["Credential Access"],
+                    "dependencies": [],
+                    "default_settings": {
+                        "selection_profile": {
+                            "asset_group": "credential-store",
+                            "covered_techniques": ["T1552.001"],
+                            "telemetry_value": 0.8,
+                        }
+                    },
+                },
+                {
+                    "asset_id": "asset-explore",
+                    "asset_name": "Discovery Portal",
+                    "exposure_type": "internal",
+                    "interaction_level": "medium",
+                    "covers_tactics": ["Discovery"],
+                    "dependencies": [],
+                    "default_settings": {
+                        "selection_profile": {
+                            "asset_group": "portal",
+                            "covered_techniques": ["T1046"],
+                            "optional_dependency_signals": {
+                                "any_http_indicators": ["path:/discovery"],
+                                "any_techniques": ["T1046"],
+                            },
+                            "telemetry_value": 0.6,
+                        }
+                    },
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+    prior = tmp_path / "prior.json"
+    prior.write_text(
+        json.dumps(
+            {
+                "schema_version": "v1",
+                "method": "attack_group_collaborative_filtering",
+                "groups": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    scenarios = tmp_path / "scenarios.json"
+    base_scenario = {
+        "initial_unlocked_assets": [],
+        "profile": {
+            "conf_by_technique": {"T1552.001": 0.9, "T1046": 0.8},
+            "recent_techniques": ["T1552.001", "T1046"],
+            "recent_public_http_indicators": ["path:/discovery"],
+            "recent_evidence_ids": ["e-choice"],
+        },
+        "expected_reasonable_assets": ["asset-main", "asset-explore"],
+        "expected_hidden_assets": [],
+        "useful_followup_assets": ["asset-main", "asset-explore"],
+        "expected_reveals": [
+            {"action_type": "unlock", "asset_id": "asset-main"},
+            {"action_type": "unlock", "asset_id": "asset-explore"},
+        ],
+    }
+    scenarios.write_text(
+        json.dumps(
+            [
+                {**base_scenario, "scenario_id": "main-touch", "touched_assets": ["asset-main"]},
+                {**base_scenario, "scenario_id": "explore-touch", "touched_assets": ["asset-explore"]},
+                {**base_scenario, "scenario_id": "both-touch", "touched_assets": ["asset-main", "asset-explore"]},
+                {**base_scenario, "scenario_id": "neither-touch", "touched_assets": []},
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    report = evaluate_reveal_policies(
+        scenario_file=scenarios,
+        catalog_path=catalog,
+        prior_path=prior,
+        policies=("controller",),
+    )
+
+    rows = {row["scenario_id"]: row for row in report["policies"]["controller"]["rows"]}
+    assert rows["main-touch"]["choice_signal"] == "preferred_main"
+    assert rows["explore-touch"]["choice_signal"] == "preferred_explore"
+    assert rows["both-touch"]["choice_signal"] == "mixed"
+    assert rows["neither-touch"]["choice_signal"] == "unresolved"
+    assert rows["main-touch"]["main_reveal_assets"] == ["asset-main"]
+    assert rows["main-touch"]["explore_reveal_assets"] == ["asset-explore"]
+    assert rows["main-touch"]["touched_reveal_assets"] == ["asset-main"]
+    aggregate = report["policies"]["controller"]
+    assert aggregate["choice_signal_eligible_count"] == 4
+    assert aggregate["choice_signal_count"] == 3
+    assert aggregate["resolved_choice_rate"] == 0.75
+    assert aggregate["choice_signal_counts"] == {
+        "preferred_main": 1,
+        "preferred_explore": 1,
+        "mixed": 1,
+        "unresolved": 1,
+    }

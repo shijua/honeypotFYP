@@ -51,6 +51,7 @@ ALL_POLICIES: tuple[PolicyName, ...] = (
 )
 TRACE_KEYS = {
     "selected_strategy",
+    "reveal_role",
     "selected_technique",
     "confidence_score",
     "recommendation_support",
@@ -257,11 +258,25 @@ def evaluate_scenario(
     )
     gate_opened, _gate_events = _gate_only_reveals(assets, request)
     prior_influenced = policy == "controller" and opened_assets != gate_opened
+    main_reveals, explore_reveals = _reveals_by_role(decision_events)
+    touched_declared = isinstance(scenario.get("touched_assets"), list)
+    touched_assets = string_list(scenario.get("touched_assets"))
+    choice_signal = _choice_signal(
+        policy=policy,
+        main_reveals=main_reveals,
+        explore_reveals=explore_reveals,
+        touched_assets=touched_assets,
+        touched_declared=touched_declared,
+    )
     return {
         "scenario_id": str(scenario.get("scenario_id") or scenario.get("case_id") or "scenario"),
         "policy": policy,
         "opened_assets": opened_assets,
         "reveal_actions": reveal_actions,
+        "main_reveal_assets": main_reveals,
+        "explore_reveal_assets": explore_reveals,
+        "touched_reveal_assets": sorted(set(touched_assets) & opened_set),
+        "choice_signal": choice_signal,
         "opened_asset_count": len(opened_assets),
         "unlock_reveal_count": sum(1 for action in reveal_actions if action["action_type"] == "unlock"),
         "configuration_reveal_count": sum(1 for action in reveal_actions if action["action_type"] == "configure"),
@@ -346,6 +361,57 @@ def _controller_reveal_actions(actions: list[Any]) -> list[dict[str, str]]:
             summary["configuration_id"] = configuration_id
         summaries.append(summary)
     return summaries
+
+
+def _reveals_by_role(decision_events: list[dict[str, Any]]) -> tuple[list[str], list[str]]:
+    """Split controller reveal decisions into main and explore asset lists.
+
+    Example:
+        decision events with reveal_role main/explore -> (["git-internal"], ["malware-sink"]).
+    """
+    main: list[str] = []
+    explore: list[str] = []
+    for event in decision_events:
+        details = event.get("details")
+        if not isinstance(details, dict):
+            continue
+        asset_id = event.get("asset_added")
+        role = details.get("reveal_role")
+        if not isinstance(asset_id, str) or role not in {"main", "explore"}:
+            continue
+        if role == "main":
+            main.append(asset_id)
+        else:
+            explore.append(asset_id)
+    return dedupe_preserve(main), dedupe_preserve(explore)
+
+
+def _choice_signal(
+    *,
+    policy: PolicyName,
+    main_reveals: list[str],
+    explore_reveals: list[str],
+    touched_assets: list[str],
+    touched_declared: bool,
+) -> str | None:
+    """Return the local preference signal implied by touched replay assets.
+
+    Example:
+        main=["git-internal"], explore=["malware-sink"], touched=["malware-sink"]
+        -> "preferred_explore".
+    """
+    if policy != "controller" or not touched_declared or not main_reveals or not explore_reveals:
+        return None
+    touched = set(touched_assets)
+    main_touched = bool(set(main_reveals) & touched)
+    explore_touched = bool(set(explore_reveals) & touched)
+    if main_touched and explore_touched:
+        return "mixed"
+    if main_touched:
+        return "preferred_main"
+    if explore_touched:
+        return "preferred_explore"
+    return "unresolved"
 
 
 def _unlock_action_summaries(asset_ids: list[str]) -> list[dict[str, str]]:
@@ -652,6 +718,20 @@ def _aggregate_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
     expected_no_reveal = sum(1 for row in rows if row["expected_no_reveal"])
     correct_no_reveal = sum(1 for row in rows if row["correct_no_reveal"])
     prior_influenced = sum(1 for row in rows if row["prior_influenced"])
+    # Choice signals are only emitted when a controller row offered both main
+    # and explore reveals and the fixture declared follow-up touched assets.
+    choice_signals = [
+        str(row["choice_signal"])
+        for row in rows
+        if isinstance(row.get("choice_signal"), str)
+    ]
+    resolved_choice_signals = [
+        signal for signal in choice_signals if signal != "unresolved"
+    ]
+    choice_signal_counts = {
+        signal: choice_signals.count(signal)
+        for signal in ("preferred_main", "preferred_explore", "mixed", "unresolved")
+    }
     latencies = [
         float(row["profile_to_reveal_latency_ticks"])
         for row in rows
@@ -686,6 +766,10 @@ def _aggregate_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "expected_no_reveal_count": expected_no_reveal,
         "correct_no_reveal_rate": _ratio(correct_no_reveal, expected_no_reveal),
         "prior_influence_rate": _ratio(prior_influenced, len(rows)),
+        "choice_signal_eligible_count": len(choice_signals),
+        "choice_signal_count": len(resolved_choice_signals),
+        "resolved_choice_rate": _ratio(len(resolved_choice_signals), len(choice_signals)),
+        "choice_signal_counts": choice_signal_counts,
         "decision_trace_completeness_rate": _ratio(
             sum(1 for row in rows if row["decision_trace_complete"]),
             len(rows),

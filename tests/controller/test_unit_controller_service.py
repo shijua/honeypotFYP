@@ -84,6 +84,7 @@ def test_tick_prefers_exploit_then_secondary_explore() -> None:
     ]
     assert response.decision_events[0].decision_type == "unlock"
     assert response.decision_events[0].details["selected_strategy"] == "exploit"
+    assert response.decision_events[0].details["reveal_role"] == "main"
     assert response.decision_events[0].details["selected_technique"] == "T1552.001"
     assert response.decision_events[0].details["candidate_type"] == "continuation"
     assert response.decision_events[0].details["ordering"]["candidate_type_rank"] == 2
@@ -93,6 +94,8 @@ def test_tick_prefers_exploit_then_secondary_explore() -> None:
         "asset-exploit",
         "asset-explore",
     ]
+    assert response.decision_events[1].details["selected_strategy"] == "explore"
+    assert response.decision_events[1].details["reveal_role"] == "explore"
 
 
 def test_tick_returns_noop_when_everything_is_already_unlocked() -> None:

@@ -76,14 +76,17 @@ For the controller row, check:
 - `strict_expected_reveal_match_rate`: expected actions matched and no unexpected actions were emitted.
 - `configuration_reveal_count`: per-row count showing when the controller changed a configuration instead of opening a new asset.
 - `correct_no_reveal_rate`: scanner/boundary no-reveal cases stayed closed.
-- `opened_asset_count`: average number of reveals per scenario.
+- `useful_evidence_per_reveal`: opened assets that the scenario marks as producing concrete useful follow-up evidence, divided by opened assets.
+- `diagnostic_or_useful_per_reveal`: opened assets that the scenario marks as either useful or diagnostically informative, divided by opened assets.
+- `choice_signal_count` / `resolved_choice_rate`: among controller rows with both main and explore reveals plus fixture `touched_assets`, how often follow-up behavior identified a local choice signal.
+- `opened_asset_count` / `avg_opened_assets`: total opened assets and average reveals per scenario.
 - `prior_influence_rate`: how often the group prior influenced selection.
 - `decision_trace_completeness`: decision details include the required audit fields.
 
 Quick summary:
 
 ```bash
-jq '.ok, .policies.controller | {scenario_count, reveal_correctness, irrelevant_reveal_rate, hidden_violation_rate, expected_reveal_match_rate, unexpected_reveal_action_rate, strict_expected_reveal_match_rate, correct_no_reveal_rate}' /tmp/reveal_policy_report.json
+jq '{ok: .ok, controller: (.policies.controller | {scenario_count, reveal_correctness, irrelevant_reveal_rate, hidden_violation_rate, correct_no_reveal_rate, avg_opened_assets, useful_evidence_per_reveal, diagnostic_or_useful_per_reveal, prior_influence_rate, decision_trace_completeness_rate, expected_reveal_match_rate, unexpected_reveal_action_rate, strict_expected_reveal_match_rate, choice_signal_count, resolved_choice_rate, choice_signal_counts})}' /tmp/reveal_policy_report.json
 ```
 
 Expected: no hidden violations, no missing expected reveal actions, no unexpected reveal actions, and no-reveal scenarios pass. A failed `ok` with non-zero `unexpected_reveal_count` means the controller opened or configured more than the scenario allowed, even if the asset-level reveal still looked reasonable.
@@ -131,7 +134,7 @@ jq '.ok, .summary' /tmp/reveal_port_controller_report.json
 
 Expected: `ok=true` and all default scenarios pass. This is the fastest way to check “will the right asset, action type, and port be selected?” Configuration scenarios show `selected_actions[].action_type == "configure"` and include `configuration_id`.
 
-This also writes `/tmp/reveal_port_controller_report.svg`, a pass/fail chart for the route checks.
+This command writes JSON only. Route-check failures are easier to inspect from `summary`, `failure_reason`, `expected_routes`, and `actual_routes` than from a pass/fail chart.
 
 ## 5. Live Port Reveal
 
@@ -174,6 +177,23 @@ This measures control-plane overhead after the compose stack is running.
   --output /tmp/runtime_latency_report.json
 ```
 
+Warm-standby is catalog-owned. The assets currently marked as warm-standby eligible are:
+
+| Asset | Gateway port |
+| --- | --- |
+| `internal-portal` | `18080` |
+| `finance-share` | `18082` |
+| `git-internal` | `19418` |
+| `ops-db` | `13306` |
+| `redis-cache` | `16379` |
+| `web-admin-console` | `18081` |
+| `ftp-archive` | `12121` |
+| `ssh-canary` | `12222` |
+| `vpn-appliance` | `18443` |
+| `malware-sink` | `18085` |
+
+These are fixed-port Docker-backed internal surfaces that can be started hidden and later exposed by writing an asset-gateway route. They are not hot routes: warm-standby does not make the port attacker-visible until a reveal action occurs. Protocol or capture-heavy assets such as `admin-jumpbox`, `legacy-telnet`, `mail-relay`, `dionaea-capture`, and `honeytrap-generic` are not warmed by default.
+
 Reported timings:
 
 - binding resolve latency
@@ -208,6 +228,6 @@ For a normal development check, run this sequence:
 docker-compose -p honeynet -f docker-compose.control.yml -f docker-compose.enterprise.yml config
 ```
 
-Each evaluation command with `--output` writes the JSON report plus a sibling matplotlib SVG with the same filename stem.
+Plot-producing evaluation commands write the JSON report plus a sibling matplotlib SVG with the same filename stem. Port simulation writes JSON only because the route-level pass/fail chart duplicates the report summary.
 
 Then run live-apply and latency only when Docker images and ports are available.

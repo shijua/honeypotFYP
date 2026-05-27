@@ -710,6 +710,7 @@ class ControllerService:
         details = {
             "strategy": candidate.strategy,
             "selected_strategy": candidate.strategy,
+            "reveal_role": _reveal_role(candidate.strategy),
             "candidate_type": candidate.candidate_type,
             "selected_technique": candidate.selected_technique,
             "technique_signal_score": candidate.technique_signal_score,
@@ -839,6 +840,11 @@ def _controller_ordering_details(candidate: CandidateScore) -> dict[str, Any]:
         "repeat_count": candidate.repeat_count,
         "asset_id": _candidate_exposed_asset_id(candidate),
     }
+
+
+def _reveal_role(strategy: str) -> str:
+    """Return the local choice role used by offline preference-choice evaluation."""
+    return "explore" if strategy == "explore" else "main"
 
 
 def _candidate_order_key(candidate: CandidateScore) -> tuple[float, float, float, int, int, str]:

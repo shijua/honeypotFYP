@@ -135,6 +135,10 @@
       "git-internal",
       "malware-sink"
     ],
+    "touched_assets": [
+      "git-internal",
+      "malware-sink"
+    ],
     "evidence_sequence": [
       {
         "evidence_id": "mixed-e1",
@@ -160,6 +164,70 @@
       }
     ],
     "reference_id": "cisa-ransomware-mixed",
+    "expected_reveals": [
+      {
+        "action_type": "unlock",
+        "asset_id": "git-internal"
+      },
+      {
+        "action_type": "unlock",
+        "asset_id": "malware-sink"
+      }
+    ]
+  },
+  {
+    "scenario_id": "choice-source-map-payload-followup",
+    "title": "Choice case: source-map discovery plus payload follow-up",
+    "scenario_type": "mixed-signal",
+    "expected_behavior": "When discovery and tool-transfer options are both plausible, the replay marks which revealed direction the attacker actually follows.",
+    "initial_unlocked_assets": [
+      "internal-portal"
+    ],
+    "expected_reasonable_assets": [
+      "git-internal",
+      "malware-sink"
+    ],
+    "expected_hidden_assets": [
+      "ops-db"
+    ],
+    "useful_followup_assets": [
+      "git-internal",
+      "malware-sink"
+    ],
+    "diagnostic_followup_assets": [
+      "git-internal",
+      "malware-sink"
+    ],
+    "touched_assets": [
+      "malware-sink"
+    ],
+    "evidence_sequence": [
+      {
+        "evidence_id": "choice-e1",
+        "public_http_indicator": "path:.map",
+        "public_http_path": "/assets/app.js.map",
+        "tactic": "Discovery",
+        "technique": "T1083",
+        "weight": 0.9
+      },
+      {
+        "evidence_id": "choice-e2",
+        "public_http_indicator": "combined:php://filter",
+        "public_http_rule": "public_http_exploit_probe",
+        "tactic": "Command and Control",
+        "technique": "T1105",
+        "weight": 0.9
+      },
+      {
+        "evidence_id": "choice-e3",
+        "public_http_indicator": "path:.map",
+        "public_http_path": "/assets/app.js.map",
+        "tactic": "Collection",
+        "technique": "T1213",
+        "weight": 0.75
+      }
+    ],
+    "reference_id": "cisa-lockbit-tool-transfer",
     "expected_reveals": [
       {
         "action_type": "unlock",
@@ -428,6 +496,13 @@
         "action_type": "configure",
         "asset_id": "git-internal",
         "configuration_id": "git-db-credential-clue"
+      }
+    ],
+    "allowed_reveals": [
+      {
+        "action_type": "configure",
+        "asset_id": "git-internal",
+        "configuration_id": "git-deployment-ci-config"
       }
     ],
     "evidence_sequence": [

@@ -9,7 +9,12 @@ from __future__ import annotations
 from fastapi import Depends, FastAPI
 
 from libs.common.config import RuntimeConfig
-from libs.contracts.models import OrchestratorApplyRequest, OrchestratorApplyResponse
+from libs.contracts.models import (
+    OrchestratorApplyRequest,
+    OrchestratorApplyResponse,
+    OrchestratorPrewarmRequest,
+    OrchestratorPrewarmResponse,
+)
 from services.binding_service.runtime import get_runtime_service
 from services.controller.repository import FileAssetRepository
 from services.gateway.runtime import get_runtime_service as get_runtime_gateway_service
@@ -59,3 +64,12 @@ def apply_actions(
 ) -> OrchestratorApplyResponse:
     """Apply controller actions against the current binding state."""
     return service.apply(request)
+
+
+@app.post("/v1/orchestration/prewarm", response_model=OrchestratorPrewarmResponse)
+def prewarm_assets(
+    request: OrchestratorPrewarmRequest,
+    service: OrchestratorService = Depends(get_service),
+) -> OrchestratorPrewarmResponse:
+    """Start warm-standby backends without exposing them through the gateway."""
+    return service.prewarm(request)

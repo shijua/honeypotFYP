@@ -19,6 +19,7 @@
     "default_settings": {
       "runtime": {
         "backend": "docker",
+        "warm_standby": true,
         "image": "nginx:alpine",
         "network": "{project_name}_net_internal",
         "memory_limit": "128m",
@@ -164,6 +165,7 @@
     "default_settings": {
       "runtime": {
         "backend": "docker",
+        "warm_standby": true,
         "image": "nginx:alpine",
         "network": "{project_name}_net_internal",
         "memory_limit": "128m",
@@ -317,6 +319,7 @@
     "default_settings": {
       "runtime": {
         "backend": "docker",
+        "warm_standby": true,
         "image": "thinkst/opencanary",
         "network": "{project_name}_net_internal",
         "memory_limit": "256m",
@@ -483,6 +486,7 @@
     "default_settings": {
       "runtime": {
         "backend": "docker",
+        "warm_standby": true,
         "image": "thinkst/opencanary",
         "network": "{project_name}_net_internal",
         "memory_limit": "256m",
@@ -847,6 +851,7 @@
     "default_settings": {
       "runtime": {
         "backend": "docker",
+        "warm_standby": true,
         "image": "thinkst/opencanary",
         "network": "{project_name}_net_internal",
         "memory_limit": "256m",
@@ -982,6 +987,7 @@
     "default_settings": {
       "runtime": {
         "backend": "docker",
+        "warm_standby": true,
         "image": "nginx:alpine",
         "network": "{project_name}_net_internal",
         "memory_limit": "128m",
@@ -1162,6 +1168,7 @@
     "default_settings": {
       "runtime": {
         "backend": "docker",
+        "warm_standby": true,
         "image": "thinkst/opencanary",
         "network": "{project_name}_net_internal",
         "memory_limit": "256m",
@@ -1314,6 +1321,7 @@
     "default_settings": {
       "runtime": {
         "backend": "docker",
+        "warm_standby": true,
         "image": "thinkst/opencanary",
         "network": "{project_name}_net_internal",
         "memory_limit": "256m",
@@ -1748,6 +1756,7 @@
     "default_settings": {
       "runtime": {
         "backend": "docker",
+        "warm_standby": true,
         "image": "nginx:alpine",
         "network": "{project_name}_net_internal",
         "memory_limit": "128m",
@@ -1925,6 +1934,7 @@
     "default_settings": {
       "runtime": {
         "backend": "docker",
+        "warm_standby": true,
         "image": "nginx:alpine",
         "network": "{project_name}_net_internal",
         "memory_limit": "128m",

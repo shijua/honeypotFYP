@@ -458,6 +458,22 @@ class OrchestratorApplyResponse(VersionedModel):
     monitoring_events: List[FalcoEvent] = Field(default_factory=list)
 
 
+class OrchestratorPrewarmRequest(VersionedModel):
+    """Request to warm backend containers before they are revealed."""
+
+    binding_id: str = Field(min_length=1)
+    asset_ids: List[str] = Field(default_factory=list)
+
+
+class OrchestratorPrewarmResponse(VersionedModel):
+    """Result of warming hidden backend containers for one binding."""
+
+    binding_id: str
+    warmed_asset_ids: List[str] = Field(default_factory=list)
+    failed_asset_ids: List[str] = Field(default_factory=list)
+    runtime_events: List["AssetRuntimeRecord"] = Field(default_factory=list)
+
+
 class AssetRuntimeRecord(VersionedModel):
     """Mock runtime state produced when the orchestrator enables one asset.
 

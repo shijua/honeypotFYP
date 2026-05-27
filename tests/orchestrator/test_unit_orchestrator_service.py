@@ -12,12 +12,14 @@ from libs.contracts.models import (
     AssetDefinition,
     ControllerAction,
     OrchestratorApplyRequest,
+    OrchestratorPrewarmRequest,
     ResolveBindingRequest,
 )
 from services.binding_service.domain import BindingService
 from tests.support.inmemory_repositories import InMemoryBindingRepository
 from tests.support.inmemory_repositories import InMemoryAssetRepository
 from services.gateway.domain import GatewayService
+from services.gateway.domain import GatewayStateNotFoundError
 from tests.support.inmemory_repositories import InMemoryGatewayRouteRepository
 from tests.support.inmemory_repositories import InMemoryTemplateRuntimeRepository
 from services.orchestrator.domain import OrchestratorService
@@ -226,6 +228,72 @@ def test_apply_configure_records_configuration_and_unlocks_upgrade_target() -> N
     source_record = next(record for record in stored_records if record.asset_id == "malware-sink")
     assert "malware-dionaea-same-port-upgrade" in source_record.settings["active_configurations"]
     assert any(record.asset_id == "dionaea-capture" for record in stored_records)
+
+
+def test_prewarm_starts_catalog_warm_assets_without_gateway_exposure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    binding_service = BindingService(InMemoryBindingRepository())
+    gateway_service = GatewayService(InMemoryGatewayRouteRepository())
+    runtime_repository = InMemoryTemplateRuntimeRepository()
+    docker_runtime = DockerTemplateRuntime(runtime_repository)
+    mock_runtime = MockTemplateRuntime(runtime_repository)
+    asset = AssetDefinition(
+        asset_id="web-admin-console",
+        asset_name="Web Admin Console",
+        exposure_type="internal",
+        interaction_level="medium",
+        template_family="web-honeypot",
+        protocols=["http"],
+        ports=[80],
+        default_settings={
+            "runtime": {
+                "backend": "docker",
+                "image": "nginx:alpine",
+                "warm_standby": True,
+                "port_mappings": [
+                    {
+                        "host": "127.0.0.1",
+                        "requested_host_port": 18081,
+                        "container_port": 80,
+                    }
+                ],
+            }
+        },
+        covers_tactics=["Discovery"],
+        dependencies=["internal-portal"],
+    )
+    orchestrator = OrchestratorService(
+        binding_service,
+        gateway_service,
+        InMemoryAssetRepository([asset]),
+        HybridTemplateRuntime(docker_runtime, mock_runtime),
+    )
+    binding = binding_service.resolve(ResolveBindingRequest(attacker_key="198.51.100.55"))
+
+    monkeypatch.setattr(template_runtime_module.shutil, "which", lambda name: "/usr/bin/docker")
+    monkeypatch.setattr(runtime_routes_module, "_port_is_free", lambda port: True)
+    monkeypatch.setattr(
+        template_runtime_module.subprocess,
+        "run",
+        lambda args, **kwargs: type(
+            "Result",
+            (),
+            {"returncode": 0, "stdout": "container-id", "stderr": ""},
+        )(),
+    )
+    monkeypatch.setattr(template_runtime_module, "_container_status", _missing_then_up_status())
+    monkeypatch.setattr(template_runtime_module, "_healthcheck_ready", lambda runtime, settings: True)
+
+    response = orchestrator.prewarm(
+        OrchestratorPrewarmRequest(binding_id=binding.binding_id)
+    )
+
+    assert response.warmed_asset_ids == ["web-admin-console"]
+    assert response.runtime_events[0].settings["warm_standby_hidden"] is True
+    with pytest.raises(GatewayStateNotFoundError):
+        gateway_service.get_state(binding.binding_id)
+    assert orchestrator._accessible_asset_ids(binding.binding_id, binding) == []
 
 
 def test_recycle_then_resolve_keeps_unlocked_assets() -> None:
@@ -547,6 +615,96 @@ def test_docker_template_runtime_writes_asset_gateway_route(
     assert routes["routes"][0]["backend_host"] == record.settings["backend_host"]
     assert routes["routes"][0]["backend_port"] == 80
     assert routes["routes"][0]["backend_ip"] == "172.25.0.5"
+
+
+def test_docker_template_runtime_attaches_route_to_warm_standby_backend(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    commands: list[list[str]] = []
+
+    def fake_run(args, **kwargs):
+        command = list(args)
+        commands.append(command)
+
+        class Result:
+            returncode = 0
+            stdout = (
+                json.dumps(
+                    [
+                        {
+                            "NetworkSettings": {
+                                "Networks": {
+                                    "honeynet_net_internal": {
+                                        "IPAddress": "172.25.0.9",
+                                    }
+                                }
+                            }
+                        }
+                    ]
+                )
+                if command[:2] == ["docker", "inspect"]
+                else "container-id"
+            )
+            stderr = ""
+
+        return Result()
+
+    monkeypatch.setattr(template_runtime_module.shutil, "which", lambda name: "/usr/bin/docker")
+    monkeypatch.setattr(runtime_routes_module, "_port_is_free", lambda port: True)
+    monkeypatch.setattr(template_runtime_module.subprocess, "run", fake_run)
+    monkeypatch.setattr(template_runtime_module, "_container_status", _missing_then_up_status())
+    monkeypatch.setattr(template_runtime_module, "_healthcheck_ready", lambda runtime, settings: True)
+    monkeypatch.setenv(
+        "HONEYPOT_ASSET_GATEWAY_ROUTES_PATH",
+        str(tmp_path / "asset_gateway_routes.json"),
+    )
+
+    repository = InMemoryTemplateRuntimeRepository()
+    runtime = DockerTemplateRuntime(repository)
+    asset = AssetDefinition(
+        asset_id="internal-portal",
+        asset_name="Internal Portal",
+        exposure_type="internal",
+        interaction_level="medium",
+        template_family="web-honeypot",
+        protocols=["http"],
+        ports=[80],
+        default_settings={
+            "runtime": {
+                "backend": "docker",
+                "image": "nginx:alpine",
+                "network": "honeynet_net_internal",
+                "port_mappings": [
+                    {
+                        "host": "127.0.0.1",
+                        "requested_host_port": 18080,
+                        "container_port": 80,
+                    }
+                ],
+            }
+        },
+        covers_tactics=["Discovery"],
+    )
+
+    warm_record = runtime.start_asset("binding-warm", asset, warm_standby=True)
+    assert warm_record.settings["warm_standby_hidden"] is True
+    assert not (tmp_path / "asset_gateway_routes.json").exists()
+
+    revealed_record = runtime.start_asset(
+        "binding-warm",
+        asset,
+        attacker_key="198.51.100.90",
+    )
+    routes = json.loads((tmp_path / "asset_gateway_routes.json").read_text())
+
+    docker_run_commands = [command for command in commands if command[:2] == ["docker", "run"]]
+    assert len(docker_run_commands) == 1
+    assert revealed_record.settings["warm_standby_hidden"] is False
+    assert routes["routes"][0]["attacker_key"] == "198.51.100.90"
+    assert routes["routes"][0]["asset_id"] == "internal-portal"
+    assert routes["routes"][0]["public_port"] == 18080
+    assert routes["routes"][0]["backend_ip"] == "172.25.0.9"
 
 
 def test_docker_template_runtime_does_not_gateway_manage_external_entrypoint(

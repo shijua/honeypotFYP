@@ -92,13 +92,18 @@ class MockTemplateRuntime:
         binding_id: str,
         asset: AssetDefinition,
         attacker_key: str | None = None,
+        *,
+        warm_standby: bool = False,
     ) -> AssetRuntimeRecord:
         """Record that an asset is running with its catalog default settings."""
         existing = _existing_running_record(self._repository, binding_id, asset.asset_id)
         if existing is not None:
             return existing
 
-        record = _runtime_record_from_asset(binding_id, asset)
+        settings = dict(asset.default_settings)
+        if warm_standby:
+            settings["warm_standby_hidden"] = True
+        record = _runtime_record_from_asset(binding_id, asset, settings=settings)
         return self._repository.upsert(record)
 
     def monitoring_event_for(self, record: AssetRuntimeRecord) -> FalcoEvent:
@@ -147,6 +152,7 @@ class MockTemplateRuntime:
         for record in self._repository.list_by_binding(binding_id):
             if (
                 record.status == "running"
+                and record.settings.get("warm_standby_hidden") is not True
                 and str(record.settings.get("runtime_backend", "mock")) != "docker"
             ):
                 asset_ids.append(record.asset_id)
@@ -156,7 +162,10 @@ class MockTemplateRuntime:
         """Return failed mock/runtime placeholder assets for one binding."""
         asset_ids: list[str] = []
         for record in self._repository.list_by_binding(binding_id):
-            if _runtime_record_is_failed(record):
+            if (
+                record.settings.get("warm_standby_hidden") is not True
+                and _runtime_record_is_failed(record)
+            ):
                 asset_ids.append(record.asset_id)
         return asset_ids
 
@@ -187,11 +196,18 @@ class DockerTemplateRuntime:
         binding_id: str,
         asset: AssetDefinition,
         attacker_key: str | None = None,
+        *,
+        warm_standby: bool = False,
     ) -> AssetRuntimeRecord:
         """Start one supported asset as a real Docker container."""
         existing = _existing_running_record(self._repository, binding_id, asset.asset_id)
         if existing is not None:
-            return existing
+            return _attach_gateway_route_for_existing_record(
+                self._repository,
+                existing,
+                asset,
+                attacker_key,
+            )
 
         if shutil.which("docker") is None:
             raise RuntimeError("docker CLI is not available on this host")
@@ -234,6 +250,7 @@ class DockerTemplateRuntime:
                 asset_gateway_managed=asset_gateway_managed,
                 attacker_key=attacker_key,
                 container_name=container_name,
+                warm_standby=warm_standby,
             )
         if existing_container_status != "missing":
             self._cleanup_failed_container(container_name)
@@ -268,6 +285,7 @@ class DockerTemplateRuntime:
             asset_gateway_managed=asset_gateway_managed,
             attacker_key=attacker_key,
             container_name=container_name,
+            warm_standby=warm_standby,
         )
 
     def monitoring_event_for(self, record: AssetRuntimeRecord) -> FalcoEvent:
@@ -571,8 +589,11 @@ class DockerTemplateRuntime:
         asset_gateway_managed: bool,
         attacker_key: str | None,
         container_name: str,
+        warm_standby: bool,
     ) -> AssetRuntimeRecord:
         """Persist metadata for a container that is already confirmed running."""
+        if warm_standby:
+            runtime_settings["warm_standby_hidden"] = True
         if asset_gateway_managed:
             backend_ip = _container_network_ip(
                 container_name,
@@ -612,11 +633,18 @@ class ComposeTemplateRuntime:
         binding_id: str,
         asset: AssetDefinition,
         attacker_key: str | None = None,
+        *,
+        warm_standby: bool = False,
     ) -> AssetRuntimeRecord:
         """Start one supported asset through Docker Compose."""
         existing = _existing_running_record(self._repository, binding_id, asset.asset_id)
         if existing is not None:
-            return existing
+            return _attach_gateway_route_for_existing_record(
+                self._repository,
+                existing,
+                asset,
+                attacker_key,
+            )
 
         if shutil.which("docker") is None:
             raise RuntimeError("docker CLI is not available on this host")
@@ -683,6 +711,8 @@ class ComposeTemplateRuntime:
                 backend_ip = _container_network_ip(target_container, internal_network)
                 if backend_ip:
                     runtime_settings["backend_ip"] = backend_ip
+        if warm_standby:
+            runtime_settings["warm_standby_hidden"] = True
         settings = dict(asset.default_settings)
         settings.update(runtime_settings)
         record = _runtime_record_from_asset(binding_id, asset, settings=settings)
@@ -752,11 +782,18 @@ class HybridTemplateRuntime:
         binding_id: str,
         asset: AssetDefinition,
         attacker_key: str | None = None,
+        *,
+        warm_standby: bool = False,
     ) -> AssetRuntimeRecord:
         """Start with Docker when supported, otherwise return a mock record."""
         if self._compose_runtime is not None and self._compose_runtime.supports(asset):
             try:
-                return self._compose_runtime.start_asset(binding_id, asset, attacker_key)
+                return self._compose_runtime.start_asset(
+                    binding_id,
+                    asset,
+                    attacker_key,
+                    warm_standby=warm_standby,
+                )
             except Exception as exc:
                 failed = _runtime_record_from_asset(
                     binding_id,
@@ -765,12 +802,18 @@ class HybridTemplateRuntime:
                         **dict(asset.default_settings),
                         "runtime_backend": "compose",
                         "runtime_failure": str(exc),
+                        "warm_standby_hidden": warm_standby,
                     },
                 ).model_copy(update={"status": "failed"})
                 return self._mock_runtime.upsert_record(failed)
         if self._docker_runtime.supports(asset):
             try:
-                return self._docker_runtime.start_asset(binding_id, asset, attacker_key)
+                return self._docker_runtime.start_asset(
+                    binding_id,
+                    asset,
+                    attacker_key,
+                    warm_standby=warm_standby,
+                )
             except Exception as exc:
                 failed = _runtime_record_from_asset(
                     binding_id,
@@ -779,10 +822,24 @@ class HybridTemplateRuntime:
                         **dict(asset.default_settings),
                         "runtime_backend": "docker",
                         "runtime_failure": str(exc),
+                        "warm_standby_hidden": warm_standby,
                     },
                 ).model_copy(update={"status": "failed"})
                 return self._mock_runtime.upsert_record(failed)
-        return self._mock_runtime.start_asset(binding_id, asset, attacker_key)
+        return self._mock_runtime.start_asset(
+            binding_id,
+            asset,
+            attacker_key,
+            warm_standby=warm_standby,
+        )
+
+    def prewarm_asset(
+        self,
+        binding_id: str,
+        asset: AssetDefinition,
+    ) -> AssetRuntimeRecord:
+        """Start a backend without publishing an attacker-visible route yet."""
+        return self.start_asset(binding_id, asset, warm_standby=True)
 
     def monitoring_event_for(self, record: AssetRuntimeRecord) -> FalcoEvent:
         """Return a lifecycle event for either Docker or mock records."""
@@ -868,6 +925,29 @@ def _existing_running_record(
         if record.asset_id == asset_id and record.status == "running":
             return record
     return None
+
+
+def _attach_gateway_route_for_existing_record(
+    repository: TemplateRuntimeRepository,
+    record: AssetRuntimeRecord,
+    asset: AssetDefinition,
+    attacker_key: str | None,
+) -> AssetRuntimeRecord:
+    """Expose an already-warm backend only when a concrete attacker reveal arrives."""
+    if not attacker_key or record.settings.get("asset_gateway_managed") is not True:
+        return record
+    upsert_asset_gateway_routes(
+        binding_id=record.binding_id,
+        attacker_key=attacker_key,
+        asset=asset,
+        runtime_settings=record.settings,
+    )
+    if record.settings.get("warm_standby_hidden") is True:
+        settings = dict(record.settings)
+        settings["warm_standby_hidden"] = False
+        record = record.model_copy(update={"settings": settings})
+        return repository.upsert(record)
+    return record
 
 
 def _apply_configuration_to_record(
@@ -1470,6 +1550,8 @@ def _runtime_from_record(record: AssetRuntimeRecord) -> dict[str, object]:
 
 def _compose_record_is_accessible(record: AssetRuntimeRecord) -> bool:
     """Return True when a compose-backed runtime should count as reachable."""
+    if record.settings.get("warm_standby_hidden") is True:
+        return False
     if record.status != "running":
         return False
     if str(record.settings.get("runtime_backend", "mock")) != "compose":
@@ -1483,6 +1565,8 @@ def _compose_record_is_accessible(record: AssetRuntimeRecord) -> bool:
 
 def _compose_record_is_failed(record: AssetRuntimeRecord) -> bool:
     """Return True when a compose-backed runtime has failed or disappeared."""
+    if record.settings.get("warm_standby_hidden") is True:
+        return False
     if record.status == "failed":
         return str(record.settings.get("runtime_backend", "mock")) == "compose"
     if record.status != "running":
@@ -1621,6 +1705,8 @@ def _skip_runtime_tcp_healthcheck() -> bool:
 
 def _runtime_record_is_accessible(record: AssetRuntimeRecord) -> bool:
     """Return True when a runtime record should count as reachable now."""
+    if record.settings.get("warm_standby_hidden") is True:
+        return False
     if record.status != "running":
         return False
     backend = str(record.settings.get("runtime_backend", "mock"))
@@ -1634,6 +1720,8 @@ def _runtime_record_is_accessible(record: AssetRuntimeRecord) -> bool:
 
 def _runtime_record_is_failed(record: AssetRuntimeRecord) -> bool:
     """Return True when a runtime record should count as failed now."""
+    if record.settings.get("warm_standby_hidden") is True:
+        return False
     if record.status == "failed":
         return True
     if record.status != "running":

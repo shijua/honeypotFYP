@@ -35,8 +35,14 @@ def test_reveal_policy_scenarios_reference_existing_assets_and_covered_technique
         assert scenario["reference_id"] in reference_text, scenario["scenario_id"]
         expected_assets = _strings(scenario.get("expected_reasonable_assets"))
         hidden_assets = _strings(scenario.get("expected_hidden_assets"))
-        for asset_id in [*expected_assets, *hidden_assets, *_strings(scenario.get("useful_followup_assets"))]:
+        useful_assets = _strings(scenario.get("useful_followup_assets"))
+        diagnostic_assets = _strings(scenario.get("diagnostic_followup_assets"))
+        touched_assets = _strings(scenario.get("touched_assets"))
+        for asset_id in [*expected_assets, *hidden_assets, *useful_assets, *diagnostic_assets, *touched_assets]:
             assert asset_id in assets, f"{scenario['scenario_id']} references unknown asset {asset_id}"
+        allowed_touched = set(expected_assets) | set(useful_assets) | set(diagnostic_assets)
+        for asset_id in touched_assets:
+            assert asset_id in allowed_touched, f"{scenario['scenario_id']} touches unlinked asset {asset_id}"
         _assert_expected_reveals_are_catalog_backed(scenario, assets)
 
         if scenario.get("expected_no_reveal") or scenario.get("boundary"):
