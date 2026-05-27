@@ -21,7 +21,9 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+from libs.common.attack import technique_family_set
 from libs.common.config import RuntimeConfig
+from libs.common.iterables import dedupe_preserve
 from scripts.evaluation.charts import write_prior_recommendation_chart
 from scripts.evaluation.reveal_policy import load_scenarios
 from services.controller.repository import FileAttackGroupTechniquePriorRepository
@@ -69,6 +71,37 @@ def evaluate_prior_recommendations(
             excluded.append({"scenario_id": scenario_id, "reason": reason})
             continue
         traces.append({"scenario_id": scenario_id, "techniques": _scenario_techniques(item)})
+    trace_report = evaluate_trace_recommendations(
+        traces=traces,
+        prior_path=prior_path,
+        config=config,
+    )
+    return {
+        "schema_version": "v1",
+        "ok": trace_report["metrics"]["prefix_count"] > 0 and trace_report["metrics"]["degraded_reason"] is None,
+        "scenario_file": str(scenario_file),
+        "prior": str(prior_path),
+        "top_k": trace_report["top_k"],
+        "support_threshold": trace_report["support_threshold"],
+        "evaluation_match": "technique_family",
+        "technique_family_universe_size": trace_report["technique_family_universe_size"],
+        "trace_count": len(traces),
+        "excluded_scenarios": excluded,
+        "metrics": trace_report["metrics"],
+    }
+
+
+def evaluate_trace_recommendations(
+    *,
+    traces: list[dict[str, Any]],
+    prior_path: Path,
+    config: RuntimeConfig | None = None,
+) -> dict[str, Any]:
+    """Evaluate ordered technique traces against the active group prior.
+
+    `traces` is intentionally small and generic so scenario replay and public
+    dataset validation can share one metric implementation.
+    """
     runtime_config = config or RuntimeConfig.from_env()
     metrics = _evaluate_trace_prefixes(
         traces,
@@ -76,18 +109,13 @@ def evaluate_prior_recommendations(
         top_k=runtime_config.recommendation_top_k,
         support_threshold=runtime_config.recommendation_support_threshold,
     )
-    technique_universe = _family_set(_technique_universe_from_prior(prior_path))
+    technique_universe = technique_family_set(_technique_universe_from_prior(prior_path))
     return {
-        "schema_version": "v1",
-        "ok": metrics["prefix_count"] > 0 and metrics["degraded_reason"] is None,
-        "scenario_file": str(scenario_file),
-        "prior": str(prior_path),
         "top_k": runtime_config.recommendation_top_k,
         "support_threshold": runtime_config.recommendation_support_threshold,
         "evaluation_match": "technique_family",
         "technique_family_universe_size": len(technique_universe),
         "trace_count": len(traces),
-        "excluded_scenarios": excluded,
         "metrics": metrics,
     }
 
@@ -100,7 +128,7 @@ def _evaluate_trace_prefixes(
     support_threshold: float,
 ) -> dict[str, Any]:
     repository = FileAttackGroupTechniquePriorRepository(prior_path)
-    technique_universe = _family_set(_technique_universe_from_prior(prior_path))
+    technique_universe = technique_family_set(_technique_universe_from_prior(prior_path))
     prefix_count = 0
     true_positive_total = 0
     false_positive_total = 0
@@ -117,14 +145,14 @@ def _evaluate_trace_prefixes(
         scenario_tn = 0
         scenario_fn = 0
         for index in range(1, len(techniques)):
-            observed = _family_set(techniques[:index])
-            future = _family_set(techniques[index:])
+            observed = technique_family_set(techniques[:index])
+            future = technique_family_set(techniques[index:])
             recommendations = repository.recommend(
                 set(techniques[:index]),
                 top_k=top_k,
                 support_threshold=support_threshold,
             )
-            recommended = _family_set(recommendations)
+            recommended = technique_family_set(recommendations)
             evaluation_universe = technique_universe | observed | future | recommended
             relevant_universe = evaluation_universe - observed
             positives = future & relevant_universe
@@ -211,23 +239,6 @@ def _technique_universe_from_prior(path: Path) -> set[str]:
     }
 
 
-def _family_set(techniques: Any) -> set[str]:
-    """Return parent technique families for ATT&CK technique ids.
-
-    Example:
-        ["T1548.003", "T1105"] -> {"T1548", "T1105"}
-    """
-    return {
-        _technique_family(item)
-        for item in techniques
-        if isinstance(item, str) and item
-    }
-
-
-def _technique_family(technique: str) -> str:
-    return technique.split(".", 1)[0]
-
-
 def _scenario_techniques(scenario: dict[str, Any]) -> list[str]:
     profile = scenario.get("profile")
     if isinstance(profile, dict):
@@ -256,16 +267,10 @@ def _prior_eval_exclusion_reason(scenario: dict[str, Any]) -> str | None:
 
 
 def _dedupe_strings(values: Any) -> list[str]:
-    items: list[str] = []
-    seen: set[str] = set()
     iterable = values if not isinstance(values, (str, bytes)) else []
     if iterable is None:
         iterable = []
-    for value in iterable:
-        if isinstance(value, str) and value and value not in seen:
-            items.append(value)
-            seen.add(value)
-    return items
+    return dedupe_preserve(value for value in iterable if isinstance(value, str) and value)
 
 
 def _ratio(numerator: int, denominator: int) -> float:

@@ -5,6 +5,7 @@ from typing import Any
 
 import pytest
 
+from libs.common.attack import same_technique_family
 from services.controller.repository import FileAssetRepository
 from scripts.evaluation.reveal_policy import load_scenarios
 
@@ -78,7 +79,7 @@ def _expected_assets_cover_scenario_technique(
         profile = assets[asset_id].default_settings.get("selection_profile", {})
         techniques = profile.get("covered_techniques", []) if isinstance(profile, dict) else []
         covered.update(item for item in techniques if isinstance(item, str))
-    return any(_same_family(left, right) for left in scenario_techniques for right in covered)
+    return any(same_technique_family(left, right) for left in scenario_techniques for right in covered)
 
 
 def _scenario_techniques(scenario: dict[str, Any]) -> set[str]:
@@ -99,10 +100,6 @@ def _scenario_techniques(scenario: dict[str, Any]) -> set[str]:
 
 def _strings(value: object) -> list[str]:
     return [item for item in value if isinstance(item, str) and item] if isinstance(value, list) else []
-
-
-def _same_family(left: str, right: str) -> bool:
-    return left.split(".", 1)[0] == right.split(".", 1)[0]
 
 
 def _assert_expected_reveals_are_catalog_backed(

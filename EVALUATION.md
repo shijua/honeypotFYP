@@ -85,7 +85,31 @@ jq '.ok, .policies.controller | {scenario_count, reveal_correctness, irrelevant_
 
 Expected: `ok=true`, no hidden violations, no missing expected reveal actions, and no-reveal scenarios pass.
 
-## 3. Controller-Only Port Reveal
+## 3. Optional Public Dataset Prior Validation
+
+This checks whether the active ATT&CK group prior can recommend future technique families from locally downloaded ATT&CK-labelled public dataset traces. It does not train a new prior and does not affect runtime controller behavior.
+
+Fetch optional validation material only when needed:
+
+```bash
+.venv/bin/python scripts/data/fetch_public_attack_datasets.py --dry-run
+.venv/bin/python scripts/data/fetch_public_attack_datasets.py --dataset uwf-zeekdata24
+.venv/bin/python scripts/data/fetch_public_attack_datasets.py --dataset casinolimit
+.venv/bin/python scripts/data/fetch_public_attack_datasets.py --dataset mordor --mordor-section compound --mordor-limit 20
+```
+
+Run the offline dataset validation:
+
+```bash
+.venv/bin/python scripts/evaluation/public_dataset_prior_validation.py \
+  vendor/datasets \
+  --prior data/technique_prior/attack_group_technique_prior.json \
+  --output /tmp/public_dataset_prior_validation_report.json
+```
+
+Expected: `trace_count > 0` when labelled local datasets exist. The script scans CSV, JSON, JSONL, YAML, and ZIP files for ordered ATT&CK technique traces, then reports the same family-aware recall, specificity, and accuracy metrics used by scenario prior evaluation. It skips raw files larger than 2 MB by default; raise `--max-file-bytes` only when you specifically want to scan larger logs. A low score means the active group prior does not explain those public traces well; it does not mean the live honeynet route path is broken.
+
+## 4. Controller-Only Port Reveal
 
 This validates that scenario evidence causes the controller to select assets whose fixed ports match the expected route plan. It still does not start Docker.
 
@@ -106,7 +130,7 @@ Expected: `ok=true` and all default scenarios pass. This is the fastest way to c
 
 This also writes `/tmp/reveal_port_controller_report.svg`, a pass/fail chart for the route checks.
 
-## 4. Live Port Reveal
+## 5. Live Port Reveal
 
 This starts or uses the running compose stack, applies unlock actions, and checks the actual asset-gateway route table. It mutates `data/runtime/*.json`.
 
@@ -137,7 +161,7 @@ jq '.summary, .scenarios[] | {scenario_id, ok, selected_assets, selected_actions
 
 Expected: each scenario has the expected `attacker_key + asset_id + public_port` route. A failure here can mean controller selection is wrong, Docker runtime startup failed, or the asset-gateway route table was not updated. A pass here only means the route is open; it does not prove the backend generated telemetry.
 
-## 5. Live Runtime Latency
+## 6. Live Runtime Latency
 
 This measures control-plane overhead after the compose stack is running.
 
@@ -157,7 +181,7 @@ Reported timings:
 
 This also writes `/tmp/runtime_latency_report.svg`, showing orchestrator apply time and route-visible time by asset.
 
-## 6. Manual Smoke
+## 7. Manual Smoke
 
 Use `ATTACK_TESTING_GUIDE.md` when you want to drive attacker behavior yourself through browser, curl, SSH, FTP, SMTP, Redis, MySQL, Dionaea, or generic TCP probes. Keep dataset conversion and evaluation internals out of that file.
 

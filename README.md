@@ -10,6 +10,26 @@ This repository implements a technique-informed dynamic honeynet: public and SSH
 
 Use the testing guide when you want to simulate attacker behavior. The `live-apply` evaluation opens routes through Docker and the asset gateway, but it does not run attacker commands or protocol probes.
 
+## Repository Layout
+
+| Path | Purpose |
+| --- | --- |
+| `services/` | Runtime services: public entrypoint, binding service, profiler, controller, orchestrator, asset gateway, dashboard, and telemetry adapters. |
+| `libs/` | Shared contracts and common helpers used by multiple services and scripts. |
+| `scripts/data/` | One-off data builders and fetchers, including MITRE ATT&CK STIX fetch and ATT&CK group prior generation. |
+| `scripts/evaluation/` | Offline and live evaluation entry points: reveal-policy replay, prior validation, port reveal simulation, and runtime latency. |
+| `scripts/runtime/` | Local runtime loops and small helper services used by the live stack. |
+| `scripts/forwarders/` | Log forwarders that move honeypot/runtime logs into the service adapters. |
+| `scripts/validation/` | Lightweight validators for generated priors, catalog assumptions, and runtime telemetry files. |
+| `data/assets/` | Asset catalog and selection metadata used by the controller and orchestrator. |
+| `data/detections/` | Project-owned Sigma-style detection rules for public/internal HTTP, Cowrie, and high-interaction telemetry. |
+| `data/runtime/` | Local runtime state written by the running stack; ignored except for placeholders. |
+| `data/technique_prior/` | Generated ATT&CK group technique prior output; ignored except for placeholders. |
+| `deploy/` | Docker/runtime assets, static internal surfaces, public portal files, and honeypot configuration. |
+| `tests/` | Unit, component, evaluation, and fixture tests. `tests/fixtures/README.md` explains scenario files. |
+| `archive/` | Historical research code kept out of the active runtime and pytest path. |
+| `vendor/` | Optional external source material such as SigmaHQ rules and public validation datasets; ignored by git. |
+
 ## Setup
 
 ```bash
@@ -77,4 +97,7 @@ Optional ATT&CK-labelled public datasets can be fetched for offline validation w
 
 ```bash
 .venv/bin/python scripts/data/fetch_public_attack_datasets.py --dry-run
+.venv/bin/python scripts/evaluation/public_dataset_prior_validation.py vendor/datasets --output /tmp/public_dataset_prior_validation_report.json
 ```
+
+The dataset validator skips raw files larger than 2 MB by default so it can run as a lightweight offline check.

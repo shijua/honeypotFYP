@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from libs.common.attack import same_technique_family
+from libs.common.attack import technique_family
 from libs.common.config import RuntimeConfig
 from libs.common.iterables import dedupe_preserve
 from libs.common.json_utils import string_or_none
@@ -464,14 +466,14 @@ class ControllerService:
                 return None
             if str(selected_parts["candidate_type"]) != "continuation":
                 return None
-            if _same_technique_family(str(selected_technique), str(exploit_context.selected_technique)):
+            if same_technique_family(str(selected_technique), str(exploit_context.selected_technique)):
                 return None
             if any(
-                _same_technique_family(str(selected_technique), covered)
+                same_technique_family(str(selected_technique), covered)
                 for covered in exploit_context.covered_techniques
             ):
                 return None
-            if len({_parent_technique(item) for item in strong_observed}) < 2:
+            if len({technique_family(item) for item in strong_observed}) < 2:
                 return None
             if not (_has_concrete_dependency_marker(matched_markers) or option.upgrade_context):
                 return None
@@ -531,7 +533,7 @@ class ControllerService:
             recommendation_support = family_prior
             matched_prior_technique = family_prior_technique
             match_type = "family"
-        strongly_observed = any(_same_technique_family(technique, item) for item in strong_observed)
+        strongly_observed = any(same_technique_family(technique, item) for item in strong_observed)
         candidate_type = "none"
         signal_score = 0.0
         if strongly_observed:
@@ -803,7 +805,7 @@ def _best_family_score(
     best_score = 0.0
     best_technique: str | None = None
     for candidate, value in scores.items():
-        if candidate == technique or not _same_technique_family(candidate, technique):
+        if candidate == technique or not same_technique_family(candidate, technique):
             continue
         discounted = float(value) * 0.75
         if discounted > best_score:
@@ -812,21 +814,13 @@ def _best_family_score(
     return best_score, best_technique
 
 
-def _same_technique_family(left: str, right: str) -> bool:
-    return _parent_technique(left) == _parent_technique(right)
-
-
-def _parent_technique(technique: str) -> str:
-    return technique.split(".", 1)[0]
-
-
 def _repeat_count(recent_techniques: list[str], technique: str) -> int:
     """Return repeated recent evidence count for the same technique family.
 
     Example:
         recent=["T1083", "T1083", "T1046"], technique="T1083" -> 1.
     """
-    matches = sum(1 for item in recent_techniques if _same_technique_family(item, technique))
+    matches = sum(1 for item in recent_techniques if same_technique_family(item, technique))
     return max(0, matches - 1)
 
 
@@ -1008,7 +1002,7 @@ def _signals_match(observed: set[str], required: set[str], key: str) -> bool:
     if key != "any_techniques":
         return False
     return any(
-        _same_technique_family(observed_technique, required_technique)
+        same_technique_family(observed_technique, required_technique)
         for observed_technique in observed
         for required_technique in required
     )
