@@ -110,6 +110,7 @@ def test_public_dataset_prior_validation_reports_prior_metrics(
     assert report["top_k"] == 40
     assert report["support_threshold"] == 0.15
     assert report["metrics"]["prefix_count"] == 2
+    assert report["metrics"]["precision"] == 1.0
     assert report["metrics"]["recall"] == 1.0
 
 

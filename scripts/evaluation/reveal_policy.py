@@ -137,6 +137,7 @@ def evaluate_reveal_policies(
             controller["hidden_violation_rate"] == 0
             and controller["irrelevant_reveal_rate"] == 0
             and controller["missing_expected_reveal_count"] == 0
+            and controller["unexpected_reveal_count"] == 0
             and controller["correct_no_reveal_rate"] == 1.0
         )
     return report
@@ -245,9 +246,14 @@ def evaluate_scenario(
     useful_reveals = opened_set & useful
     diagnostic_or_useful_reveals = opened_set & (useful | diagnostic)
     expected_no_reveal = bool(scenario.get("expected_no_reveal"))
-    missing_expected_reveals = _missing_expected_reveals(
-        reveal_actions,
-        _expected_reveals(scenario),
+    expected_actions = _expected_reveals(scenario)
+    allowed_actions = _allowed_reveals(scenario)
+    action_constraints_declared = bool(expected_actions or allowed_actions)
+    missing_expected_reveals = _missing_expected_reveals(reveal_actions, expected_actions)
+    unexpected_reveal_actions = (
+        _unexpected_reveal_actions(reveal_actions, [*expected_actions, *allowed_actions])
+        if action_constraints_declared
+        else []
     )
     gate_opened, _gate_events = _gate_only_reveals(assets, request)
     prior_influenced = policy == "controller" and opened_assets != gate_opened
@@ -265,6 +271,8 @@ def evaluate_scenario(
         "useful_reveals": sorted(useful_reveals),
         "diagnostic_or_useful_reveals": sorted(diagnostic_or_useful_reveals),
         "missing_expected_reveals": missing_expected_reveals,
+        "unexpected_reveal_actions": unexpected_reveal_actions,
+        "action_constraints_declared": action_constraints_declared,
         "expected_no_reveal": expected_no_reveal,
         "correct_no_reveal": expected_no_reveal and not opened_assets,
         "prior_influenced": prior_influenced,
@@ -345,8 +353,15 @@ def _unlock_action_summaries(asset_ids: list[str]) -> list[dict[str, str]]:
 
 
 def _expected_reveals(scenario: dict[str, Any]) -> list[dict[str, str]]:
-    reveals = scenario.get("expected_reveals")
-    if not isinstance(reveals, list):
+    return _reveal_constraints(scenario.get("expected_reveals"))
+
+
+def _allowed_reveals(scenario: dict[str, Any]) -> list[dict[str, str]]:
+    return _reveal_constraints(scenario.get("allowed_reveals"))
+
+
+def _reveal_constraints(raw_reveals: object) -> list[dict[str, str]]:
+    if not isinstance(raw_reveals, list):
         return []
     return [
         {
@@ -355,7 +370,7 @@ def _expected_reveals(scenario: dict[str, Any]) -> list[dict[str, str]]:
             if key in {"action_type", "asset_id", "target_asset_id", "configuration_id"}
             and isinstance(value, str)
         }
-        for reveal in reveals
+        for reveal in raw_reveals
         if isinstance(reveal, dict)
     ]
 
@@ -369,6 +384,17 @@ def _missing_expected_reveals(
         if not any(all(action.get(key) == value for key, value in reveal.items()) for action in actual):
             missing.append(json.dumps(reveal, sort_keys=True))
     return missing
+
+
+def _unexpected_reveal_actions(
+    actual: list[dict[str, str]],
+    allowed: list[dict[str, str]],
+) -> list[str]:
+    unexpected = []
+    for action in actual:
+        if not any(all(action.get(key) == value for key, value in constraint.items()) for constraint in allowed):
+            unexpected.append(json.dumps(action, sort_keys=True))
+    return unexpected
 
 
 def _revealed_configurations(value: object) -> dict[str, list[str]]:
@@ -622,6 +648,7 @@ def _aggregate_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
     useful = sum(len(row["useful_reveals"]) for row in rows)
     diagnostic_or_useful = sum(len(row["diagnostic_or_useful_reveals"]) for row in rows)
     missing_expected_reveals = sum(len(row["missing_expected_reveals"]) for row in rows)
+    unexpected_reveals = sum(len(row["unexpected_reveal_actions"]) for row in rows)
     expected_no_reveal = sum(1 for row in rows if row["expected_no_reveal"])
     correct_no_reveal = sum(1 for row in rows if row["correct_no_reveal"])
     prior_influenced = sum(1 for row in rows if row["prior_influenced"])
@@ -642,8 +669,18 @@ def _aggregate_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "useful_evidence_per_reveal": _ratio(useful, opened),
         "diagnostic_or_useful_per_reveal": _ratio(diagnostic_or_useful, opened),
         "missing_expected_reveal_count": missing_expected_reveals,
+        "unexpected_reveal_count": unexpected_reveals,
+        "unexpected_reveal_action_rate": _ratio(unexpected_reveals, unlock_reveals + configuration_reveals),
         "expected_reveal_match_rate": _ratio(
             sum(1 for row in rows if not row["missing_expected_reveals"]),
+            len(rows),
+        ),
+        "strict_expected_reveal_match_rate": _ratio(
+            sum(
+                1
+                for row in rows
+                if not row["missing_expected_reveals"] and not row["unexpected_reveal_actions"]
+            ),
             len(rows),
         ),
         "expected_no_reveal_count": expected_no_reveal,

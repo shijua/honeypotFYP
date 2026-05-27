@@ -15,44 +15,28 @@ def write_reveal_policy_chart(report: dict[str, Any], path: Path) -> None:
     """
     plt = _pyplot()
     policies = list(report.get("policies", {}).keys())
+    labels = [_policy_label(policy) for policy in policies]
     metrics = [
-        ("reveal_correctness", "Correct"),
-        ("correct_no_reveal_rate", "No reveal"),
-        ("irrelevant_reveal_rate", "Irrelevant"),
-        ("hidden_violation_rate", "Hidden opened"),
+        ("reveal_correctness", "Reasonable reveal", "#14853d"),
+        ("unexpected_reveal_action_rate", "Unexpected action", "#f59e0b"),
     ]
-    fig, (metric_axis, opened_axis) = plt.subplots(
+    fig, axis = plt.subplots(
         1,
-        2,
-        figsize=(12, max(4.0, 0.5 * len(policies) + 1.4)),
-        gridspec_kw={"width_ratios": [4, 1.4]},
+        1,
+        figsize=(11, max(4.2, 0.5 * len(policies) + 1.6)),
     )
     y_positions = range(len(policies))
-    bar_height = 0.18
-    offsets = [-1.5 * bar_height, -0.5 * bar_height, 0.5 * bar_height, 1.5 * bar_height]
-    colors = ["#14853d", "#2563eb", "#dc2626", "#7c3aed"]
-    for (key, label), offset, color in zip(metrics, offsets, colors):
+    bar_height = 0.26
+    offsets = [-0.15, 0.15]
+    for (key, label, color), offset in zip(metrics, offsets):
         values = [float(report["policies"][policy].get(key, 0.0) or 0.0) for policy in policies]
-        metric_axis.barh([index + offset for index in y_positions], values, height=bar_height, label=label, color=color)
-    metric_axis.set_yticks(list(y_positions))
-    metric_axis.set_yticklabels([_policy_label(policy) for policy in policies])
-    metric_axis.invert_yaxis()
-    metric_axis.set_xlim(0, 1)
-    metric_axis.set_xlabel("Rate")
-    metric_axis.set_title("Reveal quality")
-    metric_axis.grid(axis="x", color="#e5e7eb")
-    metric_axis.legend(loc="lower right", fontsize=8)
-
-    opened_values = [float(report["policies"][policy].get("avg_opened_assets", 0.0) or 0.0) for policy in policies]
-    opened_axis.barh(list(y_positions), opened_values, color="#475569")
-    opened_axis.set_yticks(list(y_positions))
-    opened_axis.set_yticklabels([])
-    opened_axis.invert_yaxis()
-    opened_axis.set_xlabel("Assets")
-    opened_axis.set_title("Avg opened")
-    opened_axis.grid(axis="x", color="#e5e7eb")
-    for index, value in enumerate(opened_values):
-        opened_axis.text(value, index, f" {value:.2f}", va="center", fontsize=8)
+        axis.barh([index + offset for index in y_positions], values, height=bar_height, label=label, color=color)
+    _format_policy_axis(axis, y_positions, labels)
+    axis.set_xlim(0, 1)
+    axis.set_xlabel("Rate")
+    axis.set_title("Policy quality")
+    axis.grid(axis="x", color="#e5e7eb")
+    axis.legend(loc="lower right", fontsize=8)
 
     fig.suptitle(f"Reveal Policy Comparison - {int(report.get('scenario_count', 0) or 0)} scenarios")
     _save_chart(fig, path)
@@ -192,6 +176,12 @@ def _save_chart(fig: Any, path: Path) -> None:
     fig.tight_layout(rect=(0, 0, 1, 0.94))
     fig.savefig(path, bbox_inches="tight")
     fig.clf()
+
+
+def _format_policy_axis(axis: Any, y_positions: range, labels: list[str]) -> None:
+    axis.set_yticks(list(y_positions))
+    axis.set_yticklabels(labels)
+    axis.invert_yaxis()
 
 
 def _policy_label(policy: str) -> str:

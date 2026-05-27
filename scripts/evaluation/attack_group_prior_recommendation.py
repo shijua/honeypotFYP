@@ -180,12 +180,13 @@ def _evaluate_trace_prefixes(
                 "scenario_id": trace["scenario_id"],
                 "technique_count": len(techniques),
                 "prefix_count": scenario_prefixes,
-                # Keep confusion-count internals out of the report; the paper-facing
-                # metrics below are recall, specificity, and accuracy.
+                # Keep confusion-count internals out of the report; expose the
+                # derived rates that are useful when reading the JSON.
                 # "true_positive": scenario_tp,
                 # "false_positive": scenario_fp,
                 # "true_negative": scenario_tn,
                 # "false_negative": scenario_fn,
+                "precision": _ratio(scenario_tp, scenario_tp + scenario_fp),
                 "recall": _ratio(scenario_tp, scenario_tp + scenario_fn),
                 "specificity": _ratio(scenario_tn, scenario_tn + scenario_fp),
                 "accuracy": _ratio(
@@ -205,6 +206,7 @@ def _evaluate_trace_prefixes(
         # "true_negative": true_negative_total,
         # "false_negative": false_negative_total,
         "hit_rate_at_k": _ratio(prefix_hit_total, prefix_count),
+        "precision": _ratio(true_positive_total, true_positive_total + false_positive_total),
         "recall": _ratio(true_positive_total, true_positive_total + false_negative_total),
         "specificity": _ratio(true_negative_total, true_negative_total + false_positive_total),
         "accuracy": _ratio(

@@ -106,9 +106,17 @@ def _assert_expected_reveals_are_catalog_backed(
     scenario: dict[str, Any],
     assets: dict[str, Any],
 ) -> None:
-    for reveal in scenario.get("expected_reveals", []):
+    reveals = [
+        *_scenario_reveal_list(scenario.get("expected_reveals")),
+        *_scenario_reveal_list(scenario.get("allowed_reveals")),
+    ]
+    for reveal in reveals:
         assert isinstance(reveal, dict), scenario["scenario_id"]
         _assert_expected_action_is_catalog_backed(reveal, scenario, assets)
+
+
+def _scenario_reveal_list(value: object) -> list[object]:
+    return value if isinstance(value, list) else []
 
 
 def _assert_expected_actions_are_catalog_backed(

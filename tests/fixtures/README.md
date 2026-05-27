@@ -4,7 +4,7 @@ These fixtures are intentionally split by evaluation question.
 
 ## `reveal_policy_scenarios.json`
 
-Offline policy replay. This is the main decision-quality evaluation: it checks whether each policy reveals reasonable assets, avoids hidden assets, chooses `no_reveal` for scanner or boundary cases, and distinguishes asset unlocks from configuration reveals. The JSON keeps only compact `reference_id` values; the source rationale lives here. Advisory/campaign sources provide the behaviour chain; local paths such as `.map`, `.bak`, `/admin`, or `/downloads/agent-update.bin` are honeynet-specific adaptations. Negative-control scenarios are marked as controlled negatives instead of being presented as real incident reproductions.
+Offline policy replay. This is the main decision-quality evaluation: it checks whether each policy reveals reasonable assets, avoids hidden assets, chooses `no_reveal` for scanner or boundary cases, and distinguishes asset unlocks from configuration reveals. Scenarios can declare required `expected_reveals` and optional `allowed_reveals`; any extra action is reported as unexpected even when the asset-level reveal looks reasonable. The JSON keeps only compact `reference_id` values; the source rationale lives here. Advisory/campaign sources provide the behaviour chain; local paths such as `.map`, `.bak`, `/admin`, or `/downloads/agent-update.bin` are honeynet-specific adaptations. Negative-control scenarios are marked as controlled negatives instead of being presented as real incident reproductions.
 
 | Scenario | Type | Reference id | Source basis | Expected behavior |
 | --- | --- | --- | --- | --- |

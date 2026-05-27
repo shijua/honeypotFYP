@@ -32,6 +32,7 @@ Read these fields first:
 
 - `ok`: overall prior-evaluation status.
 - `hit_rate_at_k`: share of evaluated prefixes where at least one future scenario technique appears in the top-K recommendations.
+- `precision`: percentage of recommended technique families that later appeared in the trace. This is included in JSON reports but not shown in the summary chart.
 - `recall`: percentage of later scenario technique families that were recommended.
 - `specificity`: percentage of not-used ATT&CK technique families that were not recommended.
 - `accuracy`: percentage of ATT&CK technique families classified correctly as recommended/not recommended.
@@ -71,6 +72,8 @@ For the controller row, check:
 - `irrelevant_reveal_rate`: opened assets outside the scenario expectation.
 - `hidden_violation_rate`: opened assets that should stay hidden.
 - `expected_reveal_match_rate`: expected `unlock` vs `configure` action types matched.
+- `unexpected_reveal_action_rate`: extra `unlock` or `configure` actions not listed in `expected_reveals` or `allowed_reveals`.
+- `strict_expected_reveal_match_rate`: expected actions matched and no unexpected actions were emitted.
 - `configuration_reveal_count`: per-row count showing when the controller changed a configuration instead of opening a new asset.
 - `correct_no_reveal_rate`: scanner/boundary no-reveal cases stayed closed.
 - `opened_asset_count`: average number of reveals per scenario.
@@ -80,10 +83,10 @@ For the controller row, check:
 Quick summary:
 
 ```bash
-jq '.ok, .policies.controller | {scenario_count, reveal_correctness, irrelevant_reveal_rate, hidden_violation_rate, expected_reveal_match_rate, correct_no_reveal_rate}' /tmp/reveal_policy_report.json
+jq '.ok, .policies.controller | {scenario_count, reveal_correctness, irrelevant_reveal_rate, hidden_violation_rate, expected_reveal_match_rate, unexpected_reveal_action_rate, strict_expected_reveal_match_rate, correct_no_reveal_rate}' /tmp/reveal_policy_report.json
 ```
 
-Expected: `ok=true`, no hidden violations, no missing expected reveal actions, and no-reveal scenarios pass.
+Expected: no hidden violations, no missing expected reveal actions, no unexpected reveal actions, and no-reveal scenarios pass. A failed `ok` with non-zero `unexpected_reveal_count` means the controller opened or configured more than the scenario allowed, even if the asset-level reveal still looked reasonable.
 
 ## 3. Optional Public Dataset Prior Validation
 
@@ -107,7 +110,7 @@ Run the offline dataset validation:
   --output /tmp/public_dataset_prior_validation_report.json
 ```
 
-Expected: `trace_count > 0` when labelled local datasets exist. The script scans CSV, JSON, JSONL, YAML, and ZIP files for ordered ATT&CK technique traces, then reports the same family-aware recall, specificity, and accuracy metrics used by scenario prior evaluation. It skips raw files larger than 2 MB by default; raise `--max-file-bytes` only when you specifically want to scan larger logs. A low score means the active group prior does not explain those public traces well; it does not mean the live honeynet route path is broken.
+Expected: `trace_count > 0` when labelled local datasets exist. The script scans CSV, JSON, JSONL, YAML, and ZIP files for ordered ATT&CK technique traces, then reports the same family-aware precision, recall, specificity, and accuracy metrics used by scenario prior evaluation. It skips raw files larger than 2 MB by default; raise `--max-file-bytes` only when you specifically want to scan larger logs. A low score means the active group prior does not explain those public traces well; it does not mean the live honeynet route path is broken.
 
 ## 4. Controller-Only Port Reveal
 

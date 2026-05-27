@@ -71,14 +71,17 @@ def test_attack_group_prior_recommendation_reports_default_paper_metrics(
     assert report["technique_family_universe_size"] == 4
     assert metrics["prefix_count"] == 2
     assert metrics["hit_rate_at_k"] == 1.0
+    assert metrics["precision"] == 1.0
     assert metrics["recall"] == 1.0
     assert metrics["specificity"] == 1.0
     assert metrics["accuracy"] == 1.0
+    assert metrics["source_breakdown"][0]["precision"] == 1.0
     assert metrics["source_breakdown"][0]["recall"] == 1.0
 
     chart_path = tmp_path / "prior.svg"
     write_prior_recommendation_chart(report, chart_path)
     assert "ATT&amp;CK Group Prior Recommendation" in chart_path.read_text(encoding="utf-8")
+    assert "Precision" not in chart_path.read_text(encoding="utf-8")
 
 
 def test_attack_group_prior_recommendation_reports_degraded_missing_prior(

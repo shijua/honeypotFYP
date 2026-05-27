@@ -109,6 +109,9 @@ def test_reveal_policy_evaluator_compares_baselines(tmp_path: Path) -> None:
                         "expected_reasonable_assets": ["finance-share"],
                         "expected_hidden_assets": ["web-admin-console"],
                         "useful_followup_assets": ["finance-share"],
+                        "expected_reveals": [
+                            {"action_type": "unlock", "asset_id": "finance-share"}
+                        ],
                     }
                 ),
                 json.dumps(
@@ -126,6 +129,9 @@ def test_reveal_policy_evaluator_compares_baselines(tmp_path: Path) -> None:
                         "expected_reasonable_assets": ["finance-share"],
                         "expected_hidden_assets": ["web-admin-console"],
                         "useful_followup_assets": ["finance-share"],
+                        "expected_reveals": [
+                            {"action_type": "unlock", "asset_id": "finance-share"}
+                        ],
                     }
                 ),
                 json.dumps(
@@ -168,6 +174,8 @@ def test_reveal_policy_evaluator_compares_baselines(tmp_path: Path) -> None:
     assert report["policies"]["controller"]["correct_no_reveal_rate"] == 1.0
     assert report["policies"]["controller"]["unlock_reveal_count"] == 2
     assert report["policies"]["controller"]["configuration_reveal_count"] == 0
+    assert report["policies"]["controller"]["unexpected_reveal_count"] == 0
+    assert report["policies"]["controller"]["strict_expected_reveal_match_rate"] == 1.0
     assert "prior_influence_rate" in report["policies"]["controller"]
     assert "diagnostic_or_useful_per_reveal" in report["policies"]["controller"]
     assert report["policies"]["passive"]["avg_opened_assets"] == 0
@@ -175,6 +183,7 @@ def test_reveal_policy_evaluator_compares_baselines(tmp_path: Path) -> None:
     assert report["policies"]["random-eligible"]["scenario_count"] == 3
     assert report["policies"]["all-open"]["hidden_violation_rate"] > 0
     assert report["policies"]["all-open"]["irrelevant_reveal_rate"] > 0
+    assert report["policies"]["all-open"]["unexpected_reveal_count"] > 0
 
     chart_path = tmp_path / "policy.svg"
     write_reveal_policy_chart(report, chart_path)
