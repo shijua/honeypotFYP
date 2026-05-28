@@ -1,0 +1,20 @@
+title: Internal HTTP Portal Admin Console Note
+id: honeynet-internal-http-portal-admin-console-note
+status: experimental
+logsource:
+  product: honeynet
+  category: web
+honeynet.rule_name: internal_http_portal_admin_console_note
+honeynet.evidence_label: internal-http portal admin console runbook access
+detection:
+  surface:
+    honeynet.surface: internal
+  asset:
+    honeynet.asset_id: internal-portal
+  selection:
+    url.path|contains:
+      - /runbooks/admin-console-access.md
+  condition: surface and asset and selection
+tags:
+  - attack.collection
+  - attack.t1213

@@ -250,6 +250,32 @@ def test_configuration_variants_are_catalog_owned_and_target_existing_assets() -
             target_asset_id = variant.get("target_asset_id")
             if target_asset_id is not None:
                 assert target_asset_id in assets
+            materialized_artifacts = variant.get("materialized_artifacts")
+            runtime_effect = variant.get("runtime_effect")
+            assert materialized_artifacts or runtime_effect
+            if materialized_artifacts is not None:
+                assert isinstance(materialized_artifacts, list)
+                assert materialized_artifacts
+                for artifact in materialized_artifacts:
+                    assert isinstance(artifact, dict)
+                    artifact_type = artifact.get("type")
+                    assert artifact_type in {"file", "index_link", "route_note"}
+                    if artifact_type == "file":
+                        assert isinstance(artifact.get("path"), str)
+                        assert artifact["path"]
+                        assert isinstance(artifact.get("content"), str)
+                        assert artifact["content"]
+                    if artifact_type == "index_link":
+                        assert isinstance(artifact.get("href"), str)
+                        assert artifact["href"].startswith("/")
+                        assert isinstance(artifact.get("label"), str)
+                        assert artifact["label"]
+                    if artifact_type == "route_note":
+                        assert isinstance(artifact.get("text"), str)
+                        assert artifact["text"]
+            if runtime_effect is not None:
+                assert isinstance(runtime_effect, str)
+                assert runtime_effect
 
     for asset_id in expected_variant_assets:
         assert assets[asset_id].default_settings["configuration_variants"]

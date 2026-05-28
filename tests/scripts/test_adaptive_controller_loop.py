@@ -10,6 +10,69 @@ from scripts.runtime import adaptive_controller_loop
 pytestmark = pytest.mark.unit
 
 
+def _write_runtime_state(
+    state_dir,
+    *,
+    attacker_key: str = "198.51.100.50",
+    binding_id: str = "binding-gate",
+    evidence_id: str = "e-gate",
+    profile_extra: dict | None = None,
+) -> None:
+    state_dir.mkdir()
+    (state_dir / "bindings.json").write_text(
+        json.dumps(
+            {
+                "records": [
+                    {
+                        "attacker_key": attacker_key,
+                        "binding_id": binding_id,
+                        "unlocked_assets": ["internal-portal"],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    profile = {
+        "attacker_key": attacker_key,
+        "recent_techniques": ["T1046"],
+        "recent_evidence_ids": [evidence_id],
+    }
+    if profile_extra:
+        profile.update(profile_extra)
+    (state_dir / "profiles.json").write_text(
+        json.dumps({"profiles": {attacker_key: profile}}),
+        encoding="utf-8",
+    )
+
+
+def _write_feedback_rows(feedback_file, rows: list[dict]) -> None:
+    feedback_file.write_text(
+        json.dumps({"schema_version": "v1", "contexts": {}, "pending": rows}),
+        encoding="utf-8",
+    )
+
+
+def _feedback_row(
+    *,
+    status: str,
+    asset_id: str = "internal-portal",
+    revealed_assets: list[str] | None = None,
+    ts: str = "2099-01-01T00:00:00Z",
+) -> dict:
+    return {
+        "ts": ts,
+        "context_key": "T1046",
+        "asset_group": "portal",
+        "binding_id": "binding-gate",
+        "attacker_key": "198.51.100.50",
+        "asset_id": asset_id,
+        "available_assets": ["internal-portal", "web-admin-console"],
+        "revealed_assets": revealed_assets or [asset_id],
+        "status": status,
+    }
+
+
 def test_tick_once_applies_unlock_and_writes_decision_trace(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
@@ -398,6 +461,177 @@ def test_tick_once_writes_no_reveal_decision_trace(
     }
 
 
+def test_response_gate_blocks_pending_reveal_without_touch(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state_dir = tmp_path / "runtime"
+    _write_runtime_state(state_dir)
+    feedback_file = state_dir / "reveal_feedback.json"
+    _write_feedback_rows(feedback_file, [_feedback_row(status="pending")])
+
+    def fake_post_json(url, payload, timeout_seconds):
+        raise AssertionError("controller and orchestrator should be gated")
+
+    monkeypatch.setattr(adaptive_controller_loop, "post_json", fake_post_json)
+    loop_state_file = state_dir / "adaptive_loop_state.json"
+    trace_file = state_dir / "decision_trace.json"
+
+    applied = adaptive_controller_loop.tick_once(
+        state_dir=state_dir,
+        controller_url="http://controller",
+        orchestrator_url="http://orchestrator",
+        timeout_seconds=0.1,
+        trace_file=trace_file,
+        loop_state_file=loop_state_file,
+        feedback_file=feedback_file,
+    )
+
+    assert applied == 0
+    trace = json.loads(trace_file.read_text(encoding="utf-8"))
+    details = trace["records"][0]["decision_events"][0]["details"]
+    assert details["no_reveal_reason"] == "waiting_for_reveal_response"
+    assert details["response_gate"]["revealed_assets"] == ["internal-portal"]
+
+    state = json.loads(loop_state_file.read_text(encoding="utf-8"))
+    assert state["processed_evidence_ids_by_attacker"] == {
+        "198.51.100.50": ["e-gate"]
+    }
+
+
+@pytest.mark.parametrize("status", ["useful", "shallow"])
+def test_response_gate_allows_resolved_reveal_status(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+    status: str,
+) -> None:
+    state_dir = tmp_path / "runtime"
+    _write_runtime_state(state_dir)
+    feedback_file = state_dir / "reveal_feedback.json"
+    _write_feedback_rows(feedback_file, [_feedback_row(status=status)])
+    calls: list[str] = []
+
+    def fake_post_json(url, payload, timeout_seconds):
+        if url.endswith("/v1/controller/tick"):
+            calls.append("controller")
+            return {"candidate_asset_ids": [], "actions": [], "decision_events": []}
+        raise AssertionError("orchestrator should not be called for no-reveal")
+
+    monkeypatch.setattr(adaptive_controller_loop, "post_json", fake_post_json)
+
+    applied = adaptive_controller_loop.tick_once(
+        state_dir=state_dir,
+        controller_url="http://controller",
+        orchestrator_url="http://orchestrator",
+        timeout_seconds=0.1,
+        feedback_file=feedback_file,
+    )
+
+    assert applied == 0
+    assert calls == ["controller"]
+
+
+def test_response_gate_blocks_ignored_reveal_without_touch(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state_dir = tmp_path / "runtime"
+    _write_runtime_state(state_dir)
+    feedback_file = state_dir / "reveal_feedback.json"
+    _write_feedback_rows(feedback_file, [_feedback_row(status="ignored")])
+
+    def fake_post_json(url, payload, timeout_seconds):
+        raise AssertionError("controller and orchestrator should be gated")
+
+    monkeypatch.setattr(adaptive_controller_loop, "post_json", fake_post_json)
+
+    applied = adaptive_controller_loop.tick_once(
+        state_dir=state_dir,
+        controller_url="http://controller",
+        orchestrator_url="http://orchestrator",
+        timeout_seconds=0.1,
+        feedback_file=feedback_file,
+    )
+
+    assert applied == 0
+
+
+def test_response_gate_allows_ignored_reveal_with_recent_asset_touch(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state_dir = tmp_path / "runtime"
+    _write_runtime_state(
+        state_dir,
+        profile_extra={"recent_asset_ids": ["internal-portal"]},
+    )
+    feedback_file = state_dir / "reveal_feedback.json"
+    _write_feedback_rows(feedback_file, [_feedback_row(status="ignored")])
+    calls: list[str] = []
+
+    def fake_post_json(url, payload, timeout_seconds):
+        if url.endswith("/v1/controller/tick"):
+            calls.append("controller")
+            return {"candidate_asset_ids": [], "actions": [], "decision_events": []}
+        raise AssertionError("orchestrator should not be called for no-reveal")
+
+    monkeypatch.setattr(adaptive_controller_loop, "post_json", fake_post_json)
+
+    adaptive_controller_loop.tick_once(
+        state_dir=state_dir,
+        controller_url="http://controller",
+        orchestrator_url="http://orchestrator",
+        timeout_seconds=0.1,
+        feedback_file=feedback_file,
+    )
+
+    assert calls == ["controller"]
+
+
+def test_response_gate_allows_main_explore_batch_when_one_asset_responds(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state_dir = tmp_path / "runtime"
+    _write_runtime_state(state_dir)
+    feedback_file = state_dir / "reveal_feedback.json"
+    revealed_assets = ["internal-portal", "web-admin-console"]
+    _write_feedback_rows(
+        feedback_file,
+        [
+            _feedback_row(
+                status="useful",
+                asset_id="internal-portal",
+                revealed_assets=revealed_assets,
+            ),
+            _feedback_row(
+                status="pending",
+                asset_id="web-admin-console",
+                revealed_assets=revealed_assets,
+            ),
+        ],
+    )
+    calls: list[str] = []
+
+    def fake_post_json(url, payload, timeout_seconds):
+        if url.endswith("/v1/controller/tick"):
+            calls.append("controller")
+            return {"candidate_asset_ids": [], "actions": [], "decision_events": []}
+        raise AssertionError("orchestrator should not be called for no-reveal")
+
+    monkeypatch.setattr(adaptive_controller_loop, "post_json", fake_post_json)
+
+    adaptive_controller_loop.tick_once(
+        state_dir=state_dir,
+        controller_url="http://controller",
+        orchestrator_url="http://orchestrator",
+        timeout_seconds=0.1,
+        feedback_file=feedback_file,
+    )
+
+    assert calls == ["controller"]
+
+
 def test_reveal_feedback_records_reveal_and_later_useful_touch(tmp_path) -> None:
     feedback_file = tmp_path / "reveal_feedback.json"
     evidence_file = tmp_path / "evidence.json"
@@ -529,6 +763,65 @@ def test_reveal_feedback_marks_unclassified_touch_as_shallow(tmp_path) -> None:
     payload = json.loads(feedback_file.read_text(encoding="utf-8"))
     group = payload["contexts"]["T1046"]["asset_groups"]["portal"]
     assert group["revealed"] == 1
+    assert group["shallow"] == 1
+    assert payload["pending"][0]["status"] == "shallow"
+
+
+def test_reveal_feedback_marks_raw_internal_http_touch_as_shallow(tmp_path) -> None:
+    feedback_file = tmp_path / "reveal_feedback.json"
+    evidence_file = tmp_path / "evidence.json"
+    internal_http_events_file = tmp_path / "internal_http_events.jsonl"
+
+    adaptive_controller_loop.record_reveal_feedback(
+        feedback_file=feedback_file,
+        attacker_key="198.51.100.25",
+        binding_id="binding-raw-touch",
+        applied_actions=[
+            {
+                "action_type": "unlock",
+                "binding_id": "binding-raw-touch",
+                "asset_id": "internal-portal",
+                "reason": "selected",
+            }
+        ],
+        controller_response={
+            "candidate_asset_ids": ["internal-portal"],
+            "decision_events": [
+                {
+                    "asset_added": "internal-portal",
+                    "details": {
+                        "selected_technique": "T1046",
+                        "matched_dependency_markers": [],
+                        "asset_group": "portal",
+                    },
+                }
+            ],
+        },
+    )
+    evidence_file.write_text(json.dumps({"records": {}}), encoding="utf-8")
+    internal_http_events_file.write_text(
+        json.dumps(
+            {
+                "attacker_key": "198.51.100.25",
+                "asset_id": "internal-portal",
+                "method": "GET",
+                "path": "/",
+                "surface": "internal",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    adaptive_controller_loop.update_reveal_feedback_from_evidence(
+        feedback_file=feedback_file,
+        evidence_file=evidence_file,
+        internal_http_events_file=internal_http_events_file,
+        feedback_window_seconds=300,
+    )
+
+    payload = json.loads(feedback_file.read_text(encoding="utf-8"))
+    group = payload["contexts"]["T1046"]["asset_groups"]["portal"]
     assert group["shallow"] == 1
     assert payload["pending"][0]["status"] == "shallow"
 

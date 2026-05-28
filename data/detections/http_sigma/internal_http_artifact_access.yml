@@ -13,7 +13,10 @@ detection:
     honeynet.asset_id: finance-share
   selection_path:
     url.path|contains:
-      - /finance/archive/
+      - /finance/archive/2024/customer-export-index.csv
+      - /finance/archive/2024/archive-manifest.txt
+      - /finance/archive/2024/payroll-archive.zip
+      - /finance/archive/2024/budget-q4-review.xlsx
       - /exports/
   condition: surface and asset and selection_path
 tags:

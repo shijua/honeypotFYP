@@ -207,8 +207,9 @@ class FileRevealFeedbackRepository:
     """File-backed store for reveal follow-up outcomes.
 
     The controller does not read this store for ranking. The adaptive loop uses
-    it as an evaluation trace: which asset was revealed, and whether later
-    evidence made that reveal useful, shallow, or ignored.
+    it as runtime feedback state: which asset was revealed, whether later
+    evidence made that reveal useful/shallow/ignored, and whether a binding is
+    allowed to reveal another asset.
 
     Example:
         record_reveal(asset_id="finance-share", context_key="T1005|path:.bak", ...)

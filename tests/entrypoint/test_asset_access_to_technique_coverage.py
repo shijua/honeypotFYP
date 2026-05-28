@@ -134,6 +134,66 @@ CATALOG_ACCESS_CASES: dict[str, set[str]] = {
 }
 
 
+CONFIGURATION_ARTIFACT_ACCESS_SAMPLES: dict[str, tuple[set[str], tuple[str, dict[str, Any]]]] = {
+    "internal-portal:portal-api-directory-links:openapi": (
+        {"T1018", "T1046"},
+        ("http", {"asset_id": "internal-portal", "path": "/api/openapi-summary.json", "dynamic_endpoint": True}),
+    ),
+    "internal-portal:portal-api-directory-links:runbook": (
+        {"T1018", "T1046"},
+        ("http", {"asset_id": "internal-portal", "path": "/runbooks/service-directory.md", "dynamic_endpoint": True}),
+    ),
+    "internal-portal:portal-admin-console-link": (
+        {"T1213"},
+        ("http", {"asset_id": "internal-portal", "path": "/runbooks/admin-console-access.md", "dynamic_endpoint": True}),
+    ),
+    "finance-share:finance-backup-archive-index:index": (
+        {"T1005"},
+        ("http", {"asset_id": "finance-share", "path": "/finance/archive/2024/customer-export-index.csv", "dynamic_endpoint": True}),
+    ),
+    "finance-share:finance-backup-archive-index:manifest": (
+        {"T1005"},
+        ("http", {"asset_id": "finance-share", "path": "/finance/archive/2024/archive-manifest.txt", "dynamic_endpoint": True}),
+    ),
+    "finance-share:finance-password-rotation-clue": (
+        {"T1213"},
+        ("http", {"asset_id": "finance-share", "path": "/finance/archive/2024/password-rotation-note.txt", "dynamic_endpoint": True}),
+    ),
+    "web-admin-console:web-admin-login-surface": (
+        set(),
+        ("http", {"asset_id": "web-admin-console", "path": "/login/", "dynamic_endpoint": True}),
+    ),
+    "web-admin-console:web-admin-discovery-endpoints:inventory": (
+        {"T1518"},
+        ("http", {"asset_id": "web-admin-console", "path": "/api/inventory.json"}),
+    ),
+    "web-admin-console:web-admin-discovery-endpoints:processes": (
+        {"T1057"},
+        ("http", {"asset_id": "web-admin-console", "path": "/api/processes.json"}),
+    ),
+    "web-admin-console:web-admin-discovery-endpoints:groups": (
+        {"T1069"},
+        ("http", {"asset_id": "web-admin-console", "path": "/api/groups.json"}),
+    ),
+    "vpn-appliance:vpn-profile-login-clue": (
+        {"T1133"},
+        ("http", {"asset_id": "vpn-appliance", "path": "/policy/login-clue.txt", "dynamic_endpoint": True}),
+    ),
+    "vpn-appliance:vpn-route-policy-notes": (
+        {"T1016"},
+        ("http", {"asset_id": "vpn-appliance", "path": "/policy/route-policy-notes.txt", "dynamic_endpoint": True}),
+    ),
+    "malware-sink:malware-downloader-staging-directory": (
+        {"T1608"},
+        ("http", {"asset_id": "malware-sink", "path": "/staging/downloader-index.txt", "dynamic_endpoint": True}),
+    ),
+    "malware-sink:malware-upload-drop-endpoint": (
+        set(),
+        ("http", {"asset_id": "malware-sink", "path": "/upload/drop-endpoint.txt", "dynamic_endpoint": True}),
+    ),
+}
+
+
 def test_access_cases_cover_every_catalog_asset_and_configuration_target() -> None:
     assert set(CATALOG_ACCESS_CASES) == set(_catalog_target_techniques())
 
@@ -178,6 +238,23 @@ def test_non_get_http_access_cases_are_declared_dynamic() -> None:
     for technique, (kind, payload) in TECHNIQUE_ACCESS_SAMPLES.items():
         if kind == "http" and str(payload.get("method", "GET")).upper() != "GET":
             assert payload.get("dynamic_endpoint") is True, technique
+
+
+@pytest.mark.parametrize(
+    ("case_id", "expected", "sample"),
+    [
+        (case_id, expected, sample)
+        for case_id, (expected, sample) in sorted(CONFIGURATION_ARTIFACT_ACCESS_SAMPLES.items())
+    ],
+)
+def test_configuration_artifact_access_updates_profile(
+    case_id: str,
+    expected: set[str],
+    sample: tuple[str, dict[str, Any]],
+) -> None:
+    mapped = _techniques_from_sample(*sample)
+
+    assert mapped == expected, case_id
 
 
 def _catalog_target_techniques() -> dict[str, set[str]]:

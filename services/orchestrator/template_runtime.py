@@ -422,6 +422,7 @@ class DockerTemplateRuntime:
             runtime_settings["read_only"] = True
 
         _append_runtime_list_option(docker_args, runtime_settings, runtime, "tmpfs", "--tmpfs")
+        _prepare_static_asset_volume_copies(runtime, format_context)
         _prepare_runtime_volume_sources(runtime, format_context)
         _append_runtime_list_option(docker_args, runtime_settings, runtime, "volumes", "-v", format_context)
 
@@ -964,12 +965,244 @@ def _apply_configuration_to_record(
     active = record.settings.get("active_configurations", {})
     active_configurations = dict(active) if isinstance(active, dict) else {}
     active_configurations[configuration_id] = configuration
+    artifact = _write_configuration_artifact(record, configuration_id, configuration)
+    existing_artifacts = record.settings.get("configuration_artifacts", {})
+    artifacts = dict(existing_artifacts) if isinstance(existing_artifacts, dict) else {}
+    if artifact:
+        artifacts[configuration_id] = artifact
     updated_settings = {
         **record.settings,
         "active_configurations": active_configurations,
     }
+    if artifacts:
+        updated_settings["configuration_artifacts"] = artifacts
     updated = record.model_copy(update={"settings": updated_settings})
     return repository.upsert(updated)
+
+
+def _write_configuration_artifact(
+    record: AssetRuntimeRecord,
+    configuration_id: str,
+    configuration: dict[str, object],
+) -> dict[str, object]:
+    """Materialize HTTP configuration reveals into the mounted static asset tree."""
+    route_notes = _configuration_route_notes(configuration)
+    html_root = _static_html_mount_root(record)
+    if html_root is None:
+        if route_notes:
+            return {"route_notes": route_notes}
+        runtime_effect = configuration.get("runtime_effect")
+        return {"runtime_effect": runtime_effect} if isinstance(runtime_effect, str) else {}
+    reveal_dir = html_root / "_reveals"
+    reveal_dir.mkdir(parents=True, exist_ok=True)
+    safe_id = _safe_artifact_name(configuration_id)
+    artifact_path = reveal_dir / f"{safe_id}.json"
+    materialized = _materialize_configuration_artifacts(
+        html_root,
+        configuration,
+        fallback_safe_id=safe_id,
+    )
+    artifact = {
+        "asset_id": record.asset_id,
+        "configuration_id": configuration_id,
+        "kind": configuration.get("kind"),
+        "reason": configuration.get("reason"),
+        "covered_techniques": configuration.get("covered_techniques", []),
+        "reveal_outputs": configuration.get("reveal_outputs", []),
+        "target_asset_id": configuration.get("target_asset_id"),
+        "materialized_artifacts": materialized,
+        "route_notes": route_notes,
+        "generated_at": utcnow().isoformat(),
+    }
+    artifact_path.write_text(
+        json.dumps(artifact, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    _write_reveal_index(reveal_dir)
+    if not materialized:
+        _append_reveal_link_to_asset_index(
+            html_root,
+            href=f"/_reveals/{safe_id}.json",
+            label=configuration_id,
+            description=str(configuration.get("reason", "")),
+            marker=safe_id,
+        )
+    return {
+        "path": str(artifact_path),
+        "url_path": f"/_reveals/{safe_id}.json",
+        "materialized_artifacts": materialized,
+        "route_notes": route_notes,
+    }
+
+
+def _static_html_mount_root(record: AssetRuntimeRecord) -> Path | None:
+    """Return the host path mounted as `/usr/share/nginx/html`, if present."""
+    volumes = _runtime_volumes_from_settings(record.settings)
+    context = _runtime_format_context(record.binding_id, record.asset_id)
+    for raw_volume in volumes:
+        volume = _format_runtime_string(raw_volume, context)
+        parts = volume.split(":")
+        if len(parts) < 2 or parts[1] != "/usr/share/nginx/html":
+            continue
+        return Path(_container_visible_host_path(parts[0], context))
+    return None
+
+
+def _runtime_volumes_from_settings(settings: dict[str, object]) -> list[str]:
+    """Read volume specs from either a started Docker record or catalog defaults."""
+    volumes = settings.get("volumes")
+    if isinstance(volumes, list):
+        return [str(volume) for volume in volumes]
+    runtime = settings.get("runtime")
+    if isinstance(runtime, dict):
+        runtime_volumes = runtime.get("volumes")
+        if isinstance(runtime_volumes, list):
+            return [str(volume) for volume in runtime_volumes]
+    return []
+
+
+def _write_reveal_index(reveal_dir: Path) -> None:
+    """Write a small index so attackers can discover materialized config clues."""
+    links = []
+    for artifact_path in sorted(reveal_dir.glob("*.json")):
+        links.append(
+            f'<li><a href="{artifact_path.name}">{artifact_path.stem}</a></li>'
+        )
+    index = (
+        "<!doctype html>\n"
+        '<html lang="en"><head><meta charset="utf-8">'
+        "<title>Configuration Reveals</title></head><body>"
+        "<h1>Configuration Reveals</h1><ul>"
+        f"{''.join(links)}"
+        "</ul></body></html>\n"
+    )
+    (reveal_dir / "index.html").write_text(index, encoding="utf-8")
+
+
+def _materialize_configuration_artifacts(
+    html_root: Path,
+    configuration: dict[str, object],
+    *,
+    fallback_safe_id: str,
+) -> list[dict[str, str]]:
+    """Write catalog-owned visible files and links for one configuration reveal."""
+    specs = configuration.get("materialized_artifacts", [])
+    if not isinstance(specs, list):
+        return []
+    materialized: list[dict[str, str]] = []
+    for spec in specs:
+        if not isinstance(spec, dict):
+            continue
+        artifact_type = str(spec.get("type", "")).strip()
+        if artifact_type == "file":
+            path_value = str(spec.get("path", "")).strip()
+            if not path_value:
+                continue
+            relative_path = _safe_relative_artifact_path(path_value)
+            target = html_root / relative_path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            content = _format_artifact_content(str(spec.get("content", "")), html_root)
+            target.write_text(content, encoding="utf-8")
+            url_path = f"/{relative_path.as_posix()}"
+            materialized.append(
+                {
+                    "type": "file",
+                    "path": str(target),
+                    "url_path": url_path,
+                }
+            )
+        elif artifact_type == "index_link":
+            href = str(spec.get("href", "")).strip()
+            label = str(spec.get("label", "")).strip()
+            if not href or not label:
+                continue
+            marker = f"{fallback_safe_id}-{_safe_artifact_name(label)}"
+            _append_reveal_link_to_asset_index(
+                html_root,
+                href=href,
+                label=label,
+                description=str(spec.get("description", "")),
+                marker=marker,
+            )
+            materialized.append({"type": "index_link", "href": href, "label": label})
+    return materialized
+
+
+def _append_reveal_link_to_asset_index(
+    html_root: Path,
+    *,
+    href: str,
+    label: str,
+    description: str,
+    marker: str,
+) -> None:
+    """Expose a new configuration clue from the copied asset landing page."""
+    index_path = html_root / "index.html"
+    if not index_path.exists():
+        return
+    html = index_path.read_text(encoding="utf-8")
+    marker_attr = f'data-config-reveal="{marker}"'
+    if marker_attr in html:
+        return
+    snippet = (
+        f'\n<section class="configuration-reveal" {marker_attr}>'
+        "<h2>Updated maintenance note</h2>"
+        f'<p><a href="{_html_escape(href)}">{_html_escape(label)}</a></p>'
+        f"<p>{_html_escape(description)}</p>"
+        "</section>\n"
+    )
+    if "</body>" in html:
+        html = html.replace("</body>", f"{snippet}</body>", 1)
+    else:
+        html = f"{html}{snippet}"
+    index_path.write_text(html, encoding="utf-8")
+
+
+def _configuration_route_notes(configuration: dict[str, object]) -> list[str]:
+    """Return route/backend notes from catalog artifacts for upgrade configurations."""
+    specs = configuration.get("materialized_artifacts", [])
+    if not isinstance(specs, list):
+        return []
+    notes: list[str] = []
+    for spec in specs:
+        if isinstance(spec, dict) and spec.get("type") == "route_note":
+            text = str(spec.get("text", "")).strip()
+            if text:
+                notes.append(text)
+    return notes
+
+
+def _safe_relative_artifact_path(value: str) -> Path:
+    """Normalize a catalog artifact path without allowing path traversal."""
+    parts = [part for part in Path(value.lstrip("/")).parts if part not in {"", ".", ".."}]
+    return Path(*parts) if parts else Path("configuration.txt")
+
+
+def _format_artifact_content(value: str, html_root: Path) -> str:
+    """Format small catalog artifact templates with runtime-visible values."""
+    return value.replace("{host}", "127.0.0.1").replace(
+        "{asset_root}",
+        str(html_root),
+    )
+
+
+def _html_escape(value: str) -> str:
+    """Escape the small strings injected into generated static HTML."""
+    return (
+        value.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
+
+
+def _safe_artifact_name(value: str) -> str:
+    """Keep generated filenames stable and path-safe."""
+    safe = "".join(
+        char if char.isalnum() or char in {"-", "_"} else "-"
+        for char in value
+    )
+    return safe.strip("-") or "configuration"
 
 
 def _monitoring_event_for_record(
@@ -1146,6 +1379,58 @@ def _prepare_runtime_volume_sources(
         path = Path(local_source)
         path.mkdir(parents=True, exist_ok=True)
         path.chmod(0o777)
+
+
+def _prepare_static_asset_volume_copies(
+    runtime: dict[str, object],
+    context: dict[str, str],
+) -> None:
+    """Mount static HTTP assets from a per-binding copy so config reveals are isolated."""
+    volumes = runtime.get("volumes", [])
+    if not isinstance(volumes, list):
+        return
+    prepared: list[str] = []
+    for raw_volume in volumes:
+        volume = _format_runtime_string(str(raw_volume), context)
+        parts = volume.split(":")
+        if len(parts) < 2 or parts[1] != "/usr/share/nginx/html":
+            prepared.append(volume)
+            continue
+        source = Path(_container_visible_host_path(parts[0], context))
+        if not source.is_dir() or "/deploy/internal-assets/" not in str(source):
+            prepared.append(volume)
+            continue
+        target = _binding_static_asset_copy_path(context)
+        if target.exists():
+            shutil.rmtree(target)
+        shutil.copytree(source, target, ignore=shutil.ignore_patterns("_reveals"))
+        host_target = _host_visible_project_path(target, context)
+        prepared.append(":".join([str(host_target), *parts[1:]]))
+    runtime["volumes"] = prepared
+
+
+def _binding_static_asset_copy_path(context: dict[str, str]) -> Path:
+    """Return the orchestrator-visible per-binding static asset copy path."""
+    return (
+        _container_project_root()
+        / "data"
+        / "runtime"
+        / "configurable_assets"
+        / context["binding_id_short"]
+        / context["asset_id"]
+        / "html"
+    )
+
+
+def _host_visible_project_path(path: Path, context: dict[str, str]) -> Path:
+    """Map an orchestrator-visible repo path to the host path Docker should mount."""
+    container_root = Path(context.get("container_project_root", ""))
+    host_root = Path(context.get("host_project_root", ""))
+    try:
+        relative = path.resolve().relative_to(container_root.resolve())
+    except ValueError:
+        return path
+    return host_root / relative
 
 
 def _container_visible_host_path(source: str, context: dict[str, str]) -> str:

@@ -1,0 +1,20 @@
+title: Internal HTTP VPN Route Policy Notes
+id: honeynet-internal-http-vpn-route-policy-notes
+status: experimental
+logsource:
+  product: honeynet
+  category: web
+honeynet.rule_name: internal_http_vpn_route_policy_notes
+honeynet.evidence_label: internal-http vpn route policy note access
+detection:
+  surface:
+    honeynet.surface: internal
+  asset:
+    honeynet.asset_id: vpn-appliance
+  selection:
+    url.path|contains:
+      - /policy/route-policy-notes.txt
+  condition: surface and asset and selection
+tags:
+  - attack.discovery
+  - attack.t1016

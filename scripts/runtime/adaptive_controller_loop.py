@@ -104,6 +104,7 @@ def tick_once(
         update_reveal_feedback_from_evidence(
             feedback_file=feedback_file,
             evidence_file=state_dir / "evidence.json",
+            internal_http_events_file=state_dir / "internal_http_events.jsonl",
             feedback_window_seconds=feedback_window_seconds,
         )
     loop_state = (
@@ -128,15 +129,35 @@ def tick_once(
         if binding is None:
             continue
 
-        binding_id = binding.get("binding_id")
-        unlocked_assets = binding.get("unlocked_assets", [])
-        revealed_configurations = binding.get("revealed_configurations", {})
-        if not isinstance(binding_id, str):
+        binding_inputs = _binding_runtime_inputs(binding)
+        if binding_inputs is None:
             continue
-        if not isinstance(unlocked_assets, list):
-            unlocked_assets = []
-        if not isinstance(revealed_configurations, dict):
-            revealed_configurations = {}
+        binding_id, unlocked_assets, revealed_configurations = binding_inputs
+
+        # Response gate: after the first reveal, runtime must observe the
+        # attacker touching the most recent revealed asset/config before asking
+        # the controller to open another one. This keeps the live loop as
+        # reveal -> observe response -> next reveal, instead of continuously
+        # expanding exposure on unrelated profile changes.
+        if feedback_file is not None:
+            gate_decision = response_gate_decision(
+                feedback_file=feedback_file,
+                attacker_key=attacker_key,
+                binding_id=binding_id,
+                profile=profile,
+            )
+            if not gate_decision["allowed"]:
+                _finish_without_apply(
+                    trace_file=trace_file,
+                    loop_state_file=loop_state_file,
+                    loop_state=loop_state,
+                    attacker_key=attacker_key,
+                    binding=binding,
+                    profile=profile,
+                    recent_evidence_ids=recent_evidence_ids,
+                    controller_response=_response_gate_controller_response(gate_decision),
+                )
+                continue
 
         controller_response = post_json(
             f"{controller_url}/v1/controller/tick",
@@ -153,38 +174,26 @@ def tick_once(
         if not isinstance(actions, list):
             continue
 
-        reveal_actions = [
-            action
-            for action in actions
-            if isinstance(action, dict) and _is_reveal_action(action)
-        ]
+        reveal_actions = _reveal_actions(actions)
         if not reveal_actions:
-            if trace_file is not None:
-                append_trace_record(
-                    trace_file,
-                    build_trace_record(
-                        attacker_key=attacker_key,
-                        binding=binding,
-                        profile=profile,
-                        controller_response={
-                            **controller_response,
-                            "actions": actions,
-                            "dropped_actions": [],
-                        },
-                        orchestrator_response=_no_apply_orchestrator_response(binding),
-                    ),
-                )
-            _mark_evidence_processed(loop_state, attacker_key, recent_evidence_ids)
-            if loop_state_file is not None:
-                save_loop_state(loop_state_file, loop_state)
+            _finish_without_apply(
+                trace_file=trace_file,
+                loop_state_file=loop_state_file,
+                loop_state=loop_state,
+                attacker_key=attacker_key,
+                binding=binding,
+                profile=profile,
+                recent_evidence_ids=recent_evidence_ids,
+                controller_response={
+                    **controller_response,
+                    "actions": actions,
+                    "dropped_actions": [],
+                },
+            )
             continue
 
         actions_to_apply = _limit_reveal_actions(actions, max_actions_per_trigger)
-        applied_reveal_actions = [
-            action
-            for action in actions_to_apply
-            if isinstance(action, dict) and _is_reveal_action(action)
-        ]
+        applied_reveal_actions = _reveal_actions(actions_to_apply)
         orchestrator_response = post_json(
             f"{orchestrator_url}/v1/orchestration/apply",
             {
@@ -223,6 +232,207 @@ def tick_once(
         print_apply_summary(attacker_key, orchestrator_response)
 
     return applied_reveals
+
+
+def _binding_runtime_inputs(binding: dict[str, Any]) -> tuple[str, list[Any], dict[str, Any]] | None:
+    """Return validated binding fields needed by the controller request."""
+    binding_id = binding.get("binding_id")
+    if not isinstance(binding_id, str):
+        return None
+    unlocked_assets = binding.get("unlocked_assets", [])
+    revealed_configurations = binding.get("revealed_configurations", {})
+    if not isinstance(unlocked_assets, list):
+        unlocked_assets = []
+    if not isinstance(revealed_configurations, dict):
+        revealed_configurations = {}
+    return binding_id, unlocked_assets, revealed_configurations
+
+
+def _finish_without_apply(
+    *,
+    trace_file: Path | None,
+    loop_state_file: Path | None,
+    loop_state: dict[str, Any],
+    attacker_key: str,
+    binding: dict[str, Any],
+    profile: dict[str, Any],
+    recent_evidence_ids: list[str],
+    controller_response: dict[str, Any],
+) -> None:
+    """Write a no-apply trace and mark evidence processed."""
+    if trace_file is not None:
+        append_trace_record(
+            trace_file,
+            build_trace_record(
+                attacker_key=attacker_key,
+                binding=binding,
+                profile=profile,
+                controller_response=controller_response,
+                orchestrator_response=_no_apply_orchestrator_response(binding),
+            ),
+        )
+    _mark_evidence_processed(loop_state, attacker_key, recent_evidence_ids)
+    if loop_state_file is not None:
+        save_loop_state(loop_state_file, loop_state)
+
+
+def response_gate_decision(
+    *,
+    feedback_file: Path,
+    attacker_key: str,
+    binding_id: str,
+    profile: dict[str, Any],
+) -> dict[str, Any]:
+    """Decide whether this binding may ask the controller for another reveal.
+
+    The first reveal is always allowed. After that, the latest reveal batch must
+    receive a response before the loop continues. A response is either:
+
+    - useful/shallow feedback resolved from later evidence; or
+    - a recent profile asset touch that names one of the revealed assets.
+
+    Ignored reveals remain blocking because they mean the previous exposure did
+    not receive a response within the feedback window.
+    """
+    payload = read_json_object(feedback_file, {"pending": []})
+    records = _feedback_records_for_binding(payload, attacker_key, binding_id)
+    if not records:
+        return {
+            "allowed": True,
+            "reason": "no previous reveal",
+            "binding_id": binding_id,
+            "attacker_key": attacker_key,
+        }
+
+    latest = _latest_feedback_record(records)
+    latest_assets = _feedback_revealed_assets(latest)
+    batch = _latest_reveal_batch(records, latest, latest_assets)
+    statuses = {
+        str(item.get("asset_id")): str(item.get("status", "pending"))
+        for item in batch
+        if isinstance(item.get("asset_id"), str)
+    }
+    recent_asset_ids = string_items(profile.get("recent_asset_ids", []))
+    touched_assets = sorted(set(recent_asset_ids).intersection(latest_assets))
+    resolved_assets = sorted(
+        asset_id
+        for asset_id, status in statuses.items()
+        if status in {"useful", "shallow"}
+    )
+    allowed = bool(resolved_assets or touched_assets)
+    return {
+        "allowed": allowed,
+        "reason": (
+            "reveal response observed"
+            if allowed
+            else "waiting for response to revealed asset"
+        ),
+        "binding_id": binding_id,
+        "attacker_key": attacker_key,
+        "revealed_assets": sorted(latest_assets),
+        "resolved_assets": resolved_assets,
+        "recent_touched_assets": touched_assets,
+        "statuses": statuses,
+    }
+
+
+def _response_gate_controller_response(gate_decision: dict[str, Any]) -> dict[str, Any]:
+    """Build the no-reveal trace payload written when the response gate blocks.
+
+    The trace is intentionally shaped like a controller response so dashboard
+    and evaluation readers can explain why no runtime action happened.
+    """
+    return {
+        "candidate_asset_ids": [],
+        "actions": [],
+        "dropped_actions": [],
+        "decision_events": [
+            {
+                "reason": "waiting for response to revealed asset",
+                "details": {
+                    "reveal_action": "no_reveal",
+                    "no_reveal_reason": "waiting_for_reveal_response",
+                    "response_gate": gate_decision,
+                },
+            }
+        ],
+    }
+
+
+def _feedback_records_for_binding(
+    payload: dict[str, Any],
+    attacker_key: str,
+    binding_id: str,
+) -> list[dict[str, Any]]:
+    """Return reveal feedback rows for one attacker binding."""
+    pending = payload.get("pending", [])
+    if not isinstance(pending, list):
+        return []
+    return [
+        item
+        for item in pending
+        if isinstance(item, dict)
+        and item.get("attacker_key") == attacker_key
+        and item.get("binding_id") == binding_id
+    ]
+
+
+def _latest_feedback_record(records: list[dict[str, Any]]) -> dict[str, Any]:
+    """Pick the newest feedback row, using list order to break timestamp ties."""
+    indexed = list(enumerate(records))
+    _, latest = max(indexed, key=lambda pair: (_feedback_ts_seconds(pair[1]), pair[0]))
+    return latest
+
+
+def _latest_reveal_batch(
+    records: list[dict[str, Any]],
+    latest: dict[str, Any],
+    latest_assets: set[str],
+) -> list[dict[str, Any]]:
+    """Return rows from the same reveal batch as the latest row.
+
+    One controller tick may reveal two assets, for example a main asset and an
+    explore asset. `record_reveal_feedback()` writes one row per asset but gives
+    each row the same `revealed_assets` set, so touching either row can release
+    the whole batch.
+    """
+    latest_ts = parse_iso_datetime(latest.get("ts"))
+    batch = [
+        item
+        for item in records
+        if _feedback_revealed_assets(item) == latest_assets
+        and _close_feedback_ts(item, latest_ts)
+    ]
+    return batch or [latest]
+
+
+def _feedback_revealed_assets(item: dict[str, Any]) -> set[str]:
+    """Return the full reveal-batch asset set recorded with one feedback row."""
+    revealed_assets = set(string_items(item.get("revealed_assets", [])))
+    asset_id = item.get("asset_id")
+    if not revealed_assets and isinstance(asset_id, str):
+        revealed_assets.add(asset_id)
+    return revealed_assets
+
+
+def _feedback_ts_seconds(item: dict[str, Any]) -> float:
+    """Convert a feedback timestamp into a sortable UTC timestamp."""
+    ts = parse_iso_datetime(item.get("ts"))
+    return ts.timestamp() if ts is not None else 0.0
+
+
+def _close_feedback_ts(item: dict[str, Any], latest_ts: datetime | None) -> bool:
+    """Treat rows written within one tick as one reveal batch.
+
+    Feedback rows are appended separately, so their timestamps may differ by a
+    tiny amount even though they came from the same controller decision.
+    """
+    if latest_ts is None:
+        return True
+    ts = parse_iso_datetime(item.get("ts"))
+    if ts is None:
+        return False
+    return abs((latest_ts - ts).total_seconds()) <= 5
 
 
 def _no_apply_orchestrator_response(binding: dict[str, Any]) -> dict[str, Any]:
@@ -297,6 +507,7 @@ def update_reveal_feedback_from_evidence(
     *,
     feedback_file: Path,
     evidence_file: Path,
+    internal_http_events_file: Path | None = None,
     feedback_window_seconds: int,
 ) -> None:
     """Resolve pending reveal feedback from later profiler evidence.
@@ -310,6 +521,11 @@ def update_reveal_feedback_from_evidence(
     if not isinstance(pending, list) or not pending:
         return
     evidence_records = evidence_records_from_file(evidence_file)
+    internal_http_events = (
+        _internal_http_event_records(internal_http_events_file)
+        if internal_http_events_file is not None
+        else []
+    )
     now = datetime.now(timezone.utc)
     changed = False
 
@@ -317,6 +533,11 @@ def update_reveal_feedback_from_evidence(
         if not isinstance(item, dict) or item.get("status") != "pending":
             continue
         touch_outcome = _pending_reveal_outcome(item, evidence_records)
+        if touch_outcome is None:
+            touch_outcome = _pending_internal_http_touch_outcome(
+                item,
+                internal_http_events,
+            )
         expired = _pending_reveal_expired(item, now, feedback_window_seconds)
         if touch_outcome is None and not expired:
             continue
@@ -362,6 +583,45 @@ def _pending_reveal_outcome(
         if isinstance(source_ref, dict) and source_ref.get("asset_id") == asset_id:
             return "useful" if evidence.get("tech_id") or evidence.get("group") else "shallow"
     return None
+
+
+def _pending_internal_http_touch_outcome(
+    pending: dict[str, Any],
+    events: list[dict[str, Any]],
+) -> str | None:
+    """Return shallow when raw asset-gateway HTTP logs show an unmapped touch."""
+    asset_id = pending.get("asset_id")
+    attacker_key = pending.get("attacker_key")
+    pending_ts = parse_iso_datetime(pending.get("ts"))
+    if not isinstance(asset_id, str) or not isinstance(attacker_key, str):
+        return None
+    for event in events:
+        if event.get("attacker_key") != attacker_key:
+            continue
+        if event.get("asset_id") != asset_id:
+            continue
+        event_ts = parse_iso_datetime(event.get("ts"))
+        if pending_ts is not None and event_ts is not None and event_ts < pending_ts:
+            continue
+        return "shallow"
+    return None
+
+
+def _internal_http_event_records(path: Path) -> list[dict[str, Any]]:
+    """Read raw asset-gateway internal HTTP JSONL events for shallow touches."""
+    if not path.exists():
+        return []
+    records: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(item, dict):
+            records.append(item)
+    return records
 
 
 def _pending_reveal_expired(
@@ -428,6 +688,15 @@ def _limit_reveal_actions(
         limited.append(action)
         reveal_count += 1
     return limited
+
+
+def _reveal_actions(actions: list[Any]) -> list[dict[str, Any]]:
+    """Return controller actions that actually reveal an asset or config."""
+    return [
+        action
+        for action in actions
+        if isinstance(action, dict) and _is_reveal_action(action)
+    ]
 
 
 def _is_reveal_action(action: dict[str, Any]) -> bool:

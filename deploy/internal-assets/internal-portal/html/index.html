@@ -95,15 +95,16 @@
       border-top: 1px solid #edf1f6;
     }
 
-    .nav-list a {
+    .nav-list .static-item {
       display: block;
       padding: 12px 0;
       color: #1f4e79;
-      text-decoration: none;
       font-weight: 700;
     }
 
-    .nav-list span {
+    .nav-list span,
+    .doc-list span,
+    .ticket-list span {
       display: block;
       margin-top: 3px;
       color: var(--muted);
@@ -244,15 +245,6 @@
       font-weight: 700;
     }
 
-    .doc-list span,
-    .ticket-list span {
-      display: block;
-      margin-top: 3px;
-      color: var(--muted);
-      font-size: 12px;
-      font-weight: 400;
-    }
-
     .notice {
       margin-top: 18px;
       padding: 13px 14px;
@@ -314,15 +306,12 @@
     <aside class="systems">
       <h2>Systems</h2>
       <ul class="nav-list">
-        <li><a data-port="18082" href="#">Finance Share<span>Budget archives, payroll exports, vendor records</span></a></li>
-        <li><a data-port="19418" data-protocol="git" href="#">Source Control<span>Infrastructure and service deployment repositories</span></a></li>
-        <li><a data-port="18081" href="#">Admin Console<span>Operations web console and maintenance login</span></a></li>
-        <li><a data-port="18443" href="#">VPN Appliance<span>Remote access gateway and client bundles</span></a></li>
-        <li><a data-port="18084" href="#">Plant PLC Panel<span>Water treatment telemetry and device maps</span></a></li>
-        <li><a data-port="18085" href="#">Update Staging<span>Endpoint package staging and upload area</span></a></li>
+        <li><div class="static-item">Finance Share<span>Budget archives and vendor records; see directory exports for current host details</span></div></li>
+        <li><div class="static-item">Source Control<span>Infrastructure repository references are tracked in migration tickets</span></div></li>
+        <li><div class="static-item">Admin Console<span>Operations console access requires a current maintenance request</span></div></li>
       </ul>
       <div class="notice maintenance">
-        Weekend migration window: source control and finance archive services may briefly return maintenance pages.
+        Weekend migration window: source control and finance archive services may briefly return maintenance pages. Use the directory exports below before opening service-specific endpoints.
       </div>
     </aside>
 
@@ -354,10 +343,6 @@
           <div class="panel-body">
             <h2>Recent Documents</h2>
             <ul class="doc-list">
-              <li><a data-port="18082" data-path="/finance/archive/2024/budget-q4-review.xlsx" href="#">budget-q4-review.xlsx<span>Finance archive updated by accounts.payable</span></a></li>
-              <li><a data-port="18443" data-path="/download/contractor-profile.ovpn" href="#">contractor-profile.ovpn<span>Remote access profile for approved contractors</span></a></li>
-              <li><a data-port="18084" data-path="/maps/modbus-unit-map.csv" href="#">modbus-unit-map.csv<span>PLC unit map exported from plant telemetry</span></a></li>
-              <li><a data-port="18085" data-path="/downloads/agent-update.bin" href="#">agent-update.bin<span>Endpoint staging package, pending release approval</span></a></li>
               <li><a href="/directory/hosts.csv">hosts.csv<span>Operations host inventory with service owners and network zones</span></a></li>
               <li><a href="/directory/network-connections.csv">network-connections.csv<span>Approved service-to-service connections for the April migration window</span></a></li>
             </ul>
@@ -368,11 +353,9 @@
           <div class="panel-body">
             <h2>Open Requests</h2>
             <ul class="ticket-list">
-              <li><a data-port="18081" href="#">OPS-1842 Admin console password rotation<span>Assigned to platform operations</span></a></li>
-              <li><a data-port="19418" data-protocol="git" href="#">OPS-1839 Review infra deploy repository<span>Pending merge window confirmation</span></a></li>
-              <li><a data-port="12121" data-protocol="ftp" href="#">OPS-1811 Archive transfer audit<span>Finance archive handoff review</span></a></li>
-              <li><a data-port="16379" data-protocol="redis" href="#">OPS-1797 Redis cache probe from staging<span>Confirm cache inventory before cleanup</span></a></li>
-              <li><a data-port="2525" data-protocol="smtp" href="#">OPS-1784 Mail archive relay review<span>Mailbox aliases copied from legacy Exchange export</span></a></li>
+              <li><a href="/directory/network-connections.csv">OPS-1842 Admin console password rotation<span>Assigned to platform operations</span></a></li>
+              <li><a href="/directory/hosts.csv">OPS-1839 Review infra deploy repository<span>Pending merge window confirmation</span></a></li>
+              <li><a href="/directory/network-connections.csv">OPS-1797 Redis cache probe from staging<span>Confirm cache inventory before cleanup</span></a></li>
             </ul>
           </div>
         </section>
@@ -384,7 +367,6 @@
     const portalRoot = document.getElementById("portal-root");
     const portalAuth = document.getElementById("portal-auth");
     const authError = document.getElementById("auth-error");
-    const host = window.location.hostname || "127.0.0.1";
 
     portalAuth.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -392,7 +374,6 @@
       const token = document.getElementById("portal-token").value.trim();
       const sessionUrl = new URL("/session", window.location.origin);
       const formBody = new URLSearchParams({username, token});
-      const locallyValid = username === "portal.reader" && token === "nbp_reader_2026_04_window";
       try {
         const response = await fetch(sessionUrl, {
           method: "POST",
@@ -400,7 +381,7 @@
           cache: "no-store",
           body: formBody
         });
-        if (response.ok || locallyValid) {
+        if (response.ok) {
           portalRoot.className = "unlocked";
           authError.style.display = "none";
           return;
@@ -413,26 +394,8 @@
         authError.textContent = "Session endpoint unavailable. Check the tunnel and refresh this page.";
         authError.style.display = "block";
       }
-      if (locallyValid) {
-        portalRoot.className = "unlocked";
-        authError.style.display = "none";
-      }
     });
 
-    document.querySelectorAll("[data-port]").forEach((link) => {
-      const port = link.getAttribute("data-port");
-      const path = link.getAttribute("data-path") || "/";
-      const protocol = link.getAttribute("data-protocol") || "http";
-      if (protocol === "git") {
-        link.href = `git://${host}:${port}/infra-deploy.git`;
-      } else if (protocol === "ftp") {
-        link.href = `ftp://${host}:${port}/`;
-      } else if (protocol === "redis") {
-        link.href = `redis://${host}:${port}/`;
-      } else {
-        link.href = `http://${host}:${port}${path}`;
-      }
-    });
   </script>
 </body>
 </html>

@@ -1,0 +1,20 @@
+title: Internal HTTP VPN Login Clue
+id: honeynet-internal-http-vpn-login-clue
+status: experimental
+logsource:
+  product: honeynet
+  category: web
+honeynet.rule_name: internal_http_vpn_login_clue
+honeynet.evidence_label: internal-http vpn login clue access
+detection:
+  surface:
+    honeynet.surface: internal
+  asset:
+    honeynet.asset_id: vpn-appliance
+  selection:
+    url.path|contains:
+      - /policy/login-clue.txt
+  condition: surface and asset and selection
+tags:
+  - attack.initial_access
+  - attack.t1133

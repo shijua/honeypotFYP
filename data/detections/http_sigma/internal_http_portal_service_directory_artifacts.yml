@@ -1,0 +1,22 @@
+title: Internal HTTP Portal Service Directory Artifacts
+id: honeynet-internal-http-portal-service-directory-artifacts
+status: experimental
+logsource:
+  product: honeynet
+  category: web
+honeynet.rule_name: internal_http_portal_service_directory_artifacts
+honeynet.evidence_label: internal-http portal service directory artifact access
+detection:
+  surface:
+    honeynet.surface: internal
+  asset:
+    honeynet.asset_id: internal-portal
+  selection:
+    url.path|contains:
+      - /api/openapi-summary.json
+      - /runbooks/service-directory.md
+  condition: surface and asset and selection
+tags:
+  - attack.discovery
+  - attack.t1018
+  - attack.t1046

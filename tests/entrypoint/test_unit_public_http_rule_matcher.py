@@ -121,10 +121,11 @@ def test_public_http_sigma_matcher_maps_internal_artifact_access() -> None:
     assert [match.rule_name for match in matches] == ["internal_http_artifact_access"]
     assert matches[0].tags == ("mitre_collection", "T1005")
     assert "surface:internal" in matches[0].indicators
-    assert "path:/finance/archive/" in matches[0].indicators
+    assert "path:/finance/archive/2024/payroll-archive.zip" in matches[0].indicators
 
 
 def test_internal_http_sigma_asset_paths_exist() -> None:
+    materialized_paths = _configuration_materialized_paths()
     for rule_path in sorted((ROOT / "data/detections/http_sigma").glob("internal_http_*.yml")):
         payload = yaml.safe_load(rule_path.read_text(encoding="utf-8"))
         detection = payload.get("detection", {}) if isinstance(payload, dict) else {}
@@ -135,6 +136,8 @@ def test_internal_http_sigma_asset_paths_exist() -> None:
         if html_root is None:
             continue
         for path in _rule_paths(detection):
+            if _is_configuration_materialized_path(materialized_paths, asset_id, path):
+                continue
             assert _asset_path_exists(html_root, path), f"{rule_path} references missing {asset_id}:{path}"
 
 
@@ -354,3 +357,41 @@ def _asset_path_exists(html_root: Path, path: str) -> bool:
     if candidate.exists():
         return True
     return any(str(existing.relative_to(html_root)).startswith(relative) for existing in html_root.rglob("*"))
+
+
+def _configuration_materialized_paths() -> dict[str, set[str]]:
+    catalog = json.loads((ROOT / "data/assets/catalog.json").read_text(encoding="utf-8"))
+    paths_by_asset: dict[str, set[str]] = {}
+    for asset in catalog:
+        if not isinstance(asset, dict) or not isinstance(asset.get("asset_id"), str):
+            continue
+        settings = asset.get("default_settings", {})
+        variants = settings.get("configuration_variants", []) if isinstance(settings, dict) else []
+        if not isinstance(variants, list):
+            continue
+        for variant in variants:
+            artifacts = variant.get("materialized_artifacts", []) if isinstance(variant, dict) else []
+            if not isinstance(artifacts, list):
+                continue
+            for artifact in artifacts:
+                if not isinstance(artifact, dict) or artifact.get("type") != "file":
+                    continue
+                path = artifact.get("path")
+                if isinstance(path, str) and path:
+                    paths_by_asset.setdefault(asset["asset_id"], set()).add(
+                        f"/{path.lstrip('/')}"
+                    )
+    return paths_by_asset
+
+
+def _is_configuration_materialized_path(
+    materialized_paths: dict[str, set[str]],
+    asset_id: str,
+    rule_path: str,
+) -> bool:
+    paths = materialized_paths.get(asset_id, set())
+    if rule_path in paths:
+        return True
+    if rule_path.endswith("/"):
+        return any(path.startswith(rule_path) for path in paths)
+    return False

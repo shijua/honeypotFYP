@@ -1,0 +1,20 @@
+title: Internal HTTP Payload Downloader Index
+id: honeynet-internal-http-payload-downloader-index
+status: experimental
+logsource:
+  product: honeynet
+  category: web
+honeynet.rule_name: internal_http_payload_downloader_index
+honeynet.evidence_label: internal-http payload downloader index access
+detection:
+  surface:
+    honeynet.surface: internal
+  asset:
+    honeynet.asset_id: malware-sink
+  selection:
+    url.path|contains:
+      - /staging/downloader-index.txt
+  condition: surface and asset and selection
+tags:
+  - attack.resource_development
+  - attack.t1608

@@ -168,6 +168,68 @@ def test_tick_uses_public_prior_to_boost_next_technique() -> None:
     assert response.actions[0].asset_id == "asset-explore"
     assert response.decision_events[0].details["candidate_type"] == "recommended"
     assert response.decision_events[0].details["recommendation_support"] == 0.9
+    assert response.decision_events[0].details["profile_technique_value"] == 0.81
+
+
+def test_recommended_candidates_discount_already_represented_techniques() -> None:
+    assets = [
+        AssetDefinition(
+            asset_id="already-represented",
+            asset_name="Known Collection Surface",
+            exposure_type="internal",
+            interaction_level="medium",
+            covers_tactics=["Collection"],
+            dependencies=[],
+            default_settings={
+                "selection_profile": {
+                    "asset_group": "data-share",
+                    "covered_techniques": ["T1005"],
+                    "telemetry_value": 1.0,
+                }
+            },
+        ),
+        AssetDefinition(
+            asset_id="novel-transfer",
+            asset_name="Novel Transfer Surface",
+            exposure_type="internal",
+            interaction_level="medium",
+            covers_tactics=["Command and Control"],
+            dependencies=[],
+            default_settings={
+                "selection_profile": {
+                    "asset_group": "payload-transfer",
+                    "covered_techniques": ["T1105"],
+                    "telemetry_value": 0.4,
+                }
+            },
+        ),
+    ]
+    service = ControllerService(
+        InMemoryAssetRepository(assets),
+        InMemoryTechniquePriorRepository({"T1046": {"T1005": 0.9, "T1105": 0.5}}),
+        config=RuntimeConfig(unlock_cap=1),
+    )
+
+    response = service.tick(
+        ControllerTickRequest(
+            attacker_key="198.51.100.37",
+            binding_id="binding-novelty",
+            profile=ProfileSnapshot(
+                attacker_key="198.51.100.37",
+                conf_by_technique={"T1046": 0.8, "T1005": 0.49},
+                recent_techniques=["T1046"],
+                recent_public_http_indicators=["path:/api"],
+                recent_evidence_ids=["e-prior"],
+            ),
+        )
+    )
+
+    assert response.actions[0].asset_id == "novel-transfer"
+    details = response.decision_events[0].details
+    assert details["candidate_type"] == "recommended"
+    assert details["recommendation_support"] == 0.5
+    assert details["profile_technique_value"] == 0.5
+    assert details["ordering"]["profile_technique_value"] == 0.5
 
 
 def test_tick_scores_parent_and_subtechnique_family_matches() -> None:

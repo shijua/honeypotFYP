@@ -1,0 +1,21 @@
+title: Internal HTTP Finance Configuration Artifacts
+id: honeynet-internal-http-finance-configuration-artifacts
+status: experimental
+logsource:
+  product: honeynet
+  category: web
+honeynet.rule_name: internal_http_finance_configuration_artifacts
+honeynet.evidence_label: internal-http finance configuration artifact access
+detection:
+  surface:
+    honeynet.surface: internal
+  asset:
+    honeynet.asset_id: finance-share
+  selection_archive:
+    url.path|contains:
+      - /finance/archive/2024/customer-export-index.csv
+      - /finance/archive/2024/archive-manifest.txt
+  condition: surface and asset and selection_archive
+tags:
+  - attack.collection
+  - attack.t1005

@@ -47,6 +47,7 @@ class CandidateScore:
     technique_signal_score: float
     confidence_score: float
     recommendation_support: float
+    profile_technique_value: float
     telemetry_value: float
     matched_dependency_marker_count: int = 0
     repeat_count: int = 0
@@ -460,6 +461,13 @@ class ControllerService:
         matched_markers = list(option.matched_dependency_markers)
         telemetry_value = option.telemetry_value
         repeat_count = _repeat_count(profile.recent_techniques, selected_technique)
+        profile_technique_value = _profile_technique_value(
+            candidate_type,
+            option.covered_techniques,
+            profile.conf_by_technique,
+            recommendations,
+            fallback_score=technique_signal_score,
+        )
 
         if strategy == "explore":
             if exploit_context is None:
@@ -486,6 +494,7 @@ class ControllerService:
             technique_signal_score=round(technique_signal_score, 4),
             confidence_score=round(confidence_score, 4),
             recommendation_support=round(recommendation_support, 4),
+            profile_technique_value=round(profile_technique_value, 4),
             telemetry_value=round(telemetry_value, 4),
             matched_dependency_marker_count=len(matched_markers),
             repeat_count=repeat_count,
@@ -716,6 +725,7 @@ class ControllerService:
             "technique_signal_score": candidate.technique_signal_score,
             "confidence_score": candidate.confidence_score,
             "recommendation_support": candidate.recommendation_support,
+            "profile_technique_value": candidate.profile_technique_value,
             "technique_match_type": candidate.technique_match_type,
             "matched_profile_technique": candidate.matched_profile_technique,
             "matched_recommended_technique": candidate.matched_prior_technique,
@@ -825,6 +835,36 @@ def _repeat_count(recent_techniques: list[str], technique: str) -> int:
     return max(0, matches - 1)
 
 
+def _profile_technique_value(
+    candidate_type: str,
+    covered_techniques: tuple[str, ...],
+    confidences: dict[str, float],
+    recommendations: dict[str, float],
+    *,
+    fallback_score: float,
+) -> float:
+    """Discount recommended technique support that is already represented.
+
+    Continuation/configuration/bootstrap decisions keep their observed signal
+    as the value. Only prior-driven candidates use novelty, so a recommendation
+    for an already confident technique does not repeatedly dominate the queue.
+    """
+    if candidate_type != "recommended":
+        return fallback_score
+    value = 0.0
+    for technique in covered_techniques:
+        confidence = max(
+            float(confidences.get(technique, 0.0)),
+            _best_family_score(technique, confidences)[0],
+        )
+        support = max(
+            float(recommendations.get(technique, 0.0)),
+            _best_family_score(technique, recommendations)[0],
+        )
+        value += support * max(0.0, 1.0 - confidence)
+    return value
+
+
 def _controller_ordering_details(candidate: CandidateScore) -> dict[str, Any]:
     """Return the deterministic ordering tuple used for an asset choice.
 
@@ -834,6 +874,7 @@ def _controller_ordering_details(candidate: CandidateScore) -> dict[str, Any]:
     """
     return {
         "candidate_type_rank": _candidate_priority_rank(candidate),
+        "profile_technique_value": candidate.profile_technique_value,
         "technique_signal_score": candidate.technique_signal_score,
         "telemetry_value": candidate.telemetry_value,
         "matched_dependency_marker_count": candidate.matched_dependency_marker_count,
@@ -847,7 +888,9 @@ def _reveal_role(strategy: str) -> str:
     return "explore" if strategy == "explore" else "main"
 
 
-def _candidate_order_key(candidate: CandidateScore) -> tuple[float, float, float, int, int, str]:
+def _candidate_order_key(
+    candidate: CandidateScore,
+) -> tuple[float, float, float, int, float, int, str]:
     """Sort key for deterministic candidate ordering.
 
     Example:
@@ -856,9 +899,10 @@ def _candidate_order_key(candidate: CandidateScore) -> tuple[float, float, float
     """
     return (
         -_candidate_priority_rank(candidate),
+        -candidate.profile_technique_value,
         -candidate.technique_signal_score,
-        -candidate.telemetry_value,
         -candidate.matched_dependency_marker_count,
+        -candidate.telemetry_value,
         candidate.repeat_count,
         _candidate_exposed_asset_id(candidate),
     )

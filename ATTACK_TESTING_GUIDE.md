@@ -37,13 +37,9 @@ ssh -N \
 
 Open browser pages with `127.0.0.1` instead of `localhost`, for example `http://127.0.0.1:18180/`, so the browser does not choose the IPv6 localhost path.
 
-Quick health check:
-
-```bash
-curl -s "http://146.169.44.23:8090/api/summary" | jq '.chain_health[] | select(.stage == "Technique group prior" or .stage == "Profile/controller" or .stage == "Gateway/assets")'
-```
-
 Optional route-level reveal evaluation:
+
+Use this when you want a fast engineering check that the reveal pipeline can actually open the expected fixed ports. It replays scripted profiles, asks the controller what to reveal, applies the orchestrator action, and verifies that `data/runtime/asset_gateway_routes.json` contains the expected `asset_id` + public port route. It does not simulate attacker commands or prove Sigma-to-technique coverage; those are covered by the manual probes below and the entrypoint coverage tests.
 
 ```bash
 .venv/bin/python scripts/evaluation/reveal_port_simulation.py \
@@ -54,9 +50,34 @@ jq '.summary, .scenarios[] | {scenario_id, ok, selected_assets, expected_routes,
   data/runtime/reveal_port_simulation_report.json
 ```
 
-Expected: each passed scenario has the selected asset and the exact asset-gateway route. This check does not run attacker commands or protocol probes; it only verifies that Docker runtimes and asset-gateway routes are created. An unavailable third-party high-interaction image is reported as `failed_runtime_unavailable`, not silently skipped.
+Expected: each passed scenario has the selected asset and the exact asset-gateway route. An unavailable third-party high-interaction image is reported as `failed_runtime_unavailable`, not silently skipped.
 
 This evaluation creates routes for scripted attacker keys such as `198.51.100.x`. To probe the fixed ports from this VM shell or browser, still run section 4 with the real source IP key, normally `146.169.44.23`.
+
+Optional configuration-reveal smoke:
+
+Use this to verify that a configuration reveal changes the attacker-visible per-binding asset copy, not just controller state. The example unlocks `internal-portal`, applies the `portal-admin-console-link` configuration, then checks that the new runbook file and landing-page link are visible through the asset gateway.
+
+```bash
+ATTACKER_KEY=146.169.44.23 ./scripts/unlock_internal_assets_for_test.sh --assets internal-portal
+BINDING_ID="$(
+  jq -r '.routes[] | select(.attacker_key == "146.169.44.23" and .asset_id == "internal-portal") | .binding_id' \
+    data/runtime/asset_gateway_routes.json | tail -1
+)"
+CONFIG_JSON="$(
+  jq -c '.[] | select(.asset_id == "internal-portal") | .default_settings.configuration_variants[] | select(.configuration_id == "portal-admin-console-link")' \
+    data/assets/catalog.json
+)"
+jq -n --arg binding_id "$BINDING_ID" --argjson configuration "$CONFIG_JSON" \
+  '{binding_id: $binding_id, actions: [{action_type: "configure", binding_id: $binding_id, asset_id: "internal-portal", configuration_id: "portal-admin-console-link", configuration: $configuration, reason: "manual configuration materialization smoke"}]}' |
+  docker run --rm -i --network honeynet_net_control curlimages/curl:latest \
+    -fsS -H "Content-Type: application/json" --data-binary @- \
+    http://orchestrator:8005/v1/orchestration/apply | jq '.route_updates, .runtime_events[].settings.configuration_artifacts'
+curl -i "http://146.169.44.23:18080/runbooks/admin-console-access.md"
+curl -s "http://146.169.44.23:18080/" | grep -n "Admin console access note"
+```
+
+Expected: the apply response contains `portal-admin-console-link`, the runbook request returns `# Admin Console Access`, and the landing page contains `Admin console access note`. Full per-configuration probes are listed in `internal_asset_catalogue_notes.md`.
 
 ## 2. Public Signals
 

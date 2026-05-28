@@ -149,7 +149,15 @@ def test_apply_unlock_starts_asset_with_default_settings_and_monitoring_event() 
     assert stored_records[0].asset_id == "admin-jumpbox"
 
 
-def test_apply_configure_records_configuration_and_unlocks_upgrade_target() -> None:
+def test_apply_configure_records_configuration_and_unlocks_upgrade_target(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("HONEYPOT_HOST_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("HONEYPOT_PROJECT_ROOT_IN_CONTAINER", str(tmp_path))
+    html_root = tmp_path / "deploy" / "internal-assets" / "malware-sink" / "html"
+    html_root.mkdir(parents=True)
+    (html_root / "index.html").write_text("<html><body>base</body></html>", encoding="utf-8")
     binding_service = BindingService(InMemoryBindingRepository())
     gateway_service = GatewayService(InMemoryGatewayRouteRepository())
     runtime_repository = InMemoryTemplateRuntimeRepository()
@@ -166,7 +174,14 @@ def test_apply_configure_records_configuration_and_unlocks_upgrade_target() -> N
                     template_family="web-honeypot",
                     protocols=["http"],
                     ports=[80],
-                    default_settings={"runtime": {"backend": "mock"}},
+                    default_settings={
+                        "runtime": {
+                            "backend": "mock",
+                            "volumes": [
+                                "{host_project_root}/deploy/internal-assets/malware-sink/html:/usr/share/nginx/html:ro"
+                            ],
+                        }
+                    },
                     covers_tactics=["Command and Control"],
                 ),
                 AssetDefinition(
@@ -209,7 +224,15 @@ def test_apply_configure_records_configuration_and_unlocks_upgrade_target() -> N
                     asset_id="malware-sink",
                     configuration_id="malware-dionaea-same-port-upgrade",
                     target_asset_id="dionaea-capture",
-                    configuration={"kind": "same-port-high-interaction-upgrade"},
+                    configuration={
+                        "kind": "same-port-high-interaction-upgrade",
+                        "materialized_artifacts": [
+                            {
+                                "type": "route_note",
+                                "text": "Future malware-sink traffic is handled by dionaea-capture.",
+                            }
+                        ],
+                    },
                     reason="upgrade malware capture backend",
                 )
             ],
@@ -227,7 +250,129 @@ def test_apply_configure_records_configuration_and_unlocks_upgrade_target() -> N
     stored_records = tuple(runtime_repository.list_by_binding(binding.binding_id))
     source_record = next(record for record in stored_records if record.asset_id == "malware-sink")
     assert "malware-dionaea-same-port-upgrade" in source_record.settings["active_configurations"]
+    artifact = source_record.settings["configuration_artifacts"][
+        "malware-dionaea-same-port-upgrade"
+    ]
+    assert artifact["url_path"] == "/_reveals/malware-dionaea-same-port-upgrade.json"
+    artifact_path = html_root / "_reveals" / "malware-dionaea-same-port-upgrade.json"
+    assert artifact_path.exists()
+    artifact_payload = json.loads(artifact_path.read_text(encoding="utf-8"))
+    assert artifact_payload["asset_id"] == "malware-sink"
+    assert artifact_payload["configuration_id"] == "malware-dionaea-same-port-upgrade"
+    assert artifact_payload["route_notes"] == [
+        "Future malware-sink traffic is handled by dionaea-capture."
+    ]
+    assert (html_root / "_reveals" / "index.html").exists()
+    updated_index = (html_root / "index.html").read_text(encoding="utf-8")
+    assert 'data-config-reveal="malware-dionaea-same-port-upgrade"' in updated_index
+    assert "/_reveals/malware-dionaea-same-port-upgrade.json" in updated_index
     assert any(record.asset_id == "dionaea-capture" for record in stored_records)
+
+
+def test_apply_configure_materializes_catalog_files_and_links(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("HONEYPOT_HOST_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("HONEYPOT_PROJECT_ROOT_IN_CONTAINER", str(tmp_path))
+    html_root = tmp_path / "deploy" / "internal-assets" / "internal-portal" / "html"
+    html_root.mkdir(parents=True)
+    (html_root / "index.html").write_text("<html><body>portal</body></html>", encoding="utf-8")
+    binding_service = BindingService(InMemoryBindingRepository())
+    gateway_service = GatewayService(InMemoryGatewayRouteRepository())
+    runtime_repository = InMemoryTemplateRuntimeRepository()
+    orchestrator = OrchestratorService(
+        binding_service,
+        gateway_service,
+        InMemoryAssetRepository(
+            [
+                AssetDefinition(
+                    asset_id="internal-portal",
+                    asset_name="Internal Portal",
+                    exposure_type="internal",
+                    interaction_level="medium",
+                    template_family="web-honeypot",
+                    protocols=["http"],
+                    ports=[80],
+                    default_settings={
+                        "runtime": {
+                            "backend": "mock",
+                            "volumes": [
+                                "{host_project_root}/deploy/internal-assets/internal-portal/html:/usr/share/nginx/html:ro"
+                            ],
+                        }
+                    },
+                    covers_tactics=["Discovery"],
+                )
+            ]
+        ),
+        MockTemplateRuntime(runtime_repository),
+    )
+    binding = binding_service.resolve(ResolveBindingRequest(attacker_key="198.51.100.56"))
+    orchestrator.apply(
+        OrchestratorApplyRequest(
+            binding_id=binding.binding_id,
+            actions=[
+                ControllerAction(
+                    action_type=ActionType.unlock,
+                    binding_id=binding.binding_id,
+                    asset_id="internal-portal",
+                    reason="start portal",
+                )
+            ],
+        )
+    )
+
+    orchestrator.apply(
+        OrchestratorApplyRequest(
+            binding_id=binding.binding_id,
+            actions=[
+                ControllerAction(
+                    action_type=ActionType.configure,
+                    binding_id=binding.binding_id,
+                    asset_id="internal-portal",
+                    configuration_id="portal-admin-console-link",
+                    configuration={
+                        "kind": "content",
+                        "materialized_artifacts": [
+                            {
+                                "type": "file",
+                                "path": "runbooks/admin-console-access.md",
+                                "content": "Admin console: http://127.0.0.1:18081/",
+                            },
+                            {
+                                "type": "index_link",
+                                "href": "/runbooks/admin-console-access.md",
+                                "label": "Admin console access note",
+                                "description": "Operations link exposed on the active portal path.",
+                            },
+                        ],
+                    },
+                    reason="add active-path admin console clue",
+                )
+            ],
+        )
+    )
+
+    clue_path = html_root / "runbooks" / "admin-console-access.md"
+    assert clue_path.read_text(encoding="utf-8") == "Admin console: http://127.0.0.1:18081/"
+    updated_index = (html_root / "index.html").read_text(encoding="utf-8")
+    assert 'href="/runbooks/admin-console-access.md"' in updated_index
+    assert "Admin console access note" in updated_index
+    stored_record = next(iter(runtime_repository.list_by_binding(binding.binding_id)))
+    artifact = stored_record.settings["configuration_artifacts"]["portal-admin-console-link"]
+    assert artifact["materialized_artifacts"] == [
+        {
+            "type": "file",
+            "path": str(clue_path),
+            "url_path": "/runbooks/admin-console-access.md",
+        },
+        {
+            "type": "index_link",
+            "href": "/runbooks/admin-console-access.md",
+            "label": "Admin console access note",
+        },
+    ]
 
 
 def test_prewarm_starts_catalog_warm_assets_without_gateway_exposure(
@@ -831,6 +976,80 @@ def test_docker_template_runtime_starts_internal_opencanary_asset(
     assert record.settings["memory_limit"] == "256m"
     assert record.settings["public_port"] == 19418
     assert record.settings["backend_port"] == 9418
+
+
+def test_docker_template_runtime_mounts_static_assets_from_binding_copy(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    captured_args: list[str] = []
+    source_html = tmp_path / "deploy" / "internal-assets" / "internal-portal" / "html"
+    source_html.mkdir(parents=True)
+    (source_html / "index.html").write_text("<h1>base portal</h1>", encoding="utf-8")
+
+    def fake_run(args, **kwargs):
+        captured_args.extend(args)
+
+        class Result:
+            returncode = 0
+            stdout = "container-id"
+            stderr = ""
+
+        return Result()
+
+    monkeypatch.setattr(template_runtime_module.shutil, "which", lambda name: "/usr/bin/docker")
+    monkeypatch.setattr(runtime_routes_module, "_port_is_free", lambda port: True)
+    monkeypatch.setattr(template_runtime_module.subprocess, "run", fake_run)
+    monkeypatch.setattr(template_runtime_module, "_container_status", _missing_then_up_status())
+    monkeypatch.setattr(template_runtime_module, "_healthcheck_ready", lambda runtime, settings: True)
+    monkeypatch.setenv("HONEYPOT_PROJECT_NAME", "honeynet")
+    monkeypatch.setenv("HONEYPOT_HOST_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("HONEYPOT_PROJECT_ROOT_IN_CONTAINER", str(tmp_path))
+
+    runtime = DockerTemplateRuntime(InMemoryTemplateRuntimeRepository())
+    asset = AssetDefinition(
+        asset_id="internal-portal",
+        asset_name="Internal Portal",
+        exposure_type="internal",
+        interaction_level="medium",
+        template_family="internal-portal",
+        protocols=["http"],
+        ports=[80],
+        default_settings={
+            "runtime": {
+                "backend": "docker",
+                "image": "nginx:alpine",
+                "volumes": [
+                    "{host_project_root}/deploy/internal-assets/internal-portal/html:/usr/share/nginx/html:ro"
+                ],
+                "port_mappings": [
+                    {
+                        "host": "127.0.0.1",
+                        "requested_host_port": 18080,
+                        "container_port": 80,
+                    }
+                ],
+            }
+        },
+        covers_tactics=["Discovery"],
+    )
+
+    record = runtime.start_asset("binding-static-copy", asset)
+
+    copied_html = (
+        tmp_path
+        / "data"
+        / "runtime"
+        / "configurable_assets"
+        / "binding-"
+        / "internal-portal"
+        / "html"
+    )
+    assert (copied_html / "index.html").read_text(encoding="utf-8") == "<h1>base portal</h1>"
+    assert (
+        f"{copied_html}:/usr/share/nginx/html:ro" in captured_args
+    )
+    assert record.settings["volumes"] == [f"{copied_html}:/usr/share/nginx/html:ro"]
 
 
 def test_compose_template_runtime_starts_catalog_driven_compose_asset(
