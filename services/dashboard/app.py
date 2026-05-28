@@ -125,10 +125,19 @@ def api_summary() -> dict[str, Any]:
 
 
 def _load_dashboard_html() -> str:
-    """Load dashboard HTML and inject the refresh interval."""
+    """Load dashboard HTML and inject runtime-only placeholders."""
+    static_version = str(
+        max(
+            (STATIC_DIR / "dashboard.css").stat().st_mtime_ns,
+            (STATIC_DIR / "dashboard.js").stat().st_mtime_ns,
+        )
+    )
     return INDEX_HTML_PATH.read_text(encoding="utf-8").replace(
         "__REFRESH_SECONDS__",
         str(REFRESH_SECONDS),
+    ).replace(
+        "__STATIC_VERSION__",
+        static_version,
     )
 
 

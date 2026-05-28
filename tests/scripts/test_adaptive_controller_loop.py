@@ -320,6 +320,84 @@ def test_tick_once_processes_new_evidence_once_and_limits_unlock_actions(
     assert trace["records"][0]["dropped_actions"][0]["asset_id"] == "finance-share"
 
 
+def test_tick_once_writes_no_reveal_decision_trace(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state_dir = tmp_path / "runtime"
+    state_dir.mkdir()
+    (state_dir / "bindings.json").write_text(
+        json.dumps(
+            {
+                "records": [
+                    {
+                        "attacker_key": "198.51.100.20",
+                        "binding_id": "binding-no-reveal",
+                        "unlocked_assets": ["internal-portal"],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    (state_dir / "profiles.json").write_text(
+        json.dumps(
+            {
+                "profiles": {
+                    "198.51.100.20": {
+                        "attacker_key": "198.51.100.20",
+                        "recent_tactics": ["Discovery"],
+                        "recent_techniques": ["T1046"],
+                        "recent_evidence_ids": ["e-no-reveal"],
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_post_json(url, payload, timeout_seconds):
+        if url.endswith("/v1/controller/tick"):
+            return {
+                "candidate_asset_ids": [],
+                "actions": [],
+                "decision_events": [
+                    {
+                        "reason": "no reveal",
+                        "details": {
+                            "reveal_action": "no_reveal",
+                            "no_reveal_reason": "scanner-like traffic",
+                        },
+                    }
+                ],
+            }
+        raise AssertionError("orchestrator should not be called for no-reveal")
+
+    monkeypatch.setattr(adaptive_controller_loop, "post_json", fake_post_json)
+    loop_state_file = state_dir / "adaptive_loop_state.json"
+    trace_file = state_dir / "decision_trace.json"
+
+    applied = adaptive_controller_loop.tick_once(
+        state_dir=state_dir,
+        controller_url="http://controller",
+        orchestrator_url="http://orchestrator",
+        timeout_seconds=0.1,
+        trace_file=trace_file,
+        loop_state_file=loop_state_file,
+    )
+
+    assert applied == 0
+    trace = json.loads(trace_file.read_text(encoding="utf-8"))
+    assert trace["records"][0]["actions"] == []
+    assert trace["records"][0]["route_updates"] == []
+    assert trace["records"][0]["decision_events"][0]["reason"] == "no reveal"
+
+    state = json.loads(loop_state_file.read_text(encoding="utf-8"))
+    assert state["processed_evidence_ids_by_attacker"] == {
+        "198.51.100.20": ["e-no-reveal"]
+    }
+
+
 def test_reveal_feedback_records_reveal_and_later_useful_touch(tmp_path) -> None:
     feedback_file = tmp_path / "reveal_feedback.json"
     evidence_file = tmp_path / "evidence.json"
@@ -453,3 +531,51 @@ def test_reveal_feedback_marks_unclassified_touch_as_shallow(tmp_path) -> None:
     assert group["revealed"] == 1
     assert group["shallow"] == 1
     assert payload["pending"][0]["status"] == "shallow"
+
+
+def test_reveal_feedback_marks_expired_reveal_as_ignored(tmp_path) -> None:
+    feedback_file = tmp_path / "reveal_feedback.json"
+    evidence_file = tmp_path / "evidence.json"
+
+    adaptive_controller_loop.record_reveal_feedback(
+        feedback_file=feedback_file,
+        attacker_key="198.51.100.30",
+        binding_id="binding-3",
+        applied_actions=[
+            {
+                "action_type": "unlock",
+                "binding_id": "binding-3",
+                "asset_id": "git-internal",
+                "reason": "selected",
+            }
+        ],
+        controller_response={
+            "candidate_asset_ids": ["internal-portal", "git-internal"],
+            "decision_events": [
+                {
+                    "asset_added": "git-internal",
+                    "details": {
+                        "selected_technique": "T1083",
+                        "matched_dependency_markers": ["any_http_paths:/assets/app.js.map"],
+                        "asset_group": "developer",
+                    },
+                }
+            ],
+        },
+    )
+    payload = json.loads(feedback_file.read_text(encoding="utf-8"))
+    payload["pending"][0]["ts"] = "2000-01-01T00:00:00Z"
+    feedback_file.write_text(json.dumps(payload), encoding="utf-8")
+    evidence_file.write_text(json.dumps({"records": {}}), encoding="utf-8")
+
+    adaptive_controller_loop.update_reveal_feedback_from_evidence(
+        feedback_file=feedback_file,
+        evidence_file=evidence_file,
+        feedback_window_seconds=300,
+    )
+
+    payload = json.loads(feedback_file.read_text(encoding="utf-8"))
+    group = payload["contexts"]["T1083|any_http_paths:/assets/app.js.map"]["asset_groups"]["developer"]
+    assert group["revealed"] == 1
+    assert group["ignored"] == 1
+    assert payload["pending"][0]["status"] == "ignored"

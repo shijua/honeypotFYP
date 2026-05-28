@@ -159,6 +159,21 @@ def tick_once(
             if isinstance(action, dict) and _is_reveal_action(action)
         ]
         if not reveal_actions:
+            if trace_file is not None:
+                append_trace_record(
+                    trace_file,
+                    build_trace_record(
+                        attacker_key=attacker_key,
+                        binding=binding,
+                        profile=profile,
+                        controller_response={
+                            **controller_response,
+                            "actions": actions,
+                            "dropped_actions": [],
+                        },
+                        orchestrator_response=_no_apply_orchestrator_response(binding),
+                    ),
+                )
             _mark_evidence_processed(loop_state, attacker_key, recent_evidence_ids)
             if loop_state_file is not None:
                 save_loop_state(loop_state_file, loop_state)
@@ -208,6 +223,15 @@ def tick_once(
         print_apply_summary(attacker_key, orchestrator_response)
 
     return applied_reveals
+
+
+def _no_apply_orchestrator_response(binding: dict[str, Any]) -> dict[str, Any]:
+    """Build a trace placeholder when the controller intentionally reveals nothing."""
+    return {
+        "binding": binding,
+        "route_updates": [],
+        "runtime_events": [],
+    }
 
 
 def record_reveal_feedback(

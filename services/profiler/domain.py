@@ -132,14 +132,14 @@ class ProfilerService:
         tactic_evidences = [
             evidence for evidence in evidences if evidence.group is not None
         ]
-        conf_by_tactic, level_by_tactic = self._summarize_dimension(
+        conf_by_tactic = self._summarize_dimension(
             evidences=tactic_evidences,
             key_fn=lambda evidence: evidence.group,
         )
         technique_evidences = [
             evidence for evidence in evidences if evidence.tech_id is not None
         ]
-        conf_by_technique, level_by_technique = self._summarize_dimension(
+        conf_by_technique = self._summarize_dimension(
             evidences=technique_evidences,
             key_fn=lambda evidence: evidence.tech_id,
         )
@@ -157,8 +157,6 @@ class ProfilerService:
             attacker_key=attacker_key,
             conf_by_tactic=conf_by_tactic,
             conf_by_technique=conf_by_technique,
-            level_by_tactic=level_by_tactic,
-            level_by_technique=level_by_technique,
             recent_tactics=dedupe_preserve(
                 evidence.group
                 for evidence in recent_evidences
@@ -210,23 +208,21 @@ class ProfilerService:
         self,
         evidences: list[TechniqueEvidence],
         key_fn,
-    ) -> tuple[dict[str, float], dict[str, int]]:
+    ) -> dict[str, float]:
         # Reuse the same grouping logic for tactics and techniques.
         grouped: dict[str, list[TechniqueEvidence]] = defaultdict(list)
         for evidence in evidences:
             grouped[key_fn(evidence)].append(evidence)
 
         confidences: dict[str, float] = {}
-        levels: dict[str, int] = {}
         for key, items in grouped.items():
             count = len(items)
             avg_weight = sum(item.weight for item in items) / count
             # Log scaling dampens repeated noisy events.
             score = avg_weight * math.log1p(count)
             confidences[key] = round(1 - math.exp(-score), 4)
-            levels[key] = self._level_for_count(count)
 
-        return confidences, levels
+        return confidences
 
     def _priority_to_weight(self, priority: str) -> float:
         # Use Falco priority as a simple evidence weight.
@@ -357,14 +353,6 @@ class ProfilerService:
             if key in event.output_fields:
                 source_ref[key] = event.output_fields[key]
         return source_ref
-
-    def _level_for_count(self, count: int) -> int:
-        # Map repeated observations into a coarse level bucket.
-        if count >= self._config.level2_threshold:
-            return 3
-        if count >= 2:
-            return 2
-        return 1
 
     def _public_http_values(
         self,

@@ -107,6 +107,33 @@ h1 { font-size: 28px; font-weight: 700; }
   overflow: hidden;
 }
 
+.panel > summary.panel-header,
+.attacker-card > summary,
+.decision-block > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.panel > summary.panel-header::-webkit-details-marker,
+.attacker-card > summary::-webkit-details-marker,
+.decision-block > summary::-webkit-details-marker {
+  display: none;
+}
+
+.panel > summary.panel-header::after {
+  content: "Expand";
+  color: var(--muted);
+  font-size: 12px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.panel[open] > summary.panel-header::after {
+  content: "Collapse";
+}
+
 .panel-header {
   display: flex;
   justify-content: space-between;
@@ -199,19 +226,34 @@ th {
 }
 
 .attacker-card {
-  padding: 14px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(17, 26, 45, 0.9);
+  overflow: hidden;
 }
 
 .attacker-head {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  align-items: baseline;
-  margin-bottom: 10px;
+  align-items: center;
   flex-wrap: wrap;
+  padding: 14px;
+}
+
+.attacker-card[open] .attacker-head {
+  border-bottom: 1px solid rgba(39, 52, 77, 0.8);
+}
+
+.attacker-body {
+  padding: 4px 14px 14px;
+}
+
+.attacker-preview {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .attacker-meta {
@@ -228,6 +270,43 @@ th {
 }
 
 .kv .key { color: var(--muted); }
+
+.decision-kv {
+  align-items: start;
+}
+
+.decision-list {
+  display: grid;
+  gap: 8px;
+}
+
+.decision-block {
+  border: 1px solid rgba(123, 160, 221, 0.18);
+  background: rgba(9, 14, 24, 0.55);
+}
+
+.decision-meta,
+.decision-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.decision-meta {
+  margin-top: 0;
+  justify-content: space-between;
+  padding: 8px;
+}
+
+.decision-block[open] .decision-meta {
+  border-bottom: 1px solid rgba(123, 160, 221, 0.14);
+}
+
+.decision-block .decision-row {
+  padding: 0 8px 8px;
+}
 
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;

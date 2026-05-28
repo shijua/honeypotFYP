@@ -393,16 +393,33 @@ def _decision_summary(record: dict[str, Any]) -> dict[str, Any]:
     return {
         "ts": record.get("ts"),
         "recent_tactics": record.get("recent_tactics", []),
+        "recent_techniques": record.get("recent_techniques", []),
+        "recent_evidence_ids": record.get("recent_evidence_ids", []),
         "candidate_asset_ids": record.get("candidate_asset_ids", []),
+        "actions": [
+            _action_summary(action)
+            for action in actions
+            if isinstance(action, dict)
+        ],
         "action_asset_ids": [
             action.get("asset_id")
             for action in actions
             if isinstance(action, dict) and action.get("action_type") == "unlock"
         ],
+        "dropped_actions": [
+            _action_summary(action)
+            for action in dropped_actions
+            if isinstance(action, dict)
+        ],
         "dropped_action_asset_ids": [
             action.get("asset_id")
             for action in dropped_actions
             if isinstance(action, dict) and action.get("action_type") == "unlock"
+        ],
+        "decision_events": [
+            _decision_event_summary(event)
+            for event in decision_events
+            if isinstance(event, dict)
         ],
         "reasons": [
             event.get("reason")
@@ -411,6 +428,48 @@ def _decision_summary(record: dict[str, Any]) -> dict[str, Any]:
         ],
         "route_updates": record.get("route_updates", []),
         "runtime_events": record.get("runtime_events", []),
+    }
+
+
+def _action_summary(action: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "action_type": action.get("action_type"),
+        "asset_id": action.get("asset_id"),
+        "configuration_id": action.get("configuration_id"),
+        "target_asset_id": action.get("target_asset_id"),
+    }
+
+
+def _decision_event_summary(event: dict[str, Any]) -> dict[str, Any]:
+    """Keep only controller fields that explain why a reveal happened."""
+    details = event.get("details", {})
+    details = details if isinstance(details, dict) else {}
+    configuration = details.get("configuration_reveal", {})
+    configuration = configuration if isinstance(configuration, dict) else {}
+    eligible_assets = details.get("eligible_assets", [])
+    eligible_assets = eligible_assets if isinstance(eligible_assets, list) else []
+    rejected_assets = details.get("rejected_assets", {})
+    rejected_assets = rejected_assets if isinstance(rejected_assets, dict) else {}
+    matched_markers = details.get("matched_dependency_markers", [])
+    matched_markers = matched_markers if isinstance(matched_markers, list) else []
+    return {
+        "ts": event.get("ts"),
+        "decision_type": event.get("decision_type"),
+        "asset_id": event.get("asset_added"),
+        "reason": event.get("reason"),
+        "reveal_role": details.get("reveal_role"),
+        "strategy": details.get("selected_strategy") or details.get("strategy"),
+        "candidate_type": details.get("candidate_type"),
+        "selected_technique": details.get("selected_technique"),
+        "confidence_score": details.get("confidence_score"),
+        "recommendation_support": details.get("recommendation_support"),
+        "asset_group": details.get("asset_group"),
+        "configuration_id": configuration.get("configuration_id"),
+        "target_asset_id": configuration.get("target_asset_id"),
+        "eligible_asset_count": len(eligible_assets),
+        "rejected_asset_count": len(rejected_assets),
+        "matched_dependency_markers": matched_markers,
+        "prior_degraded": details.get("prior_degraded"),
     }
 
 

@@ -43,6 +43,53 @@ def test_ingest_maps_falco_event_into_attack_profile() -> None:
     assert response.profile.recent_techniques == ["T1003"]
 
 
+def test_event_priority_weights_profile_confidence() -> None:
+    info_service = ProfilerService(
+        InMemoryEvidenceRepository(),
+        InMemoryProfileRepository(),
+        build_test_attack_catalog(),
+    )
+    warning_service = ProfilerService(
+        InMemoryEvidenceRepository(),
+        InMemoryProfileRepository(),
+        build_test_attack_catalog(),
+    )
+
+    info_response = info_service.ingest(
+        EvidenceIngestRequest(
+            attacker_key="198.51.100.11",
+            binding_id="binding-info",
+            event=FalcoEvent(
+                ts=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                falco_rule="Read sensitive file",
+                priority="INFO",
+                output="Sensitive file read /etc/shadow",
+                tags=["mitre_credential_access", "T1003"],
+                output_fields={},
+            ),
+        )
+    )
+    warning_response = warning_service.ingest(
+        EvidenceIngestRequest(
+            attacker_key="198.51.100.12",
+            binding_id="binding-warning",
+            event=FalcoEvent(
+                ts=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                falco_rule="Read sensitive file",
+                priority="WARNING",
+                output="Sensitive file read /etc/shadow",
+                tags=["mitre_credential_access", "T1003"],
+                output_fields={},
+            ),
+        )
+    )
+
+    assert (
+        warning_response.profile.conf_by_technique["T1003"]
+        > info_response.profile.conf_by_technique["T1003"]
+    )
+
+
 def test_profile_recent_sequence_respects_time_window() -> None:
     service = ProfilerService(
         InMemoryEvidenceRepository(),

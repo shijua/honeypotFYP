@@ -193,7 +193,27 @@ def test_dashboard_summary_endpoint_returns_live_snapshot(
                     "ts": "2026-01-01T00:00:03Z",
                     "candidate_asset_ids": ["internal-portal"],
                     "actions": [{"action_type": "unlock", "asset_id": "internal-portal"}],
-                    "decision_events": [{"reason": "selected internal-portal"}],
+                    "decision_events": [
+                        {
+                            "ts": "2026-01-01T00:00:03Z",
+                            "decision_type": "unlock",
+                            "asset_added": "internal-portal",
+                            "reason": "exploit selected internal-portal via T1087",
+                            "details": {
+                                "selected_strategy": "exploit",
+                                "reveal_role": "main",
+                                "candidate_type": "observed",
+                                "selected_technique": "T1087",
+                                "confidence_score": 0.8,
+                                "recommendation_support": 0.3,
+                                "asset_group": "portal",
+                                "eligible_assets": ["internal-portal"],
+                                "rejected_assets": {"finance-share": "dependency not met"},
+                                "matched_dependency_markers": ["any_http_indicators:combined:.env"],
+                                "prior_degraded": None,
+                            },
+                        }
+                    ],
                 }
             ]
         },
@@ -421,6 +441,22 @@ def test_dashboard_summary_endpoint_returns_live_snapshot(
         "public_http_credential_discovery"
     ]
     assert payload["attackers"][0]["recent_public_http_indicators"] == ["combined:.env"]
+    decision = payload["attackers"][0]["decisions"][0]
+    assert decision["actions"] == [
+        {
+            "action_type": "unlock",
+            "asset_id": "internal-portal",
+            "configuration_id": None,
+            "target_asset_id": None,
+        }
+    ]
+    assert decision["decision_events"][0]["reveal_role"] == "main"
+    assert decision["decision_events"][0]["selected_technique"] == "T1087"
+    assert decision["decision_events"][0]["eligible_asset_count"] == 1
+    assert decision["decision_events"][0]["rejected_asset_count"] == 1
+    assert decision["decision_events"][0]["matched_dependency_markers"] == [
+        "any_http_indicators:combined:.env"
+    ]
     assert payload["metrics"]["healthy_chain_stages"] >= 6
     assert {
         stage["stage"]: stage["status"]

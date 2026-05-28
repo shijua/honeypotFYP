@@ -223,8 +223,6 @@ class ProfileSnapshot(VersionedModel):
     Field meaning:
     - conf_by_tactic: confidence score per ATT&CK tactic in the range [0, 1]
     - conf_by_technique: confidence score per ATT&CK technique in the range [0, 1]
-    - level_by_tactic: coarse repetition level per tactic, usually 1/2/3
-    - level_by_technique: coarse repetition level per technique, usually 1/2/3
     - recent_tactics: de-duplicated recent tactic chain within the short time window
     - recent_techniques: de-duplicated recent technique chain within the short time window
     - recent_evidence_ids: the most recent evidence ids used to explain decisions
@@ -243,8 +241,6 @@ class ProfileSnapshot(VersionedModel):
             "attacker_key": "198.51.100.10",
             "conf_by_tactic": {"Credential Access": 0.82, "Discovery": 0.41},
             "conf_by_technique": {"T1003": 0.82},
-            "level_by_tactic": {"Credential Access": 2, "Discovery": 1},
-            "level_by_technique": {"T1003": 2},
             "recent_tactics": ["Discovery", "Credential Access"],
             "recent_techniques": ["T1003"],
             "recent_evidence_ids": ["e-1", "e-2"],
@@ -260,8 +256,6 @@ class ProfileSnapshot(VersionedModel):
     attacker_key: str
     conf_by_tactic: Dict[str, float] = Field(default_factory=dict)
     conf_by_technique: Dict[str, float] = Field(default_factory=dict)
-    level_by_tactic: Dict[str, int] = Field(default_factory=dict)
-    level_by_technique: Dict[str, int] = Field(default_factory=dict)
     # Keep a short-term view for controller decisions.
     recent_tactics: List[str] = Field(default_factory=list)
     recent_techniques: List[str] = Field(default_factory=list)

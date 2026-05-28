@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Honeynet Dashboard</title>
-  <link rel="stylesheet" href="/static/dashboard.css">
+  <link rel="stylesheet" href="/static/dashboard.css?v=__STATIC_VERSION__">
 </head>
 <body data-refresh-seconds="__REFRESH_SECONDS__">
   <div class="page">
@@ -21,79 +21,79 @@
 
     <section class="metrics" id="metrics"></section>
 
-    <section class="panel full-width">
-      <div class="panel-header">
+    <details class="panel full-width" open>
+      <summary class="panel-header">
         <div>
           <h2>Pipeline Health</h2>
           <p class="subtle">Where the live telemetry path currently has data, from surface traffic through internal asset routing.</p>
         </div>
-      </div>
+      </summary>
       <div class="panel-body" id="health-panel"></div>
-    </section>
+    </details>
 
     <section class="grid">
-      <div class="panel">
-        <div class="panel-header">
+      <details class="panel">
+        <summary class="panel-header">
           <div>
             <h2>Containers And Ports</h2>
             <p class="subtle">Compose services plus dynamically opened runtime assets.</p>
           </div>
-        </div>
+        </summary>
         <div class="panel-body" id="containers-panel"></div>
-      </div>
-      <div class="panel">
-        <div class="panel-header">
+      </details>
+      <details class="panel">
+        <summary class="panel-header">
           <div>
             <h2>Bindings And Routes</h2>
             <p class="subtle">Current attacker bindings and what the gateway thinks is exposed.</p>
           </div>
-        </div>
+        </summary>
         <div class="panel-body" id="bindings-panel"></div>
-      </div>
+      </details>
     </section>
 
-    <section class="panel full-width">
-      <div class="panel-header">
+    <details class="panel full-width" open>
+      <summary class="panel-header">
         <div>
           <h2>Attacker Profiles</h2>
           <p class="subtle">Recent tactics, commands, decisions, current assets, and failures per attacker.</p>
         </div>
-      </div>
+      </summary>
       <div class="panel-body" id="attackers-panel"></div>
-    </section>
+    </details>
 
     <section class="grid">
-      <div class="panel">
-        <div class="panel-header">
+      <details class="panel">
+        <summary class="panel-header">
           <div>
             <h2>Recent Public HTTP Backend Requests</h2>
             <p class="subtle">Public portal breadcrumbs and direct HTTP probes captured by the website backend.</p>
           </div>
-        </div>
+        </summary>
         <div class="panel-body" id="entrypoint-panel"></div>
-      </div>
-      <div class="panel">
-        <div class="panel-header">
+      </details>
+      <details class="panel">
+        <summary class="panel-header">
           <div>
             <h2>Recent Cowrie Activity</h2>
             <p class="subtle">SSH login attempts and command input forwarded into the profiler path.</p>
           </div>
-        </div>
+        </summary>
         <div class="panel-body" id="cowrie-panel"></div>
-      </div>
+      </details>
     </section>
 
-    <section class="panel full-width">
-      <div class="panel-header">
+    <details class="panel full-width">
+      <summary class="panel-header">
         <div>
           <h2>Recent OpenCanary Activity</h2>
           <p class="subtle">Multi-protocol probes from OpenCanary-backed internal assets.</p>
         </div>
-      </div>
+      </summary>
       <div class="panel-body" id="opencanary-panel"></div>
-    </section>
+    </details>
   </div>
 
-  <script src="/static/dashboard.js"></script>
+  <script src="/static/dashboard.js?v=__STATIC_VERSION__"></script>
 </body>
 </html>

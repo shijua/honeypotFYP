@@ -1,4 +1,49 @@
 const refreshSeconds = Number(document.body.dataset.refreshSeconds || "3");
+const detailOpenState = new Map();
+let rendering = false;
+
+document.addEventListener("click", event => {
+  const summary = event.target.closest("summary");
+  if (!summary) {
+    return;
+  }
+  const detail = summary.parentElement;
+  if (!(detail instanceof HTMLDetailsElement)) {
+    return;
+  }
+  const key = detail.dataset.detailKey;
+  if (key) {
+    detailOpenState.set(key, !detail.open);
+  }
+}, true);
+
+document.addEventListener("toggle", event => {
+  if (rendering) {
+    return;
+  }
+  const detail = event.target;
+  if (!(detail instanceof HTMLDetailsElement)) {
+    return;
+  }
+  const key = detail.dataset.detailKey;
+  if (key) {
+    detailOpenState.set(key, detail.open);
+  }
+}, true);
+
+function syncDetailOpenState(root = document) {
+  root.querySelectorAll("details[data-detail-key]").forEach(detail => {
+    detailOpenState.set(detail.dataset.detailKey, detail.open);
+  });
+}
+
+function replacePanelHtml(elementId, html) {
+  syncDetailOpenState();
+  const element = document.getElementById(elementId);
+  rendering = true;
+  element.innerHTML = html;
+  rendering = false;
+}
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -14,6 +59,11 @@ function badgeList(items, className = "") {
     return '<span class="subtle">none</span>';
   }
   return items.map(item => `<span class="badge ${className}">${escapeHtml(item)}</span>`).join("");
+}
+
+function detailOpenAttribute(key, defaultOpen = false) {
+  const open = detailOpenState.has(key) ? detailOpenState.get(key) : defaultOpen;
+  return open ? " open" : "";
 }
 
 function renderGatewayAssets(exposed, failed) {
@@ -152,25 +202,97 @@ function renderAttackers(attackers) {
     return '<div class="empty">No attacker profile data yet.</div>';
   }
   return `<div class="attacker-list">
-    ${attackers.map(attacker => `
-      <article class="attacker-card">
-        <div class="attacker-head">
+    ${attackers.map(attacker => {
+      const attackerKey = `attacker:${attacker.attacker_key || "-"}`;
+      const runningAssets = (attacker.current_running_assets || []).map(asset => asset.asset_id || asset.asset_name || "asset");
+      const latestDecision = (attacker.decisions || []).slice(-1)[0] || {};
+      const latestDecisionEvents = latestDecision.decision_events || [];
+      const latestDecisionLabel = latestDecisionEvents.length
+        ? latestDecisionEvents.map(event => event.asset_id || event.selected_technique || "-").join(", ")
+        : (latestDecision.reasons || []).join(", ");
+      return `
+      <details class="attacker-card" data-detail-key="${escapeHtml(attackerKey)}"${detailOpenAttribute(attackerKey, true)}>
+        <summary class="attacker-head">
           <div>
             <h3 class="mono">${escapeHtml(attacker.attacker_key)}</h3>
-            <div class="attacker-meta">binding ${escapeHtml(attacker.binding_id || "-")}</div>
+            <div class="attacker-meta">binding ${escapeHtml(attacker.binding_id || "-")} | ${escapeHtml((attacker.recent_techniques || []).length)} techniques | ${escapeHtml((attacker.decisions || []).length)} decisions</div>
           </div>
-          <div>${badgeList((attacker.current_running_assets || []).map(asset => asset.asset_id || asset.asset_name || "asset"))}</div>
+          <div class="attacker-preview">
+            ${badgeList(runningAssets)}
+            ${latestDecisionLabel ? `<span class="badge warn">${escapeHtml(latestDecisionLabel)}</span>` : ""}
+          </div>
+        </summary>
+        <div class="attacker-body">
+          <div class="kv"><div class="key">Tactics</div><div>${badgeList(attacker.recent_tactics || [])}</div></div>
+          <div class="kv"><div class="key">Techniques</div><div>${badgeList(attacker.recent_techniques || [], "warn")}</div></div>
+          <div class="kv"><div class="key">Commands</div><div>${badgeList(attacker.commands || [])}</div></div>
+          <div class="kv"><div class="key">Recent HTTP Evidence</div><div>${badgeList(attacker.public_http_evidence || [])}</div></div>
+          <div class="kv"><div class="key">Recent Internal HTTP</div><div>${badgeList(attacker.internal_http_evidence || [])}</div></div>
+          <div class="kv"><div class="key">Unlocked</div><div>${badgeList(attacker.unlocked_assets || [])}</div></div>
+          <div class="kv"><div class="key">Running</div><div>${badgeList((attacker.current_running_assets || []).map(asset => `${asset.asset_id} ${asset.ports.join(", ")}`))}</div></div>
+          <div class="kv"><div class="key">Failed</div><div>${badgeList((attacker.failed_assets || []).map(asset => `${asset.asset_id} ${asset.failure_detail || asset.current_container_status || "failed"}`), "bad")}</div></div>
+          <div class="kv decision-kv"><div class="key">Decisions</div><div>${renderDecisions(attacker.decisions || [], attacker.attacker_key || "-")}</div></div>
         </div>
-        <div class="kv"><div class="key">Tactics</div><div>${badgeList(attacker.recent_tactics || [])}</div></div>
-        <div class="kv"><div class="key">Techniques</div><div>${badgeList(attacker.recent_techniques || [], "warn")}</div></div>
-        <div class="kv"><div class="key">Commands</div><div>${badgeList(attacker.commands || [])}</div></div>
-        <div class="kv"><div class="key">Recent HTTP Evidence</div><div>${badgeList(attacker.public_http_evidence || [])}</div></div>
-        <div class="kv"><div class="key">Recent Internal HTTP</div><div>${badgeList(attacker.internal_http_evidence || [])}</div></div>
-        <div class="kv"><div class="key">Unlocked</div><div>${badgeList(attacker.unlocked_assets || [])}</div></div>
-        <div class="kv"><div class="key">Running</div><div>${badgeList((attacker.current_running_assets || []).map(asset => `${asset.asset_id} ${asset.ports.join(", ")}`))}</div></div>
-        <div class="kv"><div class="key">Failed</div><div>${badgeList((attacker.failed_assets || []).map(asset => `${asset.asset_id} ${asset.failure_detail || asset.current_container_status || "failed"}`), "bad")}</div></div>
-      </article>
-    `).join("")}
+      </details>
+    `;
+    }).join("")}
+  </div>`;
+}
+
+function renderDecisions(decisions, attackerKey) {
+  if (!decisions.length) {
+    return '<span class="subtle">none</span>';
+  }
+  return `<div class="decision-list">
+    ${decisions.slice(-3).reverse().map(decision => renderDecision(decision, attackerKey)).join("")}
+  </div>`;
+}
+
+function renderDecision(decision, attackerKey) {
+  const events = decision.decision_events || [];
+  const eventRows = events.length
+    ? events.map(event => renderDecisionEvent(event)).join("")
+    : `<div class="decision-row">${badgeList(decision.reasons || [], "warn")}</div>`;
+  const actionLabels = (decision.actions || []).map(action => {
+    const target = action.configuration_id
+      ? `${action.asset_id}:${action.configuration_id}`
+      : action.asset_id;
+    return `${action.action_type || "action"} ${target || "-"}`;
+  });
+  const droppedLabels = (decision.dropped_actions || []).map(action => `${action.action_type || "action"} ${action.asset_id || "-"}`);
+  const summary = actionLabels.length ? actionLabels.join(", ") : (decision.reasons || []).join(", ") || "decision";
+  const detailKey = `decision:${attackerKey}:${decision.ts || "-"}:${actionLabels.join("|")}`;
+  return `<details class="decision-block" data-detail-key="${escapeHtml(detailKey)}"${detailOpenAttribute(detailKey, true)}>
+    <summary class="decision-meta">
+      <span class="mono">${escapeHtml(decision.ts || "-")}</span>
+      <span class="subtle">${escapeHtml(summary)}</span>
+      <span>${badgeList(decision.recent_techniques || [], "warn")}</span>
+    </summary>
+    ${eventRows}
+    <div class="decision-row subtle">actions ${badgeList(actionLabels)} dropped ${badgeList(droppedLabels, "bad")}</div>
+  </details>`;
+}
+
+function renderDecisionEvent(event) {
+  const support = event.recommendation_support === null || event.recommendation_support === undefined
+    ? "-"
+    : Number(event.recommendation_support).toFixed(2);
+  const confidence = event.confidence_score === null || event.confidence_score === undefined
+    ? "-"
+    : Number(event.confidence_score).toFixed(2);
+  const target = event.configuration_id
+    ? `${event.asset_id}:${event.configuration_id}`
+    : event.asset_id || "-";
+  const labels = [
+    event.candidate_type,
+    event.selected_technique,
+    target,
+  ].filter(Boolean);
+  const counts = `eligible ${event.eligible_asset_count ?? 0}, rejected ${event.rejected_asset_count ?? 0}, support ${support}, conf ${confidence}`;
+  return `<div class="decision-row">
+    <div>${badgeList(labels)}</div>
+    <div class="subtle">${escapeHtml(counts)}</div>
+    <div class="subtle">${badgeList(event.matched_dependency_markers || [])}</div>
   </div>`;
 }
 
@@ -201,16 +323,16 @@ async function loadData() {
   renderMetrics(data);
   const healthPanel = document.getElementById("health-panel");
   if (healthPanel) {
-    healthPanel.innerHTML = renderHealth(data.chain_health || []);
+    replacePanelHtml("health-panel", renderHealth(data.chain_health || []));
   }
-  document.getElementById("containers-panel").innerHTML = renderContainerTable(data.containers || []);
-  document.getElementById("bindings-panel").innerHTML = renderBindings(
-    data.bindings || [],
-    data.gateway_routes || [],
-    data.asset_gateway_routes || [],
-  );
-  document.getElementById("attackers-panel").innerHTML = renderAttackers(data.attackers || []);
-  document.getElementById("entrypoint-panel").innerHTML = renderObservationTable(
+  replacePanelHtml("containers-panel", renderContainerTable(data.containers || []));
+  replacePanelHtml("bindings-panel", renderBindings(
+      data.bindings || [],
+      data.gateway_routes || [],
+      data.asset_gateway_routes || [],
+  ));
+  replacePanelHtml("attackers-panel", renderAttackers(data.attackers || []));
+  replacePanelHtml("entrypoint-panel", renderObservationTable(
     data.recent_entrypoint_observations || [],
     [
       { label: "Time", value: row => row.ts || row.timestamp || "-", mono: true },
@@ -221,8 +343,8 @@ async function loadData() {
       { label: "Evidence", value: row => (row.indicators || []).join(", ") || "-" },
       { label: "Status", value: row => row.response_status ?? "-" },
     ],
-  );
-  document.getElementById("cowrie-panel").innerHTML = renderObservationTable(
+  ));
+  replacePanelHtml("cowrie-panel", renderObservationTable(
     data.recent_cowrie_observations || [],
     [
       { label: "Time", value: row => row.ts || row.timestamp || "-", mono: true },
@@ -231,8 +353,8 @@ async function loadData() {
       { label: "Command", value: row => row.command || "-" },
       { label: "Session", value: row => row.session || "-", mono: true },
     ],
-  );
-  document.getElementById("opencanary-panel").innerHTML = renderObservationTable(
+  ));
+  replacePanelHtml("opencanary-panel", renderObservationTable(
     data.recent_opencanary_observations || [],
     [
       { label: "Time", value: row => row.ts || row.utc_time || "-", mono: true },
@@ -242,7 +364,7 @@ async function loadData() {
       { label: "User", value: row => row.username || "-" },
       { label: "Password", value: row => row.password_seen ? "seen" : "-" },
     ],
-  );
+  ));
   document.getElementById("refresh-label").textContent = `Updated ${new Date(data.generated_at).toLocaleTimeString()} | every ${refreshSeconds}s`;
 }
 
