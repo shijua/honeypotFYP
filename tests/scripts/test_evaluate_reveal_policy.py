@@ -5,7 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from scripts.evaluation.charts import write_reveal_policy_chart
+from libs.common.config import RuntimeConfig
+from scripts.evaluation.charts import write_hypothesis_posterior_chart, write_reveal_policy_chart
 from scripts.evaluation.reveal_policy import evaluate_reveal_policies, load_scenarios
 
 
@@ -93,6 +94,32 @@ def test_reveal_policy_evaluator_compares_baselines(tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
+    hypothesis = tmp_path / "hypothesis.json"
+    hypothesis.write_text(
+        json.dumps(
+            {
+                "schema_version": "v1",
+                "selected_k": 2,
+                "hypotheses": [
+                    {
+                        "hypothesis_id": "hypothesis-finance",
+                        "label": "finance",
+                        "groups": [],
+                        "top_techniques": [],
+                        "likelihoods": {"T1552.001": 0.7, "T1005": 0.8, "T1046": 0.4, "T1190": 0.2},
+                    },
+                    {
+                        "hypothesis_id": "hypothesis-web",
+                        "label": "web",
+                        "groups": [],
+                        "top_techniques": [],
+                        "likelihoods": {"T1552.001": 0.3, "T1005": 0.2, "T1046": 0.7, "T1190": 0.6},
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
     scenarios = tmp_path / "scenarios.jsonl"
     scenarios.write_text(
         "\n".join(
@@ -158,6 +185,7 @@ def test_reveal_policy_evaluator_compares_baselines(tmp_path: Path) -> None:
         scenario_file=scenarios,
         catalog_path=catalog,
         prior_path=prior,
+        hypothesis_model_path=hypothesis,
     )
 
     assert report["ok"] is True
@@ -168,6 +196,7 @@ def test_reveal_policy_evaluator_compares_baselines(tmp_path: Path) -> None:
         "gate-only",
         "top-recommendation",
         "controller",
+        "hypothesis-testing",
     }
     assert report["policies"]["controller"]["reveal_correctness"] == 1.0
     assert report["policies"]["controller"]["decision_trace_completeness_rate"] == 1.0
@@ -181,6 +210,7 @@ def test_reveal_policy_evaluator_compares_baselines(tmp_path: Path) -> None:
     assert report["policies"]["passive"]["avg_opened_assets"] == 0
     assert report["policies"]["top-recommendation"]["reveal_correctness"] == 1.0
     assert report["policies"]["random-eligible"]["scenario_count"] == 3
+    assert report["policies"]["hypothesis-testing"]["scenario_count"] == 3
     assert report["policies"]["all-open"]["hidden_violation_rate"] > 0
     assert report["policies"]["all-open"]["irrelevant_reveal_rate"] > 0
     assert report["policies"]["all-open"]["unexpected_reveal_count"] > 0
@@ -190,6 +220,10 @@ def test_reveal_policy_evaluator_compares_baselines(tmp_path: Path) -> None:
     chart = chart_path.read_text(encoding="utf-8")
     assert chart.startswith("<?xml") or chart.startswith("<svg")
     assert "Reveal Policy Comparison" in chart
+
+    posterior_chart_path = tmp_path / "posterior.svg"
+    write_hypothesis_posterior_chart(report, posterior_chart_path)
+    assert posterior_chart_path.exists()
 
 
 def test_reveal_policy_loader_skips_comments(tmp_path: Path) -> None:
@@ -307,3 +341,114 @@ def test_reveal_policy_reports_trace_level_choice_signals(tmp_path: Path) -> Non
         "mixed": 1,
         "unresolved": 1,
     }
+
+
+def test_reveal_policy_replays_hypothesis_testing_posterior_prefixes(tmp_path: Path) -> None:
+    catalog = tmp_path / "catalog.json"
+    catalog.write_text(
+        json.dumps(
+            [
+                {
+                    "asset_id": "credential-cache",
+                    "asset_name": "Credential Cache",
+                    "exposure_type": "internal",
+                    "interaction_level": "medium",
+                    "covers_tactics": ["Credential Access"],
+                    "dependencies": [],
+                    "default_settings": {
+                        "selection_profile": {
+                            "asset_group": "credential-store",
+                            "covered_techniques": ["T1552.001"],
+                            "telemetry_value": 0.5,
+                        }
+                    },
+                },
+                {
+                    "asset_id": "payload-sink",
+                    "asset_name": "Payload Sink",
+                    "exposure_type": "internal",
+                    "interaction_level": "medium",
+                    "covers_tactics": ["Command and Control"],
+                    "dependencies": [],
+                    "default_settings": {
+                        "selection_profile": {
+                            "asset_group": "payload-transfer",
+                            "covered_techniques": ["T1105"],
+                            "telemetry_value": 0.8,
+                        }
+                    },
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+    prior = tmp_path / "prior.json"
+    prior.write_text(
+        json.dumps({"schema_version": "v1", "method": "attack_group_collaborative_filtering", "groups": []}),
+        encoding="utf-8",
+    )
+    hypothesis = tmp_path / "hypothesis.json"
+    hypothesis.write_text(
+        json.dumps(
+            {
+                "schema_version": "v1",
+                "selected_k": 2,
+                "hypotheses": [
+                    {
+                        "hypothesis_id": "hypothesis-credential",
+                        "label": "credential",
+                        "groups": [],
+                        "top_techniques": [],
+                        "likelihoods": {"T1046": 0.5, "T1552.001": 0.8, "T1105": 0.2},
+                    },
+                    {
+                        "hypothesis_id": "hypothesis-transfer",
+                        "label": "transfer",
+                        "groups": [],
+                        "top_techniques": [],
+                        "likelihoods": {"T1046": 0.5, "T1552.001": 0.2, "T1105": 0.9},
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    scenarios = tmp_path / "scenarios.json"
+    scenarios.write_text(
+        json.dumps(
+            [
+                {
+                    "scenario_id": "sequential-diagnostic",
+                    "expected_hypothesis_id": "hypothesis-credential",
+                    "evidence_sequence": [
+                        {"evidence_id": "e1", "technique": "T1046", "tactic": "Discovery"},
+                        {"evidence_id": "e2", "technique": "T1552.001", "tactic": "Credential Access"},
+                    ],
+                    "expected_reasonable_assets": ["payload-sink"],
+                    "expected_hidden_assets": [],
+                    "useful_followup_assets": ["payload-sink"],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    report = evaluate_reveal_policies(
+        scenario_file=scenarios,
+        catalog_path=catalog,
+        prior_path=prior,
+        hypothesis_model_path=hypothesis,
+        policies=("hypothesis-testing",),
+        config=RuntimeConfig(hypothesis_convergence_threshold=0.99),
+    )
+
+    aggregate = report["policies"]["hypothesis-testing"]
+    row = aggregate["rows"][0]
+    assert row["opened_assets"] == ["payload-sink"]
+    assert len(row["posterior_trajectory"]) == 2
+    assert row["posterior_trajectory"][0]["top_hypothesis_id"] == "hypothesis-credential"
+    assert row["posterior_trajectory"][1]["top_hypothesis_id"] == "hypothesis-credential"
+    assert row["expected_hypothesis_id"] == "hypothesis-credential"
+    assert row["final_hypothesis_accuracy"] is True
+    assert aggregate["final_hypothesis_accuracy_rate"] == 1.0
+    assert aggregate["posterior_shift_per_reveal_avg"] is not None

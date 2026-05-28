@@ -9,6 +9,7 @@ from libs.contracts.models import AssetDefinition, ControllerTickRequest, Profil
 from services.controller.domain import ControllerService
 from tests.support.inmemory_repositories import (
     InMemoryAssetRepository,
+    InMemoryHypothesisRepository,
     InMemoryTechniquePriorRepository,
 )
 
@@ -256,6 +257,161 @@ def test_tick_scores_parent_and_subtechnique_family_matches() -> None:
     details = response.decision_events[0].details
     assert details["technique_match_type"] == "family"
     assert details["matched_profile_technique"] == "T1552"
+
+
+def test_hypothesis_testing_selects_highest_discriminative_candidate() -> None:
+    assets = [
+        _asset("collection", ["T1005"], telemetry_value=0.4),
+        _asset("transfer", ["T1105"], telemetry_value=0.3),
+    ]
+    service = ControllerService(
+        InMemoryAssetRepository(assets),
+        InMemoryTechniquePriorRepository(),
+        hypothesis_repository=InMemoryHypothesisRepository(
+            {
+                "hypothesis-a": {"T1005": 0.6, "T1105": 0.9},
+                "hypothesis-b": {"T1005": 0.4, "T1105": 0.1},
+            }
+        ),
+        config=RuntimeConfig(
+            controller_policy_mode="hypothesis-testing",
+            hypothesis_convergence_threshold=0.95,
+        ),
+    )
+
+    response = service.tick(
+        ControllerTickRequest(
+            attacker_key="198.51.100.40",
+            binding_id="binding-hypothesis",
+            profile=ProfileSnapshot(
+                attacker_key="198.51.100.40",
+                recent_evidence_ids=["e-h"],
+            ),
+        )
+    )
+
+    assert response.actions[0].asset_id == "transfer"
+    details = response.decision_events[0].details
+    assert details["selected_strategy"] == "hypothesis-testing"
+    assert details["discriminative_score"] == 0.8
+    assert details["hypothesis_posterior"] == {"hypothesis-a": 0.5, "hypothesis-b": 0.5}
+
+
+def test_hypothesis_testing_does_not_bypass_dependency_gate() -> None:
+    assets = [
+        _asset("collection", ["T1005"], telemetry_value=0.4),
+        _asset("transfer", ["T1105"], telemetry_value=0.3, dependencies=["missing"]),
+    ]
+    service = ControllerService(
+        InMemoryAssetRepository(assets),
+        InMemoryTechniquePriorRepository(),
+        hypothesis_repository=InMemoryHypothesisRepository(
+            {
+                "hypothesis-a": {"T1005": 0.6, "T1105": 0.9},
+                "hypothesis-b": {"T1005": 0.4, "T1105": 0.1},
+            }
+        ),
+        config=RuntimeConfig(
+            controller_policy_mode="hypothesis-testing",
+            hypothesis_convergence_threshold=0.95,
+        ),
+    )
+
+    response = service.tick(
+        ControllerTickRequest(
+            attacker_key="198.51.100.41",
+            binding_id="binding-hypothesis-gate",
+            profile=ProfileSnapshot(
+                attacker_key="198.51.100.41",
+                recent_evidence_ids=["e-h"],
+            ),
+        )
+    )
+
+    assert response.actions[0].asset_id == "collection"
+    assert response.decision_events[0].details["rejected_assets"]["transfer"].startswith("missing dependencies")
+
+
+def test_hypothesis_testing_stops_after_posterior_converges() -> None:
+    service = ControllerService(
+        InMemoryAssetRepository([_asset("transfer", ["T1105"])]),
+        InMemoryTechniquePriorRepository(),
+        hypothesis_repository=InMemoryHypothesisRepository(
+            {
+                "hypothesis-a": {"T1005": 0.9, "T1105": 0.2},
+                "hypothesis-b": {"T1005": 0.1, "T1105": 0.8},
+            }
+        ),
+        config=RuntimeConfig(controller_policy_mode="hypothesis-testing"),
+    )
+
+    response = service.tick(
+        ControllerTickRequest(
+            attacker_key="198.51.100.42",
+            binding_id="binding-hypothesis-stop",
+            profile=ProfileSnapshot(
+                attacker_key="198.51.100.42",
+                conf_by_technique={"T1005": 0.9},
+                recent_techniques=["T1005"],
+                recent_evidence_ids=["e-h"],
+            ),
+        )
+    )
+
+    assert response.actions[0].action_type == "noop"
+    assert response.decision_events[0].details["stop_reason"] == "posterior_converged"
+
+
+def test_hypothesis_testing_stops_when_candidates_are_not_discriminative() -> None:
+    service = ControllerService(
+        InMemoryAssetRepository([_asset("collection", ["T1005"])]),
+        InMemoryTechniquePriorRepository(),
+        hypothesis_repository=InMemoryHypothesisRepository(
+            {
+                "hypothesis-a": {"T1005": 0.51},
+                "hypothesis-b": {"T1005": 0.5},
+            }
+        ),
+        config=RuntimeConfig(controller_policy_mode="hypothesis-testing"),
+    )
+
+    response = service.tick(
+        ControllerTickRequest(
+            attacker_key="198.51.100.43",
+            binding_id="binding-hypothesis-low",
+            profile=ProfileSnapshot(
+                attacker_key="198.51.100.43",
+                recent_evidence_ids=["e-h"],
+            ),
+        )
+    )
+
+    assert response.actions[0].action_type == "noop"
+    assert response.decision_events[0].details["stop_reason"] == "low_discriminative_score"
+
+
+def _asset(
+    asset_id: str,
+    covered_techniques: list[str],
+    *,
+    telemetry_value: float = 0.5,
+    dependencies: list[str] | None = None,
+) -> AssetDefinition:
+    return AssetDefinition(
+        asset_id=asset_id,
+        asset_name=asset_id,
+        exposure_type="internal",
+        interaction_level="medium",
+        covers_tactics=["Discovery"],
+        dependencies=dependencies or [],
+        default_settings={
+            "selection_profile": {
+                "asset_group": "test",
+                "covered_techniques": covered_techniques,
+                "telemetry_value": telemetry_value,
+            }
+        },
+    )
 
 
 def test_tick_reveals_follow_on_configuration_for_open_asset() -> None:

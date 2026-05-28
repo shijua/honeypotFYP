@@ -19,6 +19,7 @@ import argparse
 import json
 import random
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Literal
 
@@ -29,9 +30,13 @@ if str(ROOT_DIR) not in sys.path:
 from libs.common.config import RuntimeConfig
 from libs.common.iterables import dedupe_preserve
 from libs.contracts.models import AssetDefinition, ControllerTickRequest, ProfileSnapshot
-from scripts.evaluation.charts import write_reveal_policy_chart
+from scripts.evaluation.charts import write_hypothesis_posterior_chart, write_reveal_policy_chart
 from services.controller.domain import ControllerService
-from services.controller.repository import FileAssetRepository, FileAttackGroupTechniquePriorRepository
+from services.controller.repository import (
+    FileAssetRepository,
+    FileAttackGroupTechniquePriorRepository,
+    FileAttackHypothesisRepository,
+)
 
 PolicyName = Literal[
     "passive",
@@ -40,6 +45,7 @@ PolicyName = Literal[
     "gate-only",
     "top-recommendation",
     "controller",
+    "hypothesis-testing",
 ]
 ALL_POLICIES: tuple[PolicyName, ...] = (
     "passive",
@@ -48,6 +54,7 @@ ALL_POLICIES: tuple[PolicyName, ...] = (
     "gate-only",
     "top-recommendation",
     "controller",
+    "hypothesis-testing",
 )
 TRACE_KEYS = {
     "selected_strategy",
@@ -74,6 +81,7 @@ def main() -> int:
     parser.add_argument("scenario_file", type=Path, help="JSON array or JSONL scenarios with profiles or evidence_sequence records.")
     parser.add_argument("--catalog", type=Path, default=Path("data/assets/catalog.json"))
     parser.add_argument("--prior", type=Path, default=Path("data/technique_prior/attack_group_technique_prior.json"))
+    parser.add_argument("--hypothesis-model", type=Path, default=Path("data/technique_prior/attack_hypothesis_model.json"))
     parser.add_argument("--policy", choices=(*ALL_POLICIES, "all"), default="all")
     parser.add_argument("--output", type=Path, help="Optional JSON output path.")
     args = parser.parse_args()
@@ -83,6 +91,7 @@ def main() -> int:
         scenario_file=args.scenario_file,
         catalog_path=args.catalog,
         prior_path=args.prior,
+        hypothesis_model_path=args.hypothesis_model,
         policies=policies,
     )
     text = json.dumps(report, indent=2, sort_keys=True)
@@ -90,6 +99,7 @@ def main() -> int:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(f"{text}\n", encoding="utf-8")
         write_reveal_policy_chart(report, args.output.with_suffix(".svg"))
+        write_hypothesis_posterior_chart(report, args.output.with_name(f"{args.output.stem}_posterior.svg"))
     else:
         print(text)
     return 0 if report["ok"] else 1
@@ -100,6 +110,7 @@ def evaluate_reveal_policies(
     scenario_file: Path,
     catalog_path: Path,
     prior_path: Path,
+    hypothesis_model_path: Path | None = None,
     policies: tuple[PolicyName, ...] = ALL_POLICIES,
     config: RuntimeConfig | None = None,
 ) -> dict[str, Any]:
@@ -111,12 +122,14 @@ def evaluate_reveal_policies(
     scenarios = load_scenarios(scenario_file)
     assets = list(FileAssetRepository(catalog_path).list_all())
     base_config = config or RuntimeConfig()
+    model_path = hypothesis_model_path or Path(base_config.attack_hypothesis_model_path)
     report = {
         "schema_version": "v1",
         "ok": bool(scenarios),
         "scenario_count": len(scenarios),
         "catalog": str(catalog_path),
         "prior": str(prior_path),
+        "hypothesis_model": str(model_path),
         "policies": {},
     }
     for policy in policies:
@@ -126,6 +139,7 @@ def evaluate_reveal_policies(
                 assets=assets,
                 catalog_path=catalog_path,
                 prior_path=prior_path,
+                hypothesis_model_path=model_path,
                 policy=policy,
                 config=base_config,
             )
@@ -189,6 +203,7 @@ def evaluate_scenario(
     assets: list[AssetDefinition],
     catalog_path: Path,
     prior_path: Path,
+    hypothesis_model_path: Path,
     policy: PolicyName,
     config: RuntimeConfig,
 ) -> dict[str, Any]:
@@ -218,6 +233,14 @@ def evaluate_scenario(
             config=config,
         )
         reveal_actions = _unlock_action_summaries(opened_assets)
+    elif policy == "hypothesis-testing":
+        opened_assets, reveal_actions, decision_events = _hypothesis_testing_reveals(
+            scenario,
+            catalog_path=catalog_path,
+            prior_path=prior_path,
+            hypothesis_model_path=hypothesis_model_path,
+            config=config,
+        )
     else:
         response = ControllerService(
             FileAssetRepository(catalog_path),
@@ -258,6 +281,14 @@ def evaluate_scenario(
     )
     gate_opened, _gate_events = _gate_only_reveals(assets, request)
     prior_influenced = policy == "controller" and opened_assets != gate_opened
+    hypothesis_metrics = _hypothesis_metrics(
+        scenario=scenario,
+        policy=policy,
+        decision_events=decision_events,
+        reveal_actions=reveal_actions,
+        hypothesis_model_path=hypothesis_model_path,
+        convergence_threshold=config.hypothesis_convergence_threshold,
+    )
     main_reveals, explore_reveals = _reveals_by_role(decision_events)
     touched_declared = isinstance(scenario.get("touched_assets"), list)
     touched_assets = string_list(scenario.get("touched_assets"))
@@ -294,6 +325,7 @@ def evaluate_scenario(
         "profile_to_reveal_latency_ticks": 1 if opened_assets else None,
         "decision_trace_complete": _decision_trace_complete(decision_events) if decision_events else policy == "all-open",
         "decision_events": decision_events,
+        **hypothesis_metrics,
     }
 
 
@@ -655,6 +687,78 @@ def _top_recommendation_reveals(
     ]
 
 
+def _hypothesis_testing_reveals(
+    scenario: dict[str, Any],
+    *,
+    catalog_path: Path,
+    prior_path: Path,
+    hypothesis_model_path: Path,
+    config: RuntimeConfig,
+) -> tuple[list[str], list[dict[str, str]], list[dict[str, Any]]]:
+    """Replay a scenario as sequential diagnostic-test ticks.
+
+    When a scenario supplies an evidence sequence, each prefix is treated as a
+    decision point so the report can show posterior movement over time.
+    """
+    events = scenario.get("evidence_sequence")
+    if isinstance(events, list) and events:
+        prefixes = [events[: index + 1] for index in range(len(events))]
+    else:
+        prefixes = [None]
+
+    unlocked_assets = string_list(scenario.get("initial_unlocked_assets"))
+    revealed_configurations = _revealed_configurations(scenario.get("revealed_configurations"))
+    opened_assets: list[str] = []
+    reveal_actions: list[dict[str, str]] = []
+    decision_events: list[dict[str, Any]] = []
+    policy_config = replace(config, controller_policy_mode="hypothesis-testing")
+
+    for step_index, prefix in enumerate(prefixes, start=1):
+        tick_scenario = dict(scenario)
+        tick_scenario["initial_unlocked_assets"] = list(unlocked_assets)
+        tick_scenario["revealed_configurations"] = {
+            asset_id: list(config_ids)
+            for asset_id, config_ids in revealed_configurations.items()
+        }
+        if prefix is not None:
+            tick_scenario.pop("profile", None)
+            tick_scenario["evidence_sequence"] = prefix
+        request = scenario_request(tick_scenario)
+        response = ControllerService(
+            FileAssetRepository(catalog_path),
+            FileAttackGroupTechniquePriorRepository(prior_path),
+            hypothesis_repository=FileAttackHypothesisRepository(hypothesis_model_path),
+            config=policy_config,
+        ).tick(request)
+        step_events = [event.model_dump(mode="json") for event in response.decision_events]
+        for event in step_events:
+            details = event.get("details")
+            if isinstance(details, dict):
+                details["replay_step"] = step_index
+        decision_events.extend(step_events)
+
+        for action in response.actions:
+            action_type = getattr(getattr(action, "action_type", None), "value", getattr(action, "action_type", None))
+            asset_id = getattr(action, "asset_id", None)
+            if action_type == "unlock" and isinstance(asset_id, str):
+                unlocked_assets = dedupe_preserve([*unlocked_assets, asset_id])
+            if action_type == "configure" and isinstance(asset_id, str):
+                configuration_id = getattr(action, "configuration_id", None)
+                if isinstance(configuration_id, str):
+                    revealed_configurations.setdefault(asset_id, [])
+                    revealed_configurations[asset_id] = dedupe_preserve(
+                        [*revealed_configurations[asset_id], configuration_id]
+                    )
+                target_asset_id = getattr(action, "target_asset_id", None)
+                if isinstance(target_asset_id, str):
+                    unlocked_assets = dedupe_preserve([*unlocked_assets, target_asset_id])
+        step_opened = _controller_opened_assets(response.actions)
+        opened_assets = dedupe_preserve([*opened_assets, *step_opened])
+        reveal_actions.extend(_controller_reveal_actions(response.actions))
+
+    return opened_assets, reveal_actions, decision_events
+
+
 def _asset_dependency_ready(asset: AssetDefinition, request: ControllerTickRequest) -> bool:
     return (
         asset.exposure_type == "internal"
@@ -690,6 +794,178 @@ def _asset_unlock_signals_match(asset: AssetDefinition, request: ControllerTickR
         if required and observed.get(key, set()).intersection(required):
             return True
     return False
+
+
+def _hypothesis_metrics(
+    *,
+    scenario: dict[str, Any],
+    policy: PolicyName,
+    decision_events: list[dict[str, Any]],
+    reveal_actions: list[dict[str, str]],
+    hypothesis_model_path: Path,
+    convergence_threshold: float,
+) -> dict[str, Any]:
+    """Return posterior/reveal diagnostic metrics for hypothesis-testing rows."""
+    if policy != "hypothesis-testing":
+        return {
+            "posterior_trajectory": [],
+            "reveals_to_convergence": None,
+            "final_hypothesis_accuracy": None,
+            "diagnostic_reveal_ratio": None,
+            "unnecessary_reveal_count_after_convergence": None,
+            "posterior_shift_per_reveal": None,
+            "expected_hypothesis_id": None,
+        }
+
+    trajectory = _posterior_trajectory(decision_events)
+    expected_hypothesis_id = _expected_hypothesis_id(scenario, hypothesis_model_path)
+    final_hypothesis_id = trajectory[-1]["top_hypothesis_id"] if trajectory else None
+    convergence_step = _convergence_step(trajectory, convergence_threshold)
+    reveal_steps = [
+        int(item["step"])
+        for item in trajectory
+        if isinstance(item.get("asset_added"), str)
+    ]
+    reveals_to_convergence = (
+        sum(1 for step in reveal_steps if step <= convergence_step)
+        if convergence_step is not None
+        else None
+    )
+    unnecessary_reveals = (
+        sum(1 for step in reveal_steps if step > convergence_step)
+        if convergence_step is not None
+        else 0
+    )
+    diagnostic_ratio, shift_per_reveal = _posterior_reveal_shift_metrics(trajectory)
+    return {
+        "posterior_trajectory": trajectory,
+        "reveals_to_convergence": reveals_to_convergence,
+        "final_hypothesis_accuracy": (
+            final_hypothesis_id == expected_hypothesis_id
+            if final_hypothesis_id and expected_hypothesis_id
+            else None
+        ),
+        "diagnostic_reveal_ratio": diagnostic_ratio,
+        "unnecessary_reveal_count_after_convergence": unnecessary_reveals,
+        "posterior_shift_per_reveal": shift_per_reveal,
+        "expected_hypothesis_id": expected_hypothesis_id,
+        "reveal_action_count": len(reveal_actions),
+    }
+
+
+def _posterior_trajectory(decision_events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Extract compact posterior points from controller decision events."""
+    trajectory: list[dict[str, Any]] = []
+    for fallback_step, event in enumerate(decision_events, start=1):
+        details = event.get("details")
+        if not isinstance(details, dict):
+            continue
+        posterior = details.get("hypothesis_posterior")
+        if not isinstance(posterior, dict):
+            continue
+        clean_posterior = {
+            str(hypothesis_id): round(float(probability), 6)
+            for hypothesis_id, probability in posterior.items()
+            if isinstance(probability, (int, float))
+        }
+        top_hypothesis_id = max(clean_posterior, key=clean_posterior.get, default=None)
+        trajectory.append(
+            {
+                "step": int(details.get("replay_step") or fallback_step),
+                "posterior": clean_posterior,
+                "top_hypothesis_id": top_hypothesis_id,
+                "max_posterior": round(max(clean_posterior.values(), default=0.0), 6),
+                "top_hypotheses": details.get("top_hypotheses", []),
+                "asset_added": event.get("asset_added"),
+                "stop_reason": details.get("stop_reason"),
+            }
+        )
+    return trajectory
+
+
+def _expected_hypothesis_id(scenario: dict[str, Any], hypothesis_model_path: Path) -> str | None:
+    """Choose the hypothesis that best matches expected or observed scenario techniques."""
+    explicit = scenario.get("expected_hypothesis_id")
+    if isinstance(explicit, str) and explicit:
+        return explicit
+    techniques = string_list(scenario.get("expected_hypothesis_techniques")) or _scenario_techniques(scenario)
+    if not techniques:
+        return None
+    try:
+        payload = json.loads(hypothesis_model_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    best_id: str | None = None
+    best_score = -1.0
+    for hypothesis in payload.get("hypotheses", []):
+        if not isinstance(hypothesis, dict):
+            continue
+        hypothesis_id = hypothesis.get("hypothesis_id")
+        likelihoods = hypothesis.get("likelihoods")
+        if not isinstance(hypothesis_id, str) or not isinstance(likelihoods, dict):
+            continue
+        score = sum(float(likelihoods.get(technique, 0.0) or 0.0) for technique in techniques) / len(techniques)
+        if score > best_score:
+            best_id = hypothesis_id
+            best_score = score
+    return best_id
+
+
+def _scenario_techniques(scenario: dict[str, Any]) -> list[str]:
+    """Collect ATT&CK techniques from a scenario's expected and observed fields."""
+    techniques: list[str] = []
+    events = scenario.get("evidence_sequence")
+    if isinstance(events, list):
+        techniques.extend(_values([event for event in events if isinstance(event, dict)], "technique", "tech_id"))
+    profile = scenario.get("profile")
+    if isinstance(profile, dict):
+        techniques.extend(string_list(profile.get("recent_techniques")))
+        conf = profile.get("conf_by_technique")
+        if isinstance(conf, dict):
+            techniques.extend([key for key in conf if isinstance(key, str)])
+    return dedupe_preserve(techniques)
+
+
+def _convergence_step(trajectory: list[dict[str, Any]], threshold: float) -> int | None:
+    """Return the first replay step where the posterior is considered converged."""
+    for item in trajectory:
+        if float(item.get("max_posterior", 0.0) or 0.0) >= threshold:
+            return int(item["step"])
+        if item.get("stop_reason") == "posterior_converged":
+            return int(item["step"])
+    return None
+
+
+def _posterior_reveal_shift_metrics(trajectory: list[dict[str, Any]]) -> tuple[float | None, float | None]:
+    """Measure whether reveal decisions occurred at posterior-changing steps."""
+    reveal_shift_count = 0
+    total_shift = 0.0
+    reveal_count = 0
+    previous: dict[str, float] | None = None
+    previous_top: str | None = None
+    for item in trajectory:
+        posterior = item.get("posterior")
+        if not isinstance(posterior, dict):
+            continue
+        clean = {str(key): float(value) for key, value in posterior.items() if isinstance(value, (int, float))}
+        current_top = item.get("top_hypothesis_id") if isinstance(item.get("top_hypothesis_id"), str) else None
+        if isinstance(item.get("asset_added"), str):
+            reveal_count += 1
+            shift = _posterior_distance(previous or clean, clean)
+            total_shift += shift
+            if shift >= 0.1 or (previous_top is not None and current_top != previous_top):
+                reveal_shift_count += 1
+        previous = clean
+        previous_top = current_top
+    if reveal_count == 0:
+        return None, None
+    return _ratio(reveal_shift_count, reveal_count), round(total_shift / reveal_count, 6)
+
+
+def _posterior_distance(left: dict[str, float], right: dict[str, float]) -> float:
+    """Return total-variation distance between two posterior distributions."""
+    keys = set(left) | set(right)
+    return 0.5 * sum(abs(float(left.get(key, 0.0)) - float(right.get(key, 0.0))) for key in keys)
 
 
 def _decision_trace_complete(decision_events: list[dict[str, Any]]) -> bool:
@@ -737,6 +1013,31 @@ def _aggregate_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
         for row in rows
         if row["profile_to_reveal_latency_ticks"] is not None
     ]
+    reveals_to_convergence = [
+        int(row["reveals_to_convergence"])
+        for row in rows
+        if isinstance(row.get("reveals_to_convergence"), int)
+    ]
+    final_hypothesis_accuracy = [
+        bool(row["final_hypothesis_accuracy"])
+        for row in rows
+        if isinstance(row.get("final_hypothesis_accuracy"), bool)
+    ]
+    diagnostic_reveal_ratios = [
+        float(row["diagnostic_reveal_ratio"])
+        for row in rows
+        if row.get("diagnostic_reveal_ratio") is not None
+    ]
+    posterior_shift_per_reveal = [
+        float(row["posterior_shift_per_reveal"])
+        for row in rows
+        if row.get("posterior_shift_per_reveal") is not None
+    ]
+    unnecessary_after_convergence = sum(
+        int(row["unnecessary_reveal_count_after_convergence"])
+        for row in rows
+        if isinstance(row.get("unnecessary_reveal_count_after_convergence"), int)
+    )
     return {
         "scenario_count": len(rows),
         "opened_asset_count": opened,
@@ -775,6 +1076,26 @@ def _aggregate_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
             len(rows),
         ),
         "profile_to_reveal_latency_ticks_avg": sum(latencies) / len(latencies) if latencies else None,
+        "reveals_to_convergence_avg": (
+            round(sum(reveals_to_convergence) / len(reveals_to_convergence), 6)
+            if reveals_to_convergence
+            else None
+        ),
+        "final_hypothesis_accuracy_rate": _ratio(
+            sum(1 for value in final_hypothesis_accuracy if value),
+            len(final_hypothesis_accuracy),
+        ),
+        "diagnostic_reveal_ratio_avg": (
+            round(sum(diagnostic_reveal_ratios) / len(diagnostic_reveal_ratios), 6)
+            if diagnostic_reveal_ratios
+            else None
+        ),
+        "unnecessary_reveal_count_after_convergence": unnecessary_after_convergence,
+        "posterior_shift_per_reveal_avg": (
+            round(sum(posterior_shift_per_reveal) / len(posterior_shift_per_reveal), 6)
+            if posterior_shift_per_reveal
+            else None
+        ),
         "rows": rows,
     }
 

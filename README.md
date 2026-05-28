@@ -39,11 +39,14 @@ python3.10 -m venv .venv
 .venv/bin/python scripts/data/build_attack_group_prior.py \
   --stix data/mitre/enterprise-attack.json \
   --output data/technique_prior/attack_group_technique_prior.json
+.venv/bin/python scripts/data/build_attack_hypothesis_model.py \
+  --stix data/mitre/enterprise-attack.json \
+  --output data/technique_prior/attack_hypothesis_model.json
 .venv/bin/python scripts/validation/attack_group_prior.py \
   --path data/technique_prior/attack_group_technique_prior.json
 ```
 
-The generated prior at `data/technique_prior/attack_group_technique_prior.json` is local state and ignored by git. Raw public validation datasets, if used, belong under ignored `vendor/datasets/`.
+The generated prior files under `data/technique_prior/` are local state and ignored by git. Raw public validation datasets, if used, belong under ignored `vendor/datasets/`.
 
 ## Fast Checks
 

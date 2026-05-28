@@ -127,6 +127,57 @@ def write_runtime_latency_chart(report: dict[str, Any], path: Path) -> None:
     _save_chart(fig, path)
 
 
+def write_hypothesis_posterior_chart(report: dict[str, Any], path: Path) -> None:
+    """Write posterior trajectory charts for hypothesis-testing replay rows."""
+    policy = report.get("policies", {}).get("hypothesis-testing")
+    if not isinstance(policy, dict):
+        return
+    rows = [
+        row
+        for row in policy.get("rows", [])
+        if isinstance(row, dict) and row.get("posterior_trajectory")
+    ]
+    if not rows:
+        return
+
+    plt = _pyplot()
+    row_count = len(rows)
+    fig, axes = plt.subplots(
+        row_count,
+        1,
+        figsize=(11, max(3.0, 2.3 * row_count)),
+        squeeze=False,
+    )
+    for axis, row in zip([item[0] for item in axes], rows):
+        trajectory = [item for item in row.get("posterior_trajectory", []) if isinstance(item, dict)]
+        hypothesis_ids = sorted(
+            {
+                hypothesis_id
+                for item in trajectory
+                for hypothesis_id in (item.get("posterior") or {}).keys()
+            }
+        )
+        steps = [int(item.get("step", index + 1) or index + 1) for index, item in enumerate(trajectory)]
+        for hypothesis_id in hypothesis_ids:
+            values = [
+                float((item.get("posterior") or {}).get(hypothesis_id, 0.0) or 0.0)
+                for item in trajectory
+            ]
+            axis.plot(steps, values, marker="o", linewidth=1.8, label=hypothesis_id)
+        axis.set_ylim(0, 1)
+        min_step = min(steps or [1])
+        max_step = max(steps or [1])
+        axis.set_xlim(min_step - 0.5, max_step + 0.5)
+        axis.set_ylabel("P(h|E)")
+        axis.set_title(str(row.get("scenario_id", "scenario")), loc="left", fontsize=10)
+        axis.grid(axis="y", color="#e5e7eb")
+        if len(hypothesis_ids) <= 6:
+            axis.legend(loc="upper right", fontsize=7, ncols=min(3, max(1, len(hypothesis_ids))))
+    axes[-1][0].set_xlabel("Decision point")
+    fig.suptitle("Hypothesis Posterior Trajectory")
+    _save_chart(fig, path)
+
+
 def _pyplot():
     os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
     import matplotlib

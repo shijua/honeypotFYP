@@ -11,11 +11,14 @@ The active runtime prior is generated from local Enterprise ATT&CK STIX group-te
 .venv/bin/python scripts/data/build_attack_group_prior.py \
   --stix data/mitre/enterprise-attack.json \
   --output data/technique_prior/attack_group_technique_prior.json
+.venv/bin/python scripts/data/build_attack_hypothesis_model.py \
+  --stix data/mitre/enterprise-attack.json \
+  --output data/technique_prior/attack_hypothesis_model.json
 .venv/bin/python scripts/validation/attack_group_prior.py \
   --path data/technique_prior/attack_group_technique_prior.json
 ```
 
-Expected: validation exits `0` and reports a non-empty group/technique prior. If the prior is missing, services can still start, but recommendation-based evaluation should be treated as degraded.
+Expected: validation exits `0` and reports a non-empty group/technique prior; the hypothesis builder reports the selected distance metric, cluster count, and silhouette score. By default the hypothesis builder runs the fastest diagnostic clustering experiment: it filters the ATT&CK matrix to technique families covered by the catalog, tries both cosine and Jaccard distance, and selects the best metric/k by silhouette. If either derived file is missing, services can still start in the default controller mode, but recommendation-based or hypothesis-testing evaluation should be treated as degraded.
 
 ## 1. Prior Recommendation Quality
 
@@ -56,6 +59,7 @@ This is the main correctness evaluation. It replays the scenario file against mu
 ```
 
 This also writes `/tmp/reveal_policy_report.svg`, a compact visual comparison of policy metrics. The SVG path is always the JSON output path with a `.svg` suffix.
+When `hypothesis-testing` is included, this also writes `/tmp/reveal_policy_report_posterior.svg`, which plots the posterior distribution over attacker-behavior hypotheses across replay decision points.
 
 Policies compared:
 
@@ -65,6 +69,7 @@ Policies compared:
 - `gate-only`: dependency gate without technique prior ranking.
 - `top-recommendation`: strongest prior recommendation only.
 - `controller`: current controller policy.
+- `hypothesis-testing`: sequential Bayesian attacker-type posterior plus dependency-gated discriminative reveal selection.
 
 For the controller row, check:
 
@@ -83,10 +88,17 @@ For the controller row, check:
 - `prior_influence_rate`: how often the group prior influenced selection.
 - `decision_trace_completeness`: decision details include the required audit fields.
 
+For the `hypothesis-testing` row, additionally check:
+
+- `final_hypothesis_accuracy_rate`: final top hypothesis matches the scenario's explicit expected hypothesis or the hypothesis with highest likelihood overlap against the scenario techniques.
+- `diagnostic_reveal_ratio_avg`: share of hypothesis-testing reveals occurring at posterior-changing decision points.
+- `posterior_shift_per_reveal_avg`: average total-variation shift in posterior distribution at reveal points.
+- `unnecessary_reveal_count_after_convergence`: reveals emitted after the posterior had already converged.
+
 Quick summary:
 
 ```bash
-jq '{ok: .ok, controller: (.policies.controller | {scenario_count, reveal_correctness, irrelevant_reveal_rate, hidden_violation_rate, correct_no_reveal_rate, avg_opened_assets, useful_evidence_per_reveal, diagnostic_or_useful_per_reveal, prior_influence_rate, decision_trace_completeness_rate, expected_reveal_match_rate, unexpected_reveal_action_rate, strict_expected_reveal_match_rate, choice_signal_count, resolved_choice_rate, choice_signal_counts})}' /tmp/reveal_policy_report.json
+jq '{ok: .ok, controller: (.policies.controller | {scenario_count, reveal_correctness, irrelevant_reveal_rate, hidden_violation_rate, correct_no_reveal_rate, avg_opened_assets, useful_evidence_per_reveal, diagnostic_or_useful_per_reveal, prior_influence_rate, decision_trace_completeness_rate, expected_reveal_match_rate, unexpected_reveal_action_rate, strict_expected_reveal_match_rate, choice_signal_count, resolved_choice_rate, choice_signal_counts}), hypothesis_testing: (.policies["hypothesis-testing"] | {final_hypothesis_accuracy_rate, diagnostic_reveal_ratio_avg, posterior_shift_per_reveal_avg, unnecessary_reveal_count_after_convergence})}' /tmp/reveal_policy_report.json
 ```
 
 Expected: no hidden violations, no missing expected reveal actions, no unexpected reveal actions, and no-reveal scenarios pass. A failed `ok` with non-zero `unexpected_reveal_count` means the controller opened or configured more than the scenario allowed, even if the asset-level reveal still looked reasonable.

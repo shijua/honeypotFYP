@@ -25,9 +25,13 @@ class RuntimeConfig:
     state_dir: str = "data/runtime"
     asset_catalog_path: str = "data/assets/catalog.json"
     attack_group_prior_path: str = "data/technique_prior/attack_group_technique_prior.json"
+    attack_hypothesis_model_path: str = "data/technique_prior/attack_hypothesis_model.json"
+    controller_policy_mode: str = "cf-gated"
     recommendation_top_k: int = 40
     recommendation_support_threshold: float = 0.15
     strong_technique_threshold: float = 0.5
+    hypothesis_convergence_threshold: float = 0.8
+    hypothesis_min_discriminative_score: float = 0.05
     feedback_window_seconds: int = 300
     reveal_feedback_path: str = "data/runtime/reveal_feedback.json"
     cowrie_event_mapping_path: str = "data/cowrie/event_mappings.json"
@@ -80,6 +84,14 @@ class RuntimeConfig:
             "HONEYPOT_ATTACK_GROUP_PRIOR_PATH",
             config.attack_group_prior_path,
         )
+        config.attack_hypothesis_model_path = os.getenv(
+            "HONEYPOT_ATTACK_HYPOTHESIS_MODEL_PATH",
+            config.attack_hypothesis_model_path,
+        )
+        config.controller_policy_mode = os.getenv(
+            "HONEYPOT_CONTROLLER_POLICY_MODE",
+            config.controller_policy_mode,
+        )
         config.recommendation_top_k = _env_int(
             "HONEYPOT_RECOMMENDATION_TOP_K",
             config.recommendation_top_k,
@@ -91,6 +103,14 @@ class RuntimeConfig:
         config.strong_technique_threshold = _env_float(
             "HONEYPOT_STRONG_TECHNIQUE_THRESHOLD",
             config.strong_technique_threshold,
+        )
+        config.hypothesis_convergence_threshold = _env_float(
+            "HONEYPOT_HYPOTHESIS_CONVERGENCE_THRESHOLD",
+            config.hypothesis_convergence_threshold,
+        )
+        config.hypothesis_min_discriminative_score = _env_float(
+            "HONEYPOT_HYPOTHESIS_MIN_DISCRIMINATIVE_SCORE",
+            config.hypothesis_min_discriminative_score,
         )
         config.feedback_window_seconds = _env_int(
             "HONEYPOT_FEEDBACK_WINDOW_SECONDS",

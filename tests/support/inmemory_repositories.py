@@ -22,6 +22,7 @@ from libs.contracts.models import (
     ProfileSnapshot,
     TechniqueEvidence,
 )
+from services.controller.repository import HypothesisPosterior
 
 
 ObservationT = TypeVar("ObservationT")
@@ -291,6 +292,78 @@ class InMemoryTechniquePriorRepository:
                 key=lambda item: (-item[1], item[0]),
             )[:top_k]
         )
+
+
+class InMemoryHypothesisRepository:
+    """Small deterministic hypothesis posterior model for controller tests."""
+
+    def __init__(
+        self,
+        likelihoods_by_hypothesis: dict[str, dict[str, float]] | None = None,
+        *,
+        degraded_reason: str | None = None,
+    ) -> None:
+        self._likelihoods = likelihoods_by_hypothesis or {
+            "hypothesis-a": {"T1005": 0.8, "T1105": 0.2},
+            "hypothesis-b": {"T1005": 0.2, "T1105": 0.8},
+        }
+        self._degraded_reason = degraded_reason
+
+    @property
+    def degraded_reason(self) -> str | None:
+        return self._degraded_reason
+
+    def posterior(self, observed_techniques: set[str]) -> HypothesisPosterior:
+        if self._degraded_reason is not None:
+            return HypothesisPosterior(
+                posterior={},
+                top_hypotheses=[],
+                likelihoods_by_hypothesis={},
+                skipped_techniques=tuple(sorted(observed_techniques)),
+                degraded_reason=self._degraded_reason,
+            )
+        raw_scores = {
+            hypothesis_id: _product_likelihood(likelihoods, observed_techniques)
+            for hypothesis_id, likelihoods in self._likelihoods.items()
+        }
+        denominator = sum(raw_scores.values()) or 1.0
+        posterior = {
+            hypothesis_id: round(score / denominator, 6)
+            for hypothesis_id, score in raw_scores.items()
+        }
+        top_hypotheses = [
+            {
+                "hypothesis_id": hypothesis_id,
+                "label": hypothesis_id,
+                "probability": probability,
+                "top_techniques": [
+                    {"technique": technique, "likelihood": value}
+                    for technique, value in sorted(
+                        self._likelihoods[hypothesis_id].items(),
+                        key=lambda item: (-item[1], item[0]),
+                    )
+                ],
+            }
+            for hypothesis_id, probability in sorted(
+                posterior.items(),
+                key=lambda item: (-item[1], item[0]),
+            )
+        ]
+        known = {technique for likelihoods in self._likelihoods.values() for technique in likelihoods}
+        return HypothesisPosterior(
+            posterior=dict(sorted(posterior.items())),
+            top_hypotheses=top_hypotheses,
+            likelihoods_by_hypothesis=self._likelihoods,
+            skipped_techniques=tuple(sorted(observed_techniques - known)),
+            degraded_reason=None,
+        )
+
+
+def _product_likelihood(likelihoods: dict[str, float], observed_techniques: set[str]) -> float:
+    score = 1.0
+    for technique in observed_techniques:
+        score *= max(float(likelihoods.get(technique, 1e-6)), 1e-6)
+    return score
 
 
 class InMemoryTemplateRuntimeRepository:

@@ -28,6 +28,8 @@ from libs.contracts.models import (
 )
 from services.controller.repository import (
     AssetRepository,
+    HypothesisPosterior,
+    HypothesisRepository,
     TechniquePriorRepository,
 )
 
@@ -49,6 +51,7 @@ class CandidateScore:
     recommendation_support: float
     profile_technique_value: float
     telemetry_value: float
+    discriminative_score: float = 0.0
     matched_dependency_marker_count: int = 0
     repeat_count: int = 0
     technique_match_type: str = "none"
@@ -151,10 +154,12 @@ class ControllerService:
         self,
         asset_repository: AssetRepository,
         technique_prior_repository: TechniquePriorRepository,
+        hypothesis_repository: HypothesisRepository | None = None,
         config: RuntimeConfig | None = None,
     ) -> None:
         self._asset_repository = asset_repository
         self._technique_prior_repository = technique_prior_repository
+        self._hypothesis_repository = hypothesis_repository
         self._config = config or RuntimeConfig()
 
     def tick(self, request: ControllerTickRequest) -> ControllerTickResponse:
@@ -167,6 +172,8 @@ class ControllerService:
                 actions=[unlock internal-portal] when the bootstrap gate is satisfied.
         """
         assets = request.assets or list(self._asset_repository.list_all())
+        if self._config.controller_policy_mode == "hypothesis-testing":
+            return self._tick_hypothesis_testing(request, assets)
         planned_unlocked_asset_ids = list(request.unlocked_asset_ids)
         actions: list[ControllerAction] = []
         decisions: list[DecisionEvent] = []
@@ -239,6 +246,119 @@ class ControllerService:
             actions=actions,
             decision_events=decisions,
             candidate_asset_ids=self._candidate_asset_ids(considered),
+        )
+
+    def _tick_hypothesis_testing(
+        self,
+        request: ControllerTickRequest,
+        assets: list[AssetDefinition],
+    ) -> ControllerTickResponse:
+        """Run one sequential diagnostic-test reveal decision.
+
+        This policy asks "which eligible asset best separates the two most
+        likely attacker-behavior hypotheses?" rather than "which technique is
+        most likely next?".
+        """
+        rejected: dict[str, str] = {}
+        strong_observed = self._strong_observed_techniques(request.profile)
+        posterior = self._hypothesis_posterior(strong_observed)
+        options = self._reveal_options(
+            assets,
+            request,
+            planned_unlocked_asset_ids=list(request.unlocked_asset_ids),
+            rejected=rejected,
+        )
+        candidates = [
+            candidate
+            for option in options
+            if (
+                candidate := self._score_hypothesis_option(
+                    option,
+                    request,
+                    strong_observed=strong_observed,
+                    posterior=posterior,
+                )
+            )
+            is not None
+        ]
+
+        posterior_trace = _posterior_trace(posterior)
+        if _scanner_only_profile(request.profile):
+            return self._noop_response(
+                request=request,
+                reason="no_reveal: scanner-like traffic without follow-up context",
+                candidate_asset_ids=self._candidate_asset_ids(candidates),
+                rejected=rejected,
+                extra_details={
+                    "selected_strategy": "hypothesis-testing",
+                    **posterior_trace,
+                },
+            )
+        if posterior.degraded_reason is not None or len(posterior.top_hypotheses) < 2:
+            return self._noop_response(
+                request=request,
+                reason="no_reveal: hypothesis model unavailable or under-specified",
+                candidate_asset_ids=self._candidate_asset_ids(candidates),
+                rejected=rejected,
+                extra_details={
+                    "selected_strategy": "hypothesis-testing",
+                    "stop_reason": "hypothesis model unavailable or under-specified",
+                    **posterior_trace,
+                },
+            )
+
+        max_probability = _max_posterior_probability(posterior)
+        selected = min(candidates, key=_hypothesis_candidate_order_key) if candidates else None
+        best_score = selected.discriminative_score if selected is not None else 0.0
+        candidate_scores = _hypothesis_candidate_scores(candidates)
+        if max_probability >= self._config.hypothesis_convergence_threshold:
+            return self._noop_response(
+                request=request,
+                reason="no_reveal: hypothesis posterior converged",
+                candidate_asset_ids=self._candidate_asset_ids(candidates),
+                rejected=rejected,
+                extra_details={
+                    "selected_strategy": "hypothesis-testing",
+                    "stop_reason": "posterior_converged",
+                    "best_discriminative_score": round(best_score, 4),
+                    "candidate_discriminative_scores": candidate_scores,
+                    **posterior_trace,
+                },
+            )
+        if selected is None or best_score < self._config.hypothesis_min_discriminative_score:
+            return self._noop_response(
+                request=request,
+                reason="no_reveal: no discriminative eligible reveal",
+                candidate_asset_ids=self._candidate_asset_ids(candidates),
+                rejected=rejected,
+                extra_details={
+                    "selected_strategy": "hypothesis-testing",
+                    "stop_reason": "low_discriminative_score",
+                    "best_discriminative_score": round(best_score, 4),
+                    "candidate_discriminative_scores": candidate_scores,
+                    **posterior_trace,
+                },
+            )
+
+        action = self._build_action(request.binding_id, selected)
+        decision = self._build_decision_event(
+            request,
+            selected,
+            rejected,
+            eligible_asset_ids=self._candidate_asset_ids(candidates),
+        )
+        decision.details.update(
+            {
+                "candidate_discriminative_scores": candidate_scores,
+                "best_discriminative_score": round(best_score, 4),
+                **posterior_trace,
+            }
+        )
+        return ControllerTickResponse(
+            binding_id=request.binding_id,
+            actions=[action],
+            decision_events=[decision],
+            candidate_asset_ids=self._candidate_asset_ids(candidates),
         )
 
     def _reveal_options(
@@ -512,6 +632,61 @@ class ControllerService:
             configuration=option.configuration,
         )
 
+    def _hypothesis_posterior(self, strong_observed: set[str]) -> HypothesisPosterior:
+        if self._hypothesis_repository is None:
+            return HypothesisPosterior(
+                posterior={},
+                top_hypotheses=[],
+                likelihoods_by_hypothesis={},
+                skipped_techniques=tuple(sorted(strong_observed)),
+                degraded_reason="hypothesis repository not configured",
+            )
+        return self._hypothesis_repository.posterior(strong_observed)
+
+    def _score_hypothesis_option(
+        self,
+        option: RevealOption,
+        request: ControllerTickRequest,
+        *,
+        strong_observed: set[str],
+        posterior: HypothesisPosterior,
+    ) -> CandidateScore | None:
+        """Score one reveal option by top-2 hypothesis separation."""
+        if not option.covered_techniques or len(posterior.top_hypotheses) < 2:
+            return None
+        score, selected_technique = _discriminative_score(
+            option.covered_techniques,
+            strong_observed,
+            posterior,
+        )
+        if selected_technique is None:
+            selected_technique = option.covered_techniques[0]
+        matched_markers = list(option.matched_dependency_markers)
+        return CandidateScore(
+            asset=option.asset,
+            strategy="hypothesis-testing",
+            candidate_type=option.candidate_type_override or "hypothesis-test",
+            selected_technique=selected_technique,
+            technique_signal_score=round(score, 4),
+            confidence_score=round(float(request.profile.conf_by_technique.get(selected_technique, 0.0)), 4),
+            recommendation_support=0.0,
+            profile_technique_value=round(score, 4),
+            discriminative_score=round(score, 4),
+            telemetry_value=round(option.telemetry_value, 4),
+            matched_dependency_marker_count=len(matched_markers),
+            repeat_count=_repeat_count(request.profile.recent_techniques, selected_technique),
+            technique_match_type="hypothesis_likelihood",
+            matched_dependency_markers=tuple(matched_markers),
+            asset_group=option.asset_group,
+            covered_techniques=option.covered_techniques,
+            action_type=option.action_type,
+            configuration_id=option.configuration_id,
+            configuration_kind=option.configuration_kind,
+            target_asset_id=option.target_asset_id,
+            configuration=option.configuration,
+            upgrade_context=option.upgrade_context,
+        )
+
     def _technique_candidate_parts(
         self,
         technique: str,
@@ -726,6 +901,7 @@ class ControllerService:
             "confidence_score": candidate.confidence_score,
             "recommendation_support": candidate.recommendation_support,
             "profile_technique_value": candidate.profile_technique_value,
+            "discriminative_score": candidate.discriminative_score,
             "technique_match_type": candidate.technique_match_type,
             "matched_profile_technique": candidate.matched_profile_technique,
             "matched_recommended_technique": candidate.matched_prior_technique,
@@ -775,7 +951,16 @@ class ControllerService:
         reason: str,
         candidate_asset_ids: list[str] | None = None,
         rejected: dict[str, str] | None = None,
+        extra_details: dict[str, Any] | None = None,
     ) -> ControllerTickResponse:
+        details = {
+            "prior_degraded": self._technique_prior_repository.degraded_reason,
+            "reveal_action": "no_reveal",
+            "no_reveal_reason": reason,
+            "rejected_assets": rejected or {},
+        }
+        if extra_details:
+            details.update(extra_details)
         return ControllerTickResponse(
             binding_id=request.binding_id,
             actions=[
@@ -792,12 +977,7 @@ class ControllerService:
                     decision_type=DecisionType.noop,
                     reason=reason,
                     trigger_evidence_ids=request.profile.recent_evidence_ids,
-                    details={
-                        "prior_degraded": self._technique_prior_repository.degraded_reason,
-                        "reveal_action": "no_reveal",
-                        "no_reveal_reason": reason,
-                        "rejected_assets": rejected or {},
-                    },
+                    details=details,
                 )
             ],
             candidate_asset_ids=candidate_asset_ids or [],
@@ -874,6 +1054,7 @@ def _controller_ordering_details(candidate: CandidateScore) -> dict[str, Any]:
     """
     return {
         "candidate_type_rank": _candidate_priority_rank(candidate),
+        "discriminative_score": candidate.discriminative_score,
         "profile_technique_value": candidate.profile_technique_value,
         "technique_signal_score": candidate.technique_signal_score,
         "telemetry_value": candidate.telemetry_value,
@@ -906,6 +1087,74 @@ def _candidate_order_key(
         candidate.repeat_count,
         _candidate_exposed_asset_id(candidate),
     )
+
+
+def _hypothesis_candidate_order_key(
+    candidate: CandidateScore,
+) -> tuple[float, float, int, int, str]:
+    """Sort key for hypothesis-testing candidate ordering."""
+    return (
+        -candidate.discriminative_score,
+        -candidate.telemetry_value,
+        -candidate.matched_dependency_marker_count,
+        candidate.repeat_count,
+        _candidate_exposed_asset_id(candidate),
+    )
+
+
+def _discriminative_score(
+    covered_techniques: tuple[str, ...],
+    strong_observed: set[str],
+    posterior: HypothesisPosterior,
+) -> tuple[float, str | None]:
+    """Return top-2 likelihood separation for unobserved covered techniques."""
+    if len(posterior.top_hypotheses) < 2:
+        return 0.0, None
+    left_id = str(posterior.top_hypotheses[0]["hypothesis_id"])
+    right_id = str(posterior.top_hypotheses[1]["hypothesis_id"])
+    left = posterior.likelihoods_by_hypothesis.get(left_id, {})
+    right = posterior.likelihoods_by_hypothesis.get(right_id, {})
+    total = 0.0
+    selected_technique: str | None = None
+    selected_delta = -1.0
+    for technique in covered_techniques:
+        if technique in strong_observed:
+            continue
+        delta = abs(float(left.get(technique, 0.0)) - float(right.get(technique, 0.0)))
+        total += delta
+        if delta > selected_delta:
+            selected_delta = delta
+            selected_technique = technique
+    return total, selected_technique
+
+
+def _posterior_trace(posterior: HypothesisPosterior) -> dict[str, Any]:
+    """Return decision-trace fields for a hypothesis posterior."""
+    return {
+        "hypothesis_posterior": posterior.posterior,
+        "top_hypotheses": posterior.top_hypotheses[:2],
+        "skipped_hypothesis_techniques": list(posterior.skipped_techniques),
+        "hypothesis_degraded": posterior.degraded_reason,
+    }
+
+
+def _max_posterior_probability(posterior: HypothesisPosterior) -> float:
+    return max(posterior.posterior.values(), default=0.0)
+
+
+def _hypothesis_candidate_scores(candidates: list[CandidateScore]) -> list[dict[str, Any]]:
+    return [
+        {
+            "asset_id": _candidate_exposed_asset_id(candidate),
+            "source_asset_id": candidate.asset.asset_id,
+            "action_type": candidate.action_type.value,
+            "configuration_id": candidate.configuration_id,
+            "selected_technique": candidate.selected_technique,
+            "discriminative_score": candidate.discriminative_score,
+            "covered_techniques": list(candidate.covered_techniques),
+        }
+        for candidate in sorted(candidates, key=_hypothesis_candidate_order_key)
+    ]
 
 
 def _candidate_exposed_asset_id(candidate: CandidateScore) -> str:

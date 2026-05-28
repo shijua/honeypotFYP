@@ -8,7 +8,9 @@ The controller consumes two durable inputs:
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import dataclass
 import json
+import math
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -50,6 +52,30 @@ class TechniquePriorRepository(Protocol):
         support_threshold: float,
     ) -> dict[str, float]:
         """Return supported not-yet-observed techniques from the top-k similar groups."""
+        ...
+
+
+@dataclass(frozen=True)
+class HypothesisPosterior:
+    """Posterior distribution over ATT&CK-derived behavior hypotheses."""
+
+    posterior: dict[str, float]
+    top_hypotheses: list[dict[str, Any]]
+    likelihoods_by_hypothesis: dict[str, dict[str, float]]
+    skipped_techniques: tuple[str, ...] = ()
+    degraded_reason: str | None = None
+
+
+class HypothesisRepository(Protocol):
+    """Lookup contract for data-driven ATT&CK behavior hypotheses."""
+
+    @property
+    def degraded_reason(self) -> str | None:
+        """Return why the model is unavailable, or None when healthy."""
+        ...
+
+    def posterior(self, observed_techniques: set[str]) -> HypothesisPosterior:
+        """Return normalized P(hypothesis | observed techniques)."""
         ...
 
 
@@ -176,6 +202,119 @@ class FileAttackGroupTechniquePriorRepository:
             if isinstance(group, dict)
         ]
         self._degraded_reason = None if self._groups else "attack group prior has no usable groups"
+
+
+class FileAttackHypothesisRepository:
+    """File-backed Bayesian hypothesis model built from ATT&CK group clusters."""
+
+    def __init__(self, path: str | Path) -> None:
+        self._path = Path(path)
+        self._hypotheses: list[dict[str, Any]] = []
+        self._likelihoods: dict[str, dict[str, float]] = {}
+        self._techniques: set[str] = set()
+        self._degraded_reason: str | None = None
+        self._load()
+
+    @property
+    def degraded_reason(self) -> str | None:
+        return self._degraded_reason
+
+    def posterior(self, observed_techniques: set[str]) -> HypothesisPosterior:
+        """Return a sequential Naive Bayes posterior for observed techniques.
+
+        Example:
+            observed={"T1190"} returns normalized hypothesis probabilities
+            proportional to P(T1190 | h) under a uniform prior.
+        """
+        if self._degraded_reason is not None or not self._hypotheses:
+            return HypothesisPosterior(
+                posterior={},
+                top_hypotheses=[],
+                likelihoods_by_hypothesis={},
+                skipped_techniques=tuple(sorted(observed_techniques)),
+                degraded_reason=self._degraded_reason or "hypothesis model unavailable",
+            )
+
+        observed = {item for item in observed_techniques if item}
+        usable_observed = sorted(observed & self._techniques)
+        skipped = tuple(sorted(observed - self._techniques))
+        prior_log = -math.log(len(self._hypotheses))
+        log_scores: dict[str, float] = {}
+        for hypothesis in self._hypotheses:
+            hypothesis_id = str(hypothesis["hypothesis_id"])
+            likelihoods = self._likelihoods[hypothesis_id]
+            log_score = prior_log
+            for technique in usable_observed:
+                log_score += math.log(max(float(likelihoods.get(technique, 0.0)), 1e-12))
+            log_scores[hypothesis_id] = log_score
+
+        max_log = max(log_scores.values())
+        exp_scores = {
+            hypothesis_id: math.exp(score - max_log)
+            for hypothesis_id, score in log_scores.items()
+        }
+        denominator = sum(exp_scores.values()) or 1.0
+        posterior = {
+            hypothesis_id: round(value / denominator, 6)
+            for hypothesis_id, value in exp_scores.items()
+        }
+        top_hypotheses = [
+            {
+                "hypothesis_id": str(hypothesis["hypothesis_id"]),
+                "label": str(hypothesis.get("label") or hypothesis["hypothesis_id"]),
+                "probability": posterior[str(hypothesis["hypothesis_id"])],
+                "top_techniques": hypothesis.get("top_techniques", []),
+            }
+            for hypothesis in sorted(
+                self._hypotheses,
+                key=lambda item: (-posterior[str(item["hypothesis_id"])], str(item["hypothesis_id"])),
+            )
+        ]
+        return HypothesisPosterior(
+            posterior=dict(sorted(posterior.items())),
+            top_hypotheses=top_hypotheses,
+            likelihoods_by_hypothesis=self._likelihoods,
+            skipped_techniques=skipped,
+            degraded_reason=None,
+        )
+
+    def _load(self) -> None:
+        if not self._path.exists():
+            self._degraded_reason = f"attack hypothesis model file missing: {self._path}"
+            return
+        try:
+            payload = json.loads(self._path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            self._degraded_reason = f"could not load attack hypothesis model {self._path}: {exc}"
+            return
+        hypotheses = payload.get("hypotheses") if isinstance(payload, dict) else None
+        if not isinstance(hypotheses, list):
+            self._degraded_reason = f"attack hypothesis model has no hypotheses list: {self._path}"
+            return
+        loaded: list[dict[str, Any]] = []
+        likelihoods_by_hypothesis: dict[str, dict[str, float]] = {}
+        techniques: set[str] = set()
+        for hypothesis in hypotheses:
+            if not isinstance(hypothesis, dict) or not isinstance(hypothesis.get("hypothesis_id"), str):
+                continue
+            raw_likelihoods = hypothesis.get("likelihoods")
+            if not isinstance(raw_likelihoods, dict):
+                continue
+            likelihoods = {
+                str(technique): float(value)
+                for technique, value in raw_likelihoods.items()
+                if isinstance(technique, str) and isinstance(value, (int, float))
+            }
+            if not likelihoods:
+                continue
+            hypothesis_id = str(hypothesis["hypothesis_id"])
+            loaded.append(hypothesis)
+            likelihoods_by_hypothesis[hypothesis_id] = likelihoods
+            techniques.update(likelihoods)
+        self._hypotheses = loaded
+        self._likelihoods = likelihoods_by_hypothesis
+        self._techniques = techniques
+        self._degraded_reason = None if loaded else "attack hypothesis model has no usable hypotheses"
 
 
 def _dice_similarity(left: set[str], right: set[str]) -> float:

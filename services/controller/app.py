@@ -12,6 +12,7 @@ from libs.common.config import RuntimeConfig
 from libs.contracts.models import ControllerTickRequest, ControllerTickResponse
 from services.controller.domain import ControllerService
 from services.controller.repository import (
+    FileAttackHypothesisRepository,
     FileAttackGroupTechniquePriorRepository,
     FileAssetRepository,
 )
@@ -23,9 +24,13 @@ _asset_repository = FileAssetRepository(_config.asset_catalog_path)
 _technique_prior_repository = FileAttackGroupTechniquePriorRepository(
     _config.attack_group_prior_path,
 )
+_hypothesis_repository = FileAttackHypothesisRepository(
+    _config.attack_hypothesis_model_path,
+)
 _service = ControllerService(
     _asset_repository,
     _technique_prior_repository,
+    hypothesis_repository=_hypothesis_repository,
     config=_config,
 )
 
