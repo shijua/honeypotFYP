@@ -169,15 +169,22 @@ def test_reveal_policy_evaluator_compares_baselines(tmp_path: Path) -> None:
         "top-recommendation",
         "controller",
     }
-    assert report["policies"]["controller"]["reveal_correctness"] == 1.0
-    assert report["policies"]["controller"]["decision_trace_completeness_rate"] == 1.0
-    assert report["policies"]["controller"]["correct_no_reveal_rate"] == 1.0
-    assert report["policies"]["controller"]["unlock_reveal_count"] == 2
-    assert report["policies"]["controller"]["configuration_reveal_count"] == 0
-    assert report["policies"]["controller"]["unexpected_reveal_count"] == 0
-    assert report["policies"]["controller"]["strict_expected_reveal_match_rate"] == 1.0
-    assert "prior_influence_rate" in report["policies"]["controller"]
-    assert "diagnostic_or_useful_per_reveal" in report["policies"]["controller"]
+    controller = report["policies"]["controller"]
+    assert controller["reveal_correctness"] == 1.0
+    assert controller["decision_trace_completeness_rate"] == 1.0
+    assert controller["correct_no_reveal_rate"] == 1.0
+    assert controller["unlock_reveal_count"] == 2
+    assert controller["configuration_reveal_count"] == 0
+    assert controller["unexpected_reveal_count"] == 0
+    assert controller["strict_expected_reveal_match_rate"] == 1.0
+    assert "prior_influence_rate" in controller
+    assert "diagnostic_or_useful_per_reveal" in controller
+    assert controller["gate_decision_point_count"] > 0
+    assert controller["gate_ready_assets_before_gate_avg"] >= controller["gate_eligible_assets_after_gate_avg"]
+    assert 0 <= controller["gate_narrowing_rate"] <= 1
+    assert sum(controller["gate_eligible_bucket_counts"].values()) == controller["gate_decision_point_count"]
+    assert controller["rejection_reason_counts"]
+    assert controller["prior_influenced_scenario_count"] >= 0
     assert report["policies"]["passive"]["avg_opened_assets"] == 0
     assert report["policies"]["top-recommendation"]["reveal_correctness"] == 1.0
     assert report["policies"]["random-eligible"]["scenario_count"] == 3
@@ -190,6 +197,9 @@ def test_reveal_policy_evaluator_compares_baselines(tmp_path: Path) -> None:
     chart = chart_path.read_text(encoding="utf-8")
     assert chart.startswith("<?xml") or chart.startswith("<svg")
     assert "Reveal Policy Comparison" in chart
+    assert "Gate narrowing" in chart
+    assert "gate rejections" in chart
+    assert "CF changed" in chart
 
 
 def test_reveal_policy_loader_skips_comments(tmp_path: Path) -> None:
@@ -215,6 +225,10 @@ def test_reveal_policy_reports_trace_level_choice_signals(tmp_path: Path) -> Non
                         "selection_profile": {
                             "asset_group": "credential-store",
                             "covered_techniques": ["T1552.001"],
+                            "optional_dependency_signals": {
+                                "any_http_indicators": ["path:/credential"],
+                                "any_techniques": ["T1552.001"],
+                            },
                             "telemetry_value": 0.8,
                         }
                     },
@@ -256,12 +270,12 @@ def test_reveal_policy_reports_trace_level_choice_signals(tmp_path: Path) -> Non
     scenarios = tmp_path / "scenarios.json"
     base_scenario = {
         "initial_unlocked_assets": [],
-        "profile": {
-            "conf_by_technique": {"T1552.001": 0.9, "T1046": 0.8},
-            "recent_techniques": ["T1552.001", "T1046"],
-            "recent_public_http_indicators": ["path:/discovery"],
-            "recent_evidence_ids": ["e-choice"],
-        },
+            "profile": {
+                "conf_by_technique": {"T1552.001": 0.6, "T1046": 0.7},
+                "recent_techniques": ["T1552.001", "T1046"],
+                "recent_public_http_indicators": ["path:/credential", "path:/discovery"],
+                "recent_evidence_ids": ["e-choice"],
+            },
         "expected_reasonable_assets": ["asset-main", "asset-explore"],
         "expected_hidden_assets": [],
         "useful_followup_assets": ["asset-main", "asset-explore"],

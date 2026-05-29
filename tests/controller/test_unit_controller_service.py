@@ -29,6 +29,10 @@ def _assets() -> list[AssetDefinition]:
                 "selection_profile": {
                     "asset_group": "credential-store",
                     "covered_techniques": ["T1552.001"],
+                    "optional_dependency_signals": {
+                        "any_http_indicators": ["path:/credential"],
+                        "any_techniques": ["T1552.001"],
+                    },
                     "telemetry_value": 0.8,
                 }
             },
@@ -55,7 +59,7 @@ def _assets() -> list[AssetDefinition]:
     ]
 
 
-def test_tick_prefers_exploit_then_secondary_explore() -> None:
+def test_tick_uses_expected_gain_then_secondary_explore() -> None:
     service = ControllerService(
         InMemoryAssetRepository(_assets()),
         InMemoryTechniquePriorRepository(),
@@ -68,11 +72,11 @@ def test_tick_prefers_exploit_then_secondary_explore() -> None:
             binding_id="binding-1",
             profile=ProfileSnapshot(
                 attacker_key="198.51.100.30",
-                conf_by_tactic={"Credential Access": 0.9, "Discovery": 0.2},
-                conf_by_technique={"T1552.001": 0.9, "T1046": 0.5},
+                conf_by_tactic={"Credential Access": 0.9, "Discovery": 0.7},
+                conf_by_technique={"T1552.001": 0.6, "T1046": 0.7},
                     recent_tactics=["Credential Access"],
                     recent_techniques=["T1552.001", "T1046"],
-                    recent_public_http_indicators=["path:/discovery"],
+                    recent_public_http_indicators=["path:/credential", "path:/discovery"],
                     recent_evidence_ids=["e-1"],
                 ),
             )
@@ -87,8 +91,9 @@ def test_tick_prefers_exploit_then_secondary_explore() -> None:
     assert response.decision_events[0].details["reveal_role"] == "main"
     assert response.decision_events[0].details["selected_technique"] == "T1552.001"
     assert response.decision_events[0].details["candidate_type"] == "continuation"
-    assert response.decision_events[0].details["ordering"]["candidate_type_rank"] == 2
-    assert response.decision_events[0].details["ordering"]["technique_signal_score"] == 0.9
+    assert response.decision_events[0].details["ordering"]["structural_priority_rank"] == 0
+    assert response.decision_events[0].details["ordering"]["expected_technique_gain"] == 0.0
+    assert "technique_signal_score" not in response.decision_events[0].details["ordering"]
     assert response.decision_events[0].details["ordering"]["telemetry_value"] == 0.8
     assert response.decision_events[0].details["eligible_assets"] == [
         "asset-exploit",
@@ -168,7 +173,7 @@ def test_tick_uses_public_prior_to_boost_next_technique() -> None:
     assert response.actions[0].asset_id == "asset-explore"
     assert response.decision_events[0].details["candidate_type"] == "recommended"
     assert response.decision_events[0].details["recommendation_support"] == 0.9
-    assert response.decision_events[0].details["profile_technique_value"] == 0.81
+    assert response.decision_events[0].details["expected_technique_gain"] == 0.81
 
 
 def test_recommended_candidates_discount_already_represented_techniques() -> None:
@@ -228,8 +233,68 @@ def test_recommended_candidates_discount_already_represented_techniques() -> Non
     details = response.decision_events[0].details
     assert details["candidate_type"] == "recommended"
     assert details["recommendation_support"] == 0.5
-    assert details["profile_technique_value"] == 0.5
-    assert details["ordering"]["profile_technique_value"] == 0.5
+    assert details["expected_technique_gain"] == 0.5
+    assert details["ordering"]["expected_technique_gain"] == 0.5
+
+
+def test_recommended_and_continuation_candidates_compete_on_expected_gain() -> None:
+    assets = [
+        AssetDefinition(
+            asset_id="known-discovery",
+            asset_name="Known Discovery Surface",
+            exposure_type="internal",
+            interaction_level="medium",
+            covers_tactics=["Discovery"],
+            dependencies=[],
+            default_settings={
+                "selection_profile": {
+                    "asset_group": "portal",
+                    "covered_techniques": ["T1046"],
+                    "telemetry_value": 1.0,
+                }
+            },
+        ),
+        AssetDefinition(
+            asset_id="recommended-transfer",
+            asset_name="Recommended Transfer Surface",
+            exposure_type="internal",
+            interaction_level="medium",
+            covers_tactics=["Command and Control"],
+            dependencies=[],
+            default_settings={
+                "selection_profile": {
+                    "asset_group": "payload-transfer",
+                    "covered_techniques": ["T1105"],
+                    "telemetry_value": 0.1,
+                }
+            },
+        ),
+    ]
+    service = ControllerService(
+        InMemoryAssetRepository(assets),
+        InMemoryTechniquePriorRepository({"T1046": {"T1105": 0.4}}),
+        config=RuntimeConfig(unlock_cap=1),
+    )
+
+    response = service.tick(
+        ControllerTickRequest(
+            attacker_key="198.51.100.38",
+            binding_id="binding-source-neutral",
+            profile=ProfileSnapshot(
+                attacker_key="198.51.100.38",
+                conf_by_technique={"T1046": 0.9},
+                recent_techniques=["T1046"],
+                recent_public_http_indicators=["path:/api"],
+                recent_evidence_ids=["e-source-neutral"],
+            ),
+        )
+    )
+
+    assert response.actions[0].asset_id == "recommended-transfer"
+    details = response.decision_events[0].details
+    assert details["candidate_type"] == "recommended"
+    assert details["expected_technique_gain"] == 0.4
+    assert details["ordering"]["structural_priority_rank"] == 0
 
 
 def test_tick_scores_parent_and_subtechnique_family_matches() -> None:

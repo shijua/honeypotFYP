@@ -503,7 +503,8 @@
           "kind": "content",
           "required_markers": [
             "any_techniques:T1213",
-            "any_techniques:T1083"
+            "any_techniques:T1083",
+            "any_internal_http_indicators:combined:password"
           ],
           "covered_techniques": [
             "T1552.001",

@@ -25,7 +25,7 @@ This checks whether the ATT&CK group prior recommends useful next techniques for
 .venv/bin/python scripts/evaluation/attack_group_prior_recommendation.py \
   tests/fixtures/reveal_policy_scenarios.json \
   --prior data/technique_prior/attack_group_technique_prior.json \
-  --output /tmp/attack_group_prior_report.json
+  --output results/attack_group_prior_report.json
 ```
 
 Read these fields first:
@@ -42,7 +42,7 @@ Read these fields first:
 
 No-reveal and boundary scenarios are excluded from prior quality scoring because they test controller restraint, not next-technique recommendation. This evaluator matches sub-techniques by parent ATT&CK technique family by default, for example `T1548.003` counts as a hit when `T1548` is recommended. It uses `RuntimeConfig.recommendation_top_k` and `RuntimeConfig.recommendation_support_threshold`, whose defaults are the fixed paper parameters `K=40` and `support_threshold=0.15`; it is not a tuning sweep.
 
-This also writes `/tmp/attack_group_prior_report.svg`, a matplotlib summary of overall prior quality and per-scenario recall.
+This also writes `results/attack_group_prior_report.svg`, a matplotlib summary of overall prior quality and per-scenario recall.
 
 ## 2. Offline Reveal Policy Replay
 
@@ -52,10 +52,10 @@ This is the main correctness evaluation. It replays the scenario file against mu
 .venv/bin/python scripts/evaluation/reveal_policy.py \
   tests/fixtures/reveal_policy_scenarios.json \
   --policy all \
-  --output /tmp/reveal_policy_report.json
+  --output results/reveal_policy_report.json
 ```
 
-This also writes `/tmp/reveal_policy_report.svg`, a compact visual comparison of policy metrics. The SVG path is always the JSON output path with a `.svg` suffix.
+This also writes `results/reveal_policy_report.svg`, a compact visual comparison of policy metrics. The SVG path is always the JSON output path with a `.svg` suffix.
 
 Policies compared:
 
@@ -80,13 +80,17 @@ For the controller row, check:
 - `diagnostic_or_useful_per_reveal`: opened assets that the scenario marks as either useful or diagnostically informative, divided by opened assets.
 - `choice_signal_count` / `resolved_choice_rate`: among controller rows with both main and explore reveals plus fixture `touched_assets`, how often follow-up behavior identified a local choice signal.
 - `opened_asset_count` / `avg_opened_assets`: total opened assets and average reveals per scenario.
-- `prior_influence_rate`: how often the group prior influenced selection.
+- `gate_narrowing_rate`: average fraction of considered assets removed by the hard dependency/readiness/signal gate before ranking.
+- `gate_ready_assets_before_gate_avg` / `gate_eligible_assets_after_gate_avg`: average candidate count before and after the gate.
+- `gate_eligible_bucket_counts`: decision-point count where the gate left `zero`, `one`, or `two_plus` eligible candidates.
+- `rejection_reason_counts`: why assets were rejected before ranking, grouped into stable categories such as missing dependency, already revealed, unavailable, or no matching signal.
+- `prior_influence_rate`: how often the controller selection differs from the gate-only baseline, showing when the group prior changes the reveal decision.
 - `decision_trace_completeness`: decision details include the required audit fields.
 
 Quick summary:
 
 ```bash
-jq '{ok: .ok, controller: (.policies.controller | {scenario_count, reveal_correctness, irrelevant_reveal_rate, hidden_violation_rate, correct_no_reveal_rate, avg_opened_assets, useful_evidence_per_reveal, diagnostic_or_useful_per_reveal, prior_influence_rate, decision_trace_completeness_rate, expected_reveal_match_rate, unexpected_reveal_action_rate, strict_expected_reveal_match_rate, choice_signal_count, resolved_choice_rate, choice_signal_counts})}' /tmp/reveal_policy_report.json
+jq '{ok: .ok, controller: (.policies.controller | {scenario_count, reveal_correctness, irrelevant_reveal_rate, hidden_violation_rate, correct_no_reveal_rate, avg_opened_assets, useful_evidence_per_reveal, diagnostic_or_useful_per_reveal, gate_narrowing_rate, gate_ready_assets_before_gate_avg, gate_eligible_assets_after_gate_avg, gate_eligible_bucket_counts, rejection_reason_counts, prior_influence_rate, decision_trace_completeness_rate, expected_reveal_match_rate, unexpected_reveal_action_rate, strict_expected_reveal_match_rate, choice_signal_count, resolved_choice_rate, choice_signal_counts})}' results/reveal_policy_report.json
 ```
 
 Expected: no hidden violations, no missing expected reveal actions, no unexpected reveal actions, and no-reveal scenarios pass. A failed `ok` with non-zero `unexpected_reveal_count` means the controller opened or configured more than the scenario allowed, even if the asset-level reveal still looked reasonable.
@@ -110,7 +114,7 @@ Run the offline dataset validation:
 .venv/bin/python scripts/evaluation/public_dataset_prior_validation.py \
   vendor/datasets \
   --prior data/technique_prior/attack_group_technique_prior.json \
-  --output /tmp/public_dataset_prior_validation_report.json
+  --output results/public_dataset_prior_validation_report.json
 ```
 
 Expected: `trace_count > 0` when labelled local datasets exist. The script scans CSV, JSON, JSONL, YAML, and ZIP files for ordered ATT&CK technique traces, then reports the same family-aware precision, recall, specificity, and accuracy metrics used by scenario prior evaluation. It skips raw files larger than 2 MB by default; raise `--max-file-bytes` only when you specifically want to scan larger logs. A low score means the active group prior does not explain those public traces well; it does not mean the live honeynet route path is broken.
@@ -123,13 +127,13 @@ This validates that scenario evidence causes the controller to select assets who
 .venv/bin/python scripts/evaluation/reveal_port_simulation.py \
   --mode controller-only \
   --scenario-file tests/fixtures/reveal_port_scenarios.json \
-  --output /tmp/reveal_port_controller_report.json
+  --output results/reveal_port_controller_report.json
 ```
 
 Quick summary:
 
 ```bash
-jq '.ok, .summary' /tmp/reveal_port_controller_report.json
+jq '.ok, .summary' results/reveal_port_controller_report.json
 ```
 
 Expected: `ok=true` and all default scenarios pass. This is the fastest way to check “will the right asset, action type, and port be selected?” Configuration scenarios show `selected_actions[].action_type == "configure"` and include `configuration_id`.
@@ -174,7 +178,7 @@ This measures control-plane overhead after the compose stack is running.
 ```bash
 .venv/bin/python scripts/evaluation/runtime_latency.py \
   --assets internal-portal,finance-share,web-admin-console,vpn-appliance,malware-sink \
-  --output /tmp/runtime_latency_report.json
+  --output results/runtime_latency_report.json
 ```
 
 Warm-standby is catalog-owned. The assets currently marked as warm-standby eligible are:
@@ -202,7 +206,7 @@ Reported timings:
 - route visible latency in `data/runtime/asset_gateway_routes.json`
 - per-asset pass/fail plus min/p50/max
 
-This also writes `/tmp/runtime_latency_report.svg`, showing orchestrator apply time and route-visible time by asset.
+This also writes `results/runtime_latency_report.svg`, showing orchestrator apply time and route-visible time by asset.
 
 ## 7. Manual Smoke
 
@@ -222,9 +226,9 @@ For a normal development check, run this sequence:
 
 ```bash
 .venv/bin/python scripts/validation/attack_group_prior.py --path data/technique_prior/attack_group_technique_prior.json
-.venv/bin/python scripts/evaluation/attack_group_prior_recommendation.py tests/fixtures/reveal_policy_scenarios.json --prior data/technique_prior/attack_group_technique_prior.json --output /tmp/attack_group_prior_report.json
-.venv/bin/python scripts/evaluation/reveal_policy.py tests/fixtures/reveal_policy_scenarios.json --policy all --output /tmp/reveal_policy_report.json
-.venv/bin/python scripts/evaluation/reveal_port_simulation.py --mode controller-only --scenario-file tests/fixtures/reveal_port_scenarios.json --output /tmp/reveal_port_controller_report.json
+.venv/bin/python scripts/evaluation/attack_group_prior_recommendation.py tests/fixtures/reveal_policy_scenarios.json --prior data/technique_prior/attack_group_technique_prior.json --output results/attack_group_prior_report.json
+.venv/bin/python scripts/evaluation/reveal_policy.py tests/fixtures/reveal_policy_scenarios.json --policy all --output results/reveal_policy_report.json
+.venv/bin/python scripts/evaluation/reveal_port_simulation.py --mode controller-only --scenario-file tests/fixtures/reveal_port_scenarios.json --output results/reveal_port_controller_report.json
 docker-compose -p honeynet -f docker-compose.control.yml -f docker-compose.enterprise.yml config
 ```
 

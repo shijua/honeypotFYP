@@ -19,6 +19,7 @@ import argparse
 import json
 import random
 import sys
+from collections import Counter
 from pathlib import Path
 from typing import Any, Literal
 
@@ -258,6 +259,7 @@ def evaluate_scenario(
     )
     gate_opened, _gate_events = _gate_only_reveals(assets, request)
     prior_influenced = policy == "controller" and opened_assets != gate_opened
+    gate_metrics = _decision_gate_metrics(decision_events)
     main_reveals, explore_reveals = _reveals_by_role(decision_events)
     touched_declared = isinstance(scenario.get("touched_assets"), list)
     touched_assets = string_list(scenario.get("touched_assets"))
@@ -291,6 +293,16 @@ def evaluate_scenario(
         "expected_no_reveal": expected_no_reveal,
         "correct_no_reveal": expected_no_reveal and not opened_assets,
         "prior_influenced": prior_influenced,
+        "gate_only_opened_assets": gate_opened,
+        "gate_decision_point_count": gate_metrics["decision_point_count"],
+        "gate_ready_asset_total": gate_metrics["ready_asset_total"],
+        "gate_eligible_asset_total": gate_metrics["eligible_asset_total"],
+        "gate_narrowing_rate_total": gate_metrics["narrowing_rate_total"],
+        "gate_ready_assets_before_gate_avg": gate_metrics["ready_assets_before_gate_avg"],
+        "gate_eligible_assets_after_gate_avg": gate_metrics["eligible_assets_after_gate_avg"],
+        "gate_narrowing_rate": gate_metrics["narrowing_rate"],
+        "gate_eligible_bucket_counts": gate_metrics["eligible_bucket_counts"],
+        "rejection_reason_counts": gate_metrics["rejection_reason_counts"],
         "profile_to_reveal_latency_ticks": 1 if opened_assets else None,
         "decision_trace_complete": _decision_trace_complete(decision_events) if decision_events else policy == "all-open",
         "decision_events": decision_events,
@@ -704,6 +716,81 @@ def _decision_trace_complete(decision_events: list[dict[str, Any]]) -> bool:
     return False
 
 
+def _decision_gate_metrics(decision_events: list[dict[str, Any]]) -> dict[str, Any]:
+    """Summarise dependency-gate narrowing from decision trace details.
+
+    The trace already records assets that survived the hard gate and assets
+    rejected before scoring. This helper turns that audit trail into evaluation
+    metrics without changing controller behaviour.
+    """
+    ready_counts: list[int] = []
+    eligible_counts: list[int] = []
+    narrowing_rates: list[float] = []
+    bucket_counts: Counter[str] = Counter()
+    reason_counts: Counter[str] = Counter()
+    for event in decision_events:
+        details = event.get("details")
+        if not isinstance(details, dict):
+            continue
+        eligible_assets = string_list(details.get("eligible_assets"))
+        raw_rejected = details.get("rejected_assets")
+        rejected_assets = raw_rejected if isinstance(raw_rejected, dict) else {}
+        if not eligible_assets and not rejected_assets:
+            continue
+        ready_count = len(eligible_assets) + len(rejected_assets)
+        if ready_count <= 0:
+            continue
+        eligible_count = len(eligible_assets)
+        ready_counts.append(ready_count)
+        eligible_counts.append(eligible_count)
+        narrowing_rates.append(1.0 - (eligible_count / ready_count))
+        bucket_counts[_eligible_bucket(eligible_count)] += 1
+        for reason in rejected_assets.values():
+            reason_counts[_rejection_reason_category(reason)] += 1
+    decision_point_count = len(ready_counts)
+    return {
+        "decision_point_count": decision_point_count,
+        "ready_asset_total": sum(ready_counts),
+        "eligible_asset_total": sum(eligible_counts),
+        "narrowing_rate_total": round(sum(narrowing_rates), 6),
+        "ready_assets_before_gate_avg": _average(sum(ready_counts), decision_point_count),
+        "eligible_assets_after_gate_avg": _average(sum(eligible_counts), decision_point_count),
+        "narrowing_rate": _average(sum(narrowing_rates), decision_point_count),
+        "eligible_bucket_counts": {
+            bucket: bucket_counts.get(bucket, 0)
+            for bucket in ("zero", "one", "two_plus")
+        },
+        "rejection_reason_counts": dict(sorted(reason_counts.items())),
+    }
+
+
+def _eligible_bucket(eligible_count: int) -> str:
+    """Return the coarse gate outcome bucket used in the report."""
+    if eligible_count <= 0:
+        return "zero"
+    if eligible_count == 1:
+        return "one"
+    return "two_plus"
+
+
+def _rejection_reason_category(reason: object) -> str:
+    """Map detailed controller rejection text into stable report categories."""
+    text = str(reason).lower()
+    if "missing dependencies" in text:
+        return "dependency_not_satisfied"
+    if "already" in text:
+        return "already_revealed"
+    if "not ready" in text or "unavailable" in text or "runtime" in text:
+        return "not_ready_or_unavailable"
+    if "unlock cap" in text:
+        return "exposure_budget_reached"
+    if "low gain" in text or "redundant" in text:
+        return "redundant_or_low_gain"
+    if "not an internal asset" in text or "does not match" in text:
+        return "out_of_scope_or_no_signal"
+    return "other"
+
+
 def _aggregate_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
     opened = sum(int(row["opened_asset_count"]) for row in rows)
     unlock_reveals = sum(int(row["unlock_reveal_count"]) for row in rows)
@@ -718,6 +805,16 @@ def _aggregate_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
     expected_no_reveal = sum(1 for row in rows if row["expected_no_reveal"])
     correct_no_reveal = sum(1 for row in rows if row["correct_no_reveal"])
     prior_influenced = sum(1 for row in rows if row["prior_influenced"])
+    gate_decision_points = sum(int(row["gate_decision_point_count"]) for row in rows)
+    gate_ready_assets = sum(int(row["gate_ready_asset_total"]) for row in rows)
+    gate_eligible_assets = sum(int(row["gate_eligible_asset_total"]) for row in rows)
+    gate_narrowing_total = sum(float(row["gate_narrowing_rate_total"]) for row in rows)
+    gate_bucket_counts = Counter[str]()
+    rejection_reason_counts = Counter[str]()
+    for row in rows:
+        gate_bucket_counts.update(row["gate_eligible_bucket_counts"])
+        rejection_reason_counts.update(row["rejection_reason_counts"])
+    rejection_total = sum(rejection_reason_counts.values())
     # Choice signals are only emitted when a controller row offered both main
     # and explore reveals and the fixture declared follow-up touched assets.
     choice_signals = [
@@ -765,7 +862,25 @@ def _aggregate_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "expected_no_reveal_count": expected_no_reveal,
         "correct_no_reveal_rate": _ratio(correct_no_reveal, expected_no_reveal),
+        "prior_influenced_scenario_count": prior_influenced,
         "prior_influence_rate": _ratio(prior_influenced, len(rows)),
+        "gate_decision_point_count": gate_decision_points,
+        "gate_ready_assets_before_gate_avg": _average(gate_ready_assets, gate_decision_points),
+        "gate_eligible_assets_after_gate_avg": _average(gate_eligible_assets, gate_decision_points),
+        "gate_narrowing_rate": _average(gate_narrowing_total, gate_decision_points),
+        "gate_eligible_bucket_counts": {
+            bucket: gate_bucket_counts.get(bucket, 0)
+            for bucket in ("zero", "one", "two_plus")
+        },
+        "gate_eligible_bucket_rates": {
+            bucket: _ratio(gate_bucket_counts.get(bucket, 0), gate_decision_points)
+            for bucket in ("zero", "one", "two_plus")
+        },
+        "rejection_reason_counts": dict(sorted(rejection_reason_counts.items())),
+        "rejection_reason_rates": {
+            reason: _ratio(count, rejection_total)
+            for reason, count in sorted(rejection_reason_counts.items())
+        },
         "choice_signal_eligible_count": len(choice_signals),
         "choice_signal_count": len(resolved_choice_signals),
         "resolved_choice_rate": _ratio(len(resolved_choice_signals), len(choice_signals)),
@@ -810,6 +925,10 @@ def string_list(value: object) -> list[str]:
 
 
 def _ratio(numerator: int, denominator: int) -> float:
+    return round(numerator / denominator, 6) if denominator else 0.0
+
+
+def _average(numerator: float, denominator: int) -> float:
     return round(numerator / denominator, 6) if denominator else 0.0
 
 

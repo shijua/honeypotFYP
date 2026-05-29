@@ -47,10 +47,9 @@ class CandidateScore:
     technique_signal_score: float
     confidence_score: float
     recommendation_support: float
-    profile_technique_value: float
+    expected_technique_gain: float
     telemetry_value: float
     matched_dependency_marker_count: int = 0
-    repeat_count: int = 0
     technique_match_type: str = "none"
     matched_profile_technique: str | None = None
     matched_prior_technique: str | None = None
@@ -444,9 +443,8 @@ class ControllerService:
         selected_technique, selected_parts = max(
             technique_scores.items(),
             key=lambda item: (
-                _candidate_type_rank(str(item[1]["candidate_type"])),
+                _technique_gain(item[0], profile.conf_by_technique, recommendations),
                 float(item[1]["signal_score"]),
-                -_repeat_count(profile.recent_techniques, item[0]),
                 item[0],
             ),
         )
@@ -460,19 +458,14 @@ class ControllerService:
 
         matched_markers = list(option.matched_dependency_markers)
         telemetry_value = option.telemetry_value
-        repeat_count = _repeat_count(profile.recent_techniques, selected_technique)
-        profile_technique_value = _profile_technique_value(
-            candidate_type,
+        expected_technique_gain = _expected_technique_gain(
             option.covered_techniques,
             profile.conf_by_technique,
             recommendations,
-            fallback_score=technique_signal_score,
         )
 
         if strategy == "explore":
             if exploit_context is None:
-                return None
-            if str(selected_parts["candidate_type"]) != "continuation":
                 return None
             if same_technique_family(str(selected_technique), str(exploit_context.selected_technique)):
                 return None
@@ -494,10 +487,9 @@ class ControllerService:
             technique_signal_score=round(technique_signal_score, 4),
             confidence_score=round(confidence_score, 4),
             recommendation_support=round(recommendation_support, 4),
-            profile_technique_value=round(profile_technique_value, 4),
+            expected_technique_gain=round(expected_technique_gain, 4),
             telemetry_value=round(telemetry_value, 4),
             matched_dependency_marker_count=len(matched_markers),
-            repeat_count=repeat_count,
             technique_match_type=technique_match_type,
             matched_profile_technique=matched_profile_technique,
             matched_prior_technique=matched_prior_technique,
@@ -704,7 +696,7 @@ class ControllerService:
                 f"{candidate.strategy} selected {candidate.asset.asset_id} "
                 f"for technique {candidate.selected_technique}: "
                 f"candidate_type={candidate.candidate_type}, "
-                f"signal={candidate.technique_signal_score}, telemetry={candidate.telemetry_value}"
+                f"gain={candidate.expected_technique_gain}, telemetry={candidate.telemetry_value}"
             ),
         )
 
@@ -725,7 +717,7 @@ class ControllerService:
             "technique_signal_score": candidate.technique_signal_score,
             "confidence_score": candidate.confidence_score,
             "recommendation_support": candidate.recommendation_support,
-            "profile_technique_value": candidate.profile_technique_value,
+            "expected_technique_gain": candidate.expected_technique_gain,
             "technique_match_type": candidate.technique_match_type,
             "matched_profile_technique": candidate.matched_profile_technique,
             "matched_recommended_technique": candidate.matched_prior_technique,
@@ -734,7 +726,6 @@ class ControllerService:
             "covered_techniques": list(candidate.covered_techniques),
             "matched_dependency_markers": list(candidate.matched_dependency_markers),
             "matched_dependency_marker_count": candidate.matched_dependency_marker_count,
-            "repeat_count": candidate.repeat_count,
             "prior_degraded": self._technique_prior_repository.degraded_reason,
             "observed_techniques": sorted(self._strong_observed_techniques(request.profile)),
             "eligible_assets": eligible_asset_ids,
@@ -825,60 +816,52 @@ def _best_family_score(
     return best_score, best_technique
 
 
-def _repeat_count(recent_techniques: list[str], technique: str) -> int:
-    """Return repeated recent evidence count for the same technique family.
-
-    Example:
-        recent=["T1083", "T1083", "T1046"], technique="T1083" -> 1.
-    """
-    matches = sum(1 for item in recent_techniques if same_technique_family(item, technique))
-    return max(0, matches - 1)
-
-
-def _profile_technique_value(
-    candidate_type: str,
+def _expected_technique_gain(
     covered_techniques: tuple[str, ...],
     confidences: dict[str, float],
     recommendations: dict[str, float],
-    *,
-    fallback_score: float,
 ) -> float:
-    """Discount recommended technique support that is already represented.
+    """Return expected new technique gain for one reveal candidate.
 
-    Continuation/configuration/bootstrap decisions keep their observed signal
-    as the value. Only prior-driven candidates use novelty, so a recommendation
-    for an already confident technique does not repeatedly dominate the queue.
+    G(a) = sum p_t * (1 - C_t) over covered techniques. Prior support is the
+    plausibility term; profile confidence only discounts techniques that are
+    already strongly represented.
     """
-    if candidate_type != "recommended":
-        return fallback_score
-    value = 0.0
-    for technique in covered_techniques:
-        confidence = max(
-            float(confidences.get(technique, 0.0)),
-            _best_family_score(technique, confidences)[0],
-        )
-        support = max(
-            float(recommendations.get(technique, 0.0)),
-            _best_family_score(technique, recommendations)[0],
-        )
-        value += support * max(0.0, 1.0 - confidence)
-    return value
+    return sum(
+        _technique_gain(technique, confidences, recommendations)
+        for technique in covered_techniques
+    )
+
+
+def _technique_gain(
+    technique: str,
+    confidences: dict[str, float],
+    recommendations: dict[str, float],
+) -> float:
+    """Return p_t * (1-C_t) for one technique family."""
+    confidence = max(
+        float(confidences.get(technique, 0.0)),
+        _best_family_score(technique, confidences)[0],
+    )
+    support = max(
+        float(recommendations.get(technique, 0.0)),
+        _best_family_score(technique, recommendations)[0],
+    )
+    return support * max(0.0, 1.0 - confidence)
 
 
 def _controller_ordering_details(candidate: CandidateScore) -> dict[str, Any]:
     """Return the deterministic ordering tuple used for an asset choice.
 
     Example:
-        continuation T1083 from concrete profile evidence sorts before a
-        weaker prior-only recommendation because candidate type is first.
+        an asset with higher expected new technique gain sorts before a static
+        telemetry-rich asset that mostly retests already-confident behavior.
     """
     return {
-        "candidate_type_rank": _candidate_priority_rank(candidate),
-        "profile_technique_value": candidate.profile_technique_value,
-        "technique_signal_score": candidate.technique_signal_score,
-        "telemetry_value": candidate.telemetry_value,
+        "structural_priority_rank": _structural_priority_rank(candidate),
+        "expected_technique_gain": candidate.expected_technique_gain,
         "matched_dependency_marker_count": candidate.matched_dependency_marker_count,
-        "repeat_count": candidate.repeat_count,
+        "telemetry_value": candidate.telemetry_value,
         "asset_id": _candidate_exposed_asset_id(candidate),
     }
 
@@ -890,7 +873,7 @@ def _reveal_role(strategy: str) -> str:
 
 def _candidate_order_key(
     candidate: CandidateScore,
-) -> tuple[float, float, float, int, float, int, str]:
+) -> tuple[float, float, int, float, str]:
     """Sort key for deterministic candidate ordering.
 
     Example:
@@ -898,48 +881,26 @@ def _candidate_order_key(
         candidate while keeping asset_id as an ascending tie-break.
     """
     return (
-        -_candidate_priority_rank(candidate),
-        -candidate.profile_technique_value,
-        -candidate.technique_signal_score,
+        -_structural_priority_rank(candidate),
+        -candidate.expected_technique_gain,
         -candidate.matched_dependency_marker_count,
         -candidate.telemetry_value,
-        candidate.repeat_count,
         _candidate_exposed_asset_id(candidate),
     )
+
+
+def _structural_priority_rank(candidate: CandidateScore) -> int:
+    """Return the two hard exceptions before expected-gain ordering."""
+    if candidate.candidate_type == "bootstrap":
+        return 2
+    if candidate.action_type == ActionType.configure:
+        return 1
+    return 0
 
 
 def _candidate_exposed_asset_id(candidate: CandidateScore) -> str:
     """Return the asset id that a decision exposes to the attacker."""
     return candidate.target_asset_id or candidate.asset.asset_id
-
-
-def _candidate_type_rank(candidate_type: str) -> int:
-    """Rank candidate classes from strongest to weakest.
-
-    Example:
-        bootstrap first, then observed continuation, then prior recommendations.
-    """
-    return {
-        "configuration": 2,
-        "bootstrap": 3,
-        "continuation": 2,
-        "recommended": 1,
-    }.get(candidate_type, 0)
-
-
-def _candidate_priority_rank(candidate: CandidateScore) -> float:
-    """Return the ordering rank after action-specific tie-breaking.
-
-    Same-port high-interaction upgrades should beat a direct target unlock so
-    the gateway route is replaced on the existing public port. Other
-    configuration reveals compete at the same level as observed continuations.
-    """
-    if (
-        candidate.action_type == ActionType.configure
-        and candidate.configuration_kind == "same-port-high-interaction-upgrade"
-    ):
-        return 2.1
-    return float(_candidate_type_rank(candidate.candidate_type))
 
 
 def _has_concrete_dependency_marker(markers: list[str]) -> bool:
