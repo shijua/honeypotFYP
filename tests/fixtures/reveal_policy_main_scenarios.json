@@ -1,0 +1,759 @@
+[
+  {
+    "scenario_id": "main-ransomware-web-payload-loop",
+    "title": "Main case: web exploit to staged payload handling",
+    "scenario_type": "main-fit",
+    "reference_id": "cisa-lockbit-tool-transfer",
+    "expected_behavior": "Exploit and payload-staging evidence should first expose the malware sink, then keep later payload/capture surfaces within the malware-analysis path.",
+    "initial_unlocked_assets": [
+      "internal-portal"
+    ],
+    "expected_reasonable_assets": [
+      "malware-sink",
+      "honeytrap-generic",
+      "dionaea-capture"
+    ],
+    "expected_hidden_assets": [
+      "finance-share",
+      "ops-db",
+      "web-admin-console"
+    ],
+    "useful_followup_assets": [
+      "malware-sink",
+      "dionaea-capture"
+    ],
+    "diagnostic_followup_assets": [
+      "malware-sink",
+      "honeytrap-generic",
+      "dionaea-capture"
+    ],
+    "final_expected_assets": [
+      "malware-sink"
+    ],
+    "timeline": [
+      {
+        "step_id": "s1-public-exploit",
+        "phase": "public exploit",
+        "anchor_check": true,
+        "new_evidence": [
+          {
+            "evidence_id": "main-payload-e1",
+            "public_http_indicator": "combined:php://filter",
+            "public_http_rule": "public_http_exploit_probe",
+            "tactic": "Initial Access",
+            "technique": "T1190",
+            "weight": 0.9
+          }
+        ],
+        "expected_reveals": [
+          {
+            "action_type": "unlock",
+            "asset_id": "malware-sink"
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-lockbit-tool-transfer",
+            "exactness_level": "local-adaptation",
+            "source_behavior": "public-facing exploitation"
+          }
+        ]
+      },
+      {
+        "step_id": "s2-staging-interest",
+        "phase": "resource development",
+        "new_evidence": [
+          {
+            "evidence_id": "main-payload-e2",
+            "public_http_indicator": "combined:php://filter",
+            "public_http_rule": "public_http_exploit_probe",
+            "tactic": "Resource Development",
+            "technique": "T1608",
+            "weight": 0.9
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-lockbit-tool-transfer",
+            "exactness_level": "local-adaptation",
+            "source_behavior": "payload staging infrastructure"
+          }
+        ]
+      },
+      {
+        "step_id": "s3-transfer-intent",
+        "phase": "tool transfer",
+        "anchor_check": true,
+        "new_evidence": [
+          {
+            "evidence_id": "main-payload-e3",
+            "public_http_indicator": "combined:ldap://",
+            "public_http_rule": "public_http_exploit_probe",
+            "tactic": "Command and Control",
+            "technique": "T1105",
+            "weight": 0.75
+          }
+        ],
+        "expected_reveals": [
+          {
+            "action_type": "unlock",
+            "asset_id": "dionaea-capture"
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-lockbit-tool-transfer",
+            "exactness_level": "technique-level",
+            "source_behavior": "tool transfer"
+          }
+        ]
+      },
+      {
+        "step_id": "s4-malware-sink-touch",
+        "phase": "revealed asset response",
+        "new_evidence": [
+          {
+            "evidence_id": "main-payload-e4",
+            "asset_id": "malware-sink",
+            "internal_http_path": "/staging/manifest.json",
+            "internal_http_indicator": "path:/staging",
+            "tactic": "Resource Development",
+            "technique": "T1608",
+            "weight": 0.9
+          }
+        ],
+        "touched_assets": [
+          "malware-sink"
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-lockbit-tool-transfer",
+            "exactness_level": "local-adaptation",
+            "source_behavior": "payload staging follow-up"
+          }
+        ]
+      },
+      {
+        "step_id": "s5-capture-followup",
+        "phase": "final useful follow-up",
+        "anchor_check": true,
+        "new_evidence": [
+          {
+            "evidence_id": "main-payload-e5",
+            "asset_id": "dionaea-capture",
+            "tactic": "Execution",
+            "technique": "T1204.002",
+            "weight": 0.8
+          }
+        ],
+        "allowed_reveals": [
+          {
+            "action_type": "configure",
+            "asset_id": "dionaea-capture",
+            "configuration_id": "dionaea-payload-capture-backend"
+          },
+          {
+            "action_type": "unlock",
+            "asset_id": "honeytrap-generic"
+          }
+        ],
+        "touched_assets": [
+          "dionaea-capture"
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-lockbit-tool-transfer",
+            "exactness_level": "technique-level",
+            "source_behavior": "malware execution follow-up"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "scenario_id": "main-source-map-transfer-choice-loop",
+    "title": "Main case: source-map discovery with payload follow-up",
+    "scenario_type": "main-mixed",
+    "reference_id": "cisa-ransomware-mixed",
+    "expected_behavior": "Discovery and payload-transfer signals should lead to developer and malware-analysis surfaces without exposing unrelated database assets.",
+    "initial_unlocked_assets": [
+      "internal-portal"
+    ],
+    "expected_reasonable_assets": [
+      "vpn-appliance",
+      "git-internal",
+      "malware-sink",
+      "admin-jumpbox",
+      "dionaea-capture",
+      "honeytrap-generic"
+    ],
+    "expected_hidden_assets": [
+      "ops-db",
+      "finance-share"
+    ],
+    "useful_followup_assets": [
+      "git-internal",
+      "malware-sink"
+    ],
+    "diagnostic_followup_assets": [
+      "vpn-appliance",
+      "git-internal",
+      "malware-sink",
+      "admin-jumpbox",
+      "dionaea-capture",
+      "honeytrap-generic"
+    ],
+    "final_expected_assets": [
+      "git-internal",
+      "malware-sink"
+    ],
+    "touched_assets": [
+      "malware-sink"
+    ],
+    "timeline": [
+      {
+        "step_id": "s1-source-map",
+        "phase": "public discovery",
+        "new_evidence": [
+          {
+            "evidence_id": "main-choice-e1",
+            "public_http_indicator": "path:.map",
+            "public_http_path": "/assets/app.js.map",
+            "tactic": "Discovery",
+            "technique": "T1083",
+            "weight": 0.9
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-ransomware-mixed",
+            "exactness_level": "local-adaptation",
+            "source_behavior": "public discovery and file enumeration"
+          }
+        ]
+      },
+      {
+        "step_id": "s2-transfer",
+        "phase": "payload transfer",
+        "anchor_check": true,
+        "new_evidence": [
+          {
+            "evidence_id": "main-choice-e2",
+            "public_http_indicator": "combined:php://filter",
+            "public_http_rule": "public_http_exploit_probe",
+            "tactic": "Command and Control",
+            "technique": "T1105",
+            "weight": 0.9
+          }
+        ],
+        "expected_reveals": [
+          {
+            "action_type": "unlock",
+            "asset_id": "git-internal"
+          },
+          {
+            "action_type": "unlock",
+            "asset_id": "malware-sink"
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-ransomware-mixed",
+            "exactness_level": "technique-level",
+            "source_behavior": "tool transfer"
+          }
+        ]
+      },
+      {
+        "step_id": "s3-revealed-payload-touch",
+        "phase": "revealed asset response",
+        "new_evidence": [
+          {
+            "evidence_id": "main-choice-e3",
+            "asset_id": "malware-sink",
+            "internal_http_path": "/staging/archive-plan.txt",
+            "internal_http_indicator": "path:/staging",
+            "tactic": "Collection",
+            "technique": "T1213",
+            "weight": 0.75
+          }
+        ],
+        "touched_assets": [
+          "malware-sink"
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-ransomware-mixed",
+            "exactness_level": "local-adaptation",
+            "source_behavior": "follow-up collection on exposed staging surface"
+          }
+        ]
+      },
+      {
+        "step_id": "s4-privileged-tooling",
+        "phase": "privilege-adjacent follow-up",
+        "new_evidence": [
+          {
+            "evidence_id": "main-choice-e4",
+            "tactic": "Privilege Escalation",
+            "technique": "T1548.003",
+            "weight": 0.7
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-ransomware-mixed",
+            "exactness_level": "technique-level",
+            "source_behavior": "privilege escalation behavior"
+          }
+        ]
+      },
+      {
+        "step_id": "s5-final-useful-assets",
+        "phase": "final outcome",
+        "anchor_check": true,
+        "new_evidence": [],
+        "allowed_reveals": [
+          {
+            "action_type": "configure",
+            "asset_id": "malware-sink",
+            "configuration_id": "malware-downloader-staging-directory"
+          },
+          {
+            "action_type": "unlock",
+            "asset_id": "admin-jumpbox"
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-ransomware-mixed",
+            "exactness_level": "local-adaptation",
+            "source_behavior": "local final-state check"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "scenario_id": "main-finance-collection-loop",
+    "title": "Main case: backup breadcrumb to finance collection",
+    "scenario_type": "main-collection",
+    "reference_id": "cisa-red-team-aa23-059a",
+    "expected_behavior": "Backup and archive evidence should reveal the finance collection path while preserving unrelated admin and malware surfaces.",
+    "initial_unlocked_assets": [
+      "internal-portal"
+    ],
+    "expected_reasonable_assets": [
+      "finance-share",
+      "ftp-archive"
+    ],
+    "expected_hidden_assets": [
+      "web-admin-console",
+      "malware-sink"
+    ],
+    "useful_followup_assets": [
+      "finance-share"
+    ],
+    "diagnostic_followup_assets": [
+      "finance-share",
+      "ftp-archive"
+    ],
+    "final_expected_assets": [
+      "finance-share"
+    ],
+    "timeline": [
+      {
+        "step_id": "s1-backup-path",
+        "phase": "collection breadcrumb",
+        "new_evidence": [
+          {
+            "evidence_id": "main-finance-e1",
+            "public_http_indicator": "path:.bak",
+            "public_http_path": "/backup/db_backup_2024.sql.bak",
+            "tactic": "Collection",
+            "technique": "T1213",
+            "weight": 0.9
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-red-team-aa23-059a",
+            "exactness_level": "local-adaptation",
+            "source_behavior": "collection from backup or accessible files"
+          }
+        ]
+      },
+      {
+        "step_id": "s2-data-from-local-system",
+        "phase": "collection confirmation",
+        "anchor_check": true,
+        "new_evidence": [
+          {
+            "evidence_id": "main-finance-e2",
+            "public_http_indicator": "combined:backup",
+            "public_http_path": "/backup/db_backup_2024.sql.bak",
+            "tactic": "Collection",
+            "technique": "T1005",
+            "weight": 0.75
+          }
+        ],
+        "expected_reveals": [
+          {
+            "action_type": "unlock",
+            "asset_id": "finance-share"
+          }
+        ],
+        "allowed_reveals": [
+          {
+            "action_type": "unlock",
+            "asset_id": "ftp-archive"
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-red-team-aa23-059a",
+            "exactness_level": "technique-level",
+            "source_behavior": "local data collection"
+          }
+        ]
+      },
+      {
+        "step_id": "s3-finance-share-touch",
+        "phase": "revealed asset response",
+        "new_evidence": [
+          {
+            "evidence_id": "main-finance-e3",
+            "asset_id": "finance-share",
+            "internal_http_path": "/finance/archive/2024/customer-export.csv",
+            "internal_http_indicator": "path:.csv",
+            "tactic": "Collection",
+            "technique": "T1213",
+            "weight": 0.85
+          }
+        ],
+        "touched_assets": [
+          "finance-share"
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-red-team-aa23-059a",
+            "exactness_level": "local-adaptation",
+            "source_behavior": "access to stored data"
+          }
+        ]
+      },
+      {
+        "step_id": "s4-archive-transfer",
+        "phase": "archive transfer",
+        "new_evidence": [
+          {
+            "evidence_id": "main-finance-e4",
+            "asset_id": "ftp-archive",
+            "tactic": "Exfiltration",
+            "technique": "T1567.002",
+            "weight": 0.8
+          }
+        ],
+        "touched_assets": [
+          "ftp-archive"
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-red-team-aa23-059a",
+            "exactness_level": "technique-level",
+            "source_behavior": "archive transfer or staged collection"
+          }
+        ]
+      },
+      {
+        "step_id": "s5-final-finance-check",
+        "phase": "final useful follow-up",
+        "anchor_check": true,
+        "new_evidence": [],
+        "source_refs": [
+          {
+            "reference_id": "cisa-red-team-aa23-059a",
+            "exactness_level": "local-adaptation",
+            "source_behavior": "local final-state check"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "scenario_id": "main-active-git-configuration-loop",
+    "title": "Main case: active repository browsing to configuration reveal",
+    "scenario_type": "main-configuration",
+    "reference_id": "cisa-red-team-aa23-059a",
+    "expected_behavior": "When the attacker remains on git-internal, the controller should add repository-local configuration clues instead of assuming a revisit to an old asset.",
+    "initial_unlocked_assets": [
+      "git-internal"
+    ],
+    "expected_reasonable_assets": [
+      "git-internal",
+      "admin-jumpbox",
+      "internal-portal"
+    ],
+    "expected_hidden_assets": [
+      "finance-share",
+      "malware-sink"
+    ],
+    "useful_followup_assets": [
+      "git-internal"
+    ],
+    "diagnostic_followup_assets": [
+      "git-internal",
+      "admin-jumpbox",
+      "internal-portal"
+    ],
+    "final_expected_assets": [
+      "git-internal"
+    ],
+    "timeline": [
+      {
+        "step_id": "s1-repo-config-access",
+        "phase": "active-path configuration",
+        "anchor_check": true,
+        "new_evidence": [
+          {
+            "evidence_id": "main-git-e1",
+            "asset_id": "git-internal",
+            "internal_http_path": "/config/application-prod.yml",
+            "internal_http_indicator": "path:/config",
+            "tactic": "Collection",
+            "technique": "T1213",
+            "weight": 0.95
+          }
+        ],
+        "expected_reveals": [
+          {
+            "action_type": "configure",
+            "asset_id": "git-internal",
+            "configuration_id": "git-deployment-ci-config"
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-red-team-aa23-059a",
+            "exactness_level": "local-adaptation",
+            "source_behavior": "repository and configuration browsing"
+          }
+        ]
+      },
+      {
+        "step_id": "s2-repo-file-discovery",
+        "phase": "active-path discovery",
+        "anchor_check": true,
+        "new_evidence": [
+          {
+            "evidence_id": "main-git-e2",
+            "asset_id": "git-internal",
+            "internal_http_path": "/k8s/values-prod.yaml",
+            "internal_http_indicator": "path:.yaml",
+            "tactic": "Discovery",
+            "technique": "T1083",
+            "weight": 0.85
+          }
+        ],
+        "expected_reveals": [
+          {
+            "action_type": "configure",
+            "asset_id": "git-internal",
+            "configuration_id": "git-db-credential-clue"
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-red-team-aa23-059a",
+            "exactness_level": "local-adaptation",
+            "source_behavior": "file and configuration discovery"
+          }
+        ]
+      },
+      {
+        "step_id": "s3-credential-clue-read",
+        "phase": "credential access",
+        "new_evidence": [
+          {
+            "evidence_id": "main-git-e3",
+            "asset_id": "git-internal",
+            "internal_http_path": "/config/application-prod.yml",
+            "internal_http_indicator": "combined:password",
+            "tactic": "Credential Access",
+            "technique": "T1552.001",
+            "weight": 0.95
+          }
+        ],
+        "touched_assets": [
+          "git-internal"
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-red-team-aa23-059a",
+            "exactness_level": "local-adaptation",
+            "source_behavior": "credential material in files"
+          }
+        ]
+      },
+      {
+        "step_id": "s4-privileged-runbook-followup",
+        "phase": "follow-up access",
+        "new_evidence": [
+          {
+            "evidence_id": "main-git-e4",
+            "tactic": "Privilege Escalation",
+            "technique": "T1548.003",
+            "weight": 0.7
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-red-team-aa23-059a",
+            "exactness_level": "technique-level",
+            "source_behavior": "privilege escalation follow-up"
+          }
+        ]
+      },
+      {
+        "step_id": "s5-final-config-check",
+        "phase": "final configuration outcome",
+        "anchor_check": true,
+        "new_evidence": [],
+        "allowed_reveals": [
+          {
+            "action_type": "unlock",
+            "asset_id": "admin-jumpbox"
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-red-team-aa23-059a",
+            "exactness_level": "local-adaptation",
+            "source_behavior": "local final-state check"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "scenario_id": "main-boundary-enterprise-ad-no-reveal-loop",
+    "title": "Main case: enterprise AD boundary remains closed",
+    "scenario_type": "main-boundary",
+    "reference_id": "cisa-red-team-aa23-059a",
+    "expected_behavior": "Enterprise AD-style lateral movement and credential techniques should not force this smaller catalogue to reveal unsupported assets.",
+    "initial_unlocked_assets": [
+      "internal-portal"
+    ],
+    "expected_no_reveal": true,
+    "expected_reasonable_assets": [],
+    "expected_hidden_assets": [
+      "finance-share",
+      "web-admin-console",
+      "malware-sink",
+      "ops-db"
+    ],
+    "useful_followup_assets": [],
+    "diagnostic_followup_assets": [],
+    "final_expected_assets": [],
+    "boundary": true,
+    "timeline": [
+      {
+        "step_id": "s1-credential-dumping",
+        "phase": "boundary technique",
+        "new_evidence": [
+          {
+            "evidence_id": "main-boundary-e1",
+            "tactic": "Credential Access",
+            "technique": "T1003",
+            "weight": 0.9
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-red-team-aa23-059a",
+            "exactness_level": "technique-level",
+            "source_behavior": "credential dumping"
+          }
+        ]
+      },
+      {
+        "step_id": "s2-smb-lateral",
+        "phase": "boundary technique",
+        "new_evidence": [
+          {
+            "evidence_id": "main-boundary-e2",
+            "tactic": "Lateral Movement",
+            "technique": "T1021.002",
+            "weight": 0.85
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-red-team-aa23-059a",
+            "exactness_level": "technique-level",
+            "source_behavior": "SMB or Windows-admin lateral movement"
+          }
+        ]
+      },
+      {
+        "step_id": "s3-ad-discovery",
+        "phase": "boundary technique",
+        "new_evidence": [
+          {
+            "evidence_id": "main-boundary-e3",
+            "tactic": "Discovery",
+            "technique": "T1482",
+            "weight": 0.8
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-red-team-aa23-059a",
+            "exactness_level": "technique-level",
+            "source_behavior": "domain trust discovery"
+          }
+        ]
+      },
+      {
+        "step_id": "s4-kerberos-abuse",
+        "phase": "boundary technique",
+        "new_evidence": [
+          {
+            "evidence_id": "main-boundary-e4",
+            "tactic": "Credential Access",
+            "technique": "T1558",
+            "weight": 0.8
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-red-team-aa23-059a",
+            "exactness_level": "technique-level",
+            "source_behavior": "Kerberos credential abuse"
+          }
+        ]
+      },
+      {
+        "step_id": "s5-boundary-final-no-reveal",
+        "phase": "boundary no-reveal",
+        "anchor_check": true,
+        "expected_no_reveal": true,
+        "new_evidence": [
+          {
+            "evidence_id": "main-boundary-e5",
+            "tactic": "Persistence",
+            "technique": "T1136",
+            "weight": 0.7
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-red-team-aa23-059a",
+            "exactness_level": "technique-level",
+            "source_behavior": "account creation or enterprise persistence"
+          }
+        ]
+      }
+    ]
+  }
+]

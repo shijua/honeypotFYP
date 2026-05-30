@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from scripts.evaluation.charts import write_reveal_policy_chart
-from scripts.evaluation.reveal_policy import evaluate_reveal_policies, load_scenarios
+from scripts.evaluation.reveal_policy import evaluate_reveal_policies, load_scenarios, scenario_timeline
 
 
 pytestmark = pytest.mark.unit
@@ -207,6 +207,297 @@ def test_reveal_policy_loader_skips_comments(tmp_path: Path) -> None:
     scenarios.write_text('# comment\n{"scenario_id": "s1"}\n\n', encoding="utf-8")
 
     assert load_scenarios(scenarios) == [{"scenario_id": "s1"}]
+
+
+def test_reveal_policy_timeline_loader_loads_steps() -> None:
+    scenario = {
+        "scenario_id": "timeline-case",
+        "timeline": [
+            {"step_id": "public-probe", "new_evidence": [{"evidence_id": "e1"}]},
+            {"step_id": "follow-up", "new_evidence": [{"evidence_id": "e2"}]},
+        ],
+    }
+
+    steps = scenario_timeline(scenario)
+
+    assert [step["step_id"] for step in steps] == ["public-probe", "follow-up"]
+
+
+def test_reveal_policy_timeline_replays_cumulative_profile_and_unlocked_assets(tmp_path: Path) -> None:
+    catalog = tmp_path / "catalog.json"
+    catalog.write_text(
+        json.dumps(
+            [
+                {
+                    "asset_id": "internal-portal",
+                    "asset_name": "Internal Portal",
+                    "exposure_type": "internal",
+                    "interaction_level": "medium",
+                    "covers_tactics": ["Discovery"],
+                    "dependencies": [],
+                    "default_settings": {
+                        "unlock_signals": {"any_techniques": ["T1046"]},
+                        "selection_profile": {
+                            "asset_group": "portal",
+                            "covered_techniques": ["T1046"],
+                            "telemetry_value": 0.6,
+                        },
+                    },
+                },
+                {
+                    "asset_id": "finance-share",
+                    "asset_name": "Finance Share",
+                    "exposure_type": "internal",
+                    "interaction_level": "medium",
+                    "covers_tactics": ["Collection"],
+                    "dependencies": ["internal-portal"],
+                    "default_settings": {
+                        "unlock_signals": {"any_techniques": ["T1005"]},
+                        "selection_profile": {
+                            "asset_group": "data-share",
+                            "covered_techniques": ["T1005"],
+                            "telemetry_value": 0.9,
+                        },
+                    },
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+    prior = tmp_path / "prior.json"
+    prior.write_text(
+        json.dumps(
+            {
+                "schema_version": "v1",
+                "method": "attack_group_collaborative_filtering",
+                "groups": [
+                    {"group_id": "G1", "name": "Fixture", "techniques": ["T1046", "T1005"]},
+                    {"group_id": "G2", "name": "Fixture 2", "techniques": ["T1046", "T1005"]},
+                    {"group_id": "G3", "name": "Fixture 3", "techniques": ["T1046", "T1005"]},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    scenarios = tmp_path / "scenarios.json"
+    scenarios.write_text(
+        json.dumps(
+            [
+                {
+                    "scenario_id": "timeline-replay",
+                    "expected_reasonable_assets": ["internal-portal", "finance-share"],
+                    "expected_hidden_assets": [],
+                    "useful_followup_assets": ["internal-portal", "finance-share"],
+                    "timeline": [
+                        {
+                            "step_id": "public-discovery",
+                            "phase": "public entrypoint",
+                            "new_evidence": [
+                                {
+                                    "evidence_id": "e1",
+                                    "technique": "T1046",
+                                    "tactic": "Discovery",
+                                    "weight": 0.9,
+                                }
+                            ],
+                            "expected_reveals": [
+                                {"action_type": "unlock", "asset_id": "internal-portal"}
+                            ],
+                            "source_refs": [
+                                {"reference_id": "fixture", "exactness_level": "technique-level"}
+                            ],
+                        },
+                        {
+                            "step_id": "internal-collection",
+                            "phase": "follow-up",
+                            "new_evidence": [
+                                {
+                                    "evidence_id": "e2",
+                                    "asset_id": "internal-portal",
+                                    "technique": "T1005",
+                                    "tactic": "Collection",
+                                    "weight": 0.9,
+                                }
+                            ],
+                            "expected_reveals": [
+                                {"action_type": "unlock", "asset_id": "finance-share"}
+                            ],
+                            "touched_assets": ["internal-portal"],
+                            "source_refs": [
+                                {"reference_id": "fixture", "exactness_level": "technique-level"}
+                            ],
+                        },
+                        {
+                            "step_id": "wait",
+                            "phase": "response gate",
+                            "new_evidence": [],
+                            "expected_no_reveal": True,
+                            "expected_response_gate_wait": True,
+                            "source_refs": [
+                                {"reference_id": "fixture", "exactness_level": "negative-control"}
+                            ],
+                        },
+                    ],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    report = evaluate_reveal_policies(
+        scenario_file=scenarios,
+        catalog_path=catalog,
+        prior_path=prior,
+        policies=("all-open",),
+        replay_mode="sequence",
+    )
+
+    row = report["policies"]["all-open"]["rows"][0]
+    assert row["opened_assets"] == ["internal-portal", "finance-share"]
+    assert [step["opened_assets"] for step in row["timeline"]] == [
+        ["internal-portal"],
+        ["finance-share"],
+        [],
+    ]
+    assert row["step_count"] == 3
+    assert row["step_no_reveal_correctness_rate"] == 1.0
+    assert row["response_gate_wait_correct_count"] == 1
+    assert row["source_traceability_status"] == "declared"
+    assert report["policies"]["all-open"]["source_traceability_declared_rate"] == 1.0
+
+
+def test_reveal_policy_sequence_scores_anchor_steps_and_final_outcome(tmp_path: Path) -> None:
+    catalog = tmp_path / "catalog.json"
+    catalog.write_text(
+        json.dumps(
+            [
+                {
+                    "asset_id": "entry",
+                    "asset_name": "Entry",
+                    "exposure_type": "internal",
+                    "interaction_level": "medium",
+                    "covers_tactics": ["Discovery"],
+                    "dependencies": [],
+                    "default_settings": {"selection_profile": {"covered_techniques": ["T1046"]}},
+                },
+                {
+                    "asset_id": "followup",
+                    "asset_name": "Followup",
+                    "exposure_type": "internal",
+                    "interaction_level": "medium",
+                    "covers_tactics": ["Collection"],
+                    "dependencies": ["entry"],
+                    "default_settings": {"selection_profile": {"covered_techniques": ["T1005"]}},
+                },
+                {
+                    "asset_id": "hidden",
+                    "asset_name": "Hidden",
+                    "exposure_type": "internal",
+                    "interaction_level": "medium",
+                    "covers_tactics": ["Discovery"],
+                    "dependencies": [],
+                    "default_settings": {"selection_profile": {"covered_techniques": ["T1046"]}},
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+    prior = tmp_path / "prior.json"
+    prior.write_text(
+        json.dumps({"schema_version": "v1", "method": "attack_group_collaborative_filtering", "groups": []}),
+        encoding="utf-8",
+    )
+    scenarios = tmp_path / "scenarios.json"
+    scenarios.write_text(
+        json.dumps(
+            [
+                {
+                    "scenario_id": "anchor-ok",
+                    "expected_reasonable_assets": ["entry", "followup"],
+                    "expected_hidden_assets": [],
+                    "final_expected_assets": ["followup"],
+                    "timeline": [
+                        {
+                            "step_id": "buildup",
+                            "new_evidence": [{"evidence_id": "e1", "technique": "T1046"}],
+                            "source_refs": [{"reference_id": "fixture", "exactness_level": "technique-level"}],
+                        },
+                        {
+                            "step_id": "anchor-followup",
+                            "anchor_check": True,
+                            "new_evidence": [{"evidence_id": "e2", "technique": "T1005"}],
+                            "expected_reveals": [{"action_type": "unlock", "asset_id": "followup"}],
+                            "source_refs": [{"reference_id": "fixture", "exactness_level": "technique-level"}],
+                        },
+                    ],
+                },
+                {
+                    "scenario_id": "anchor-missing",
+                    "expected_reasonable_assets": ["entry"],
+                    "expected_hidden_assets": [],
+                    "final_expected_assets": ["entry"],
+                    "timeline": [
+                        {
+                            "step_id": "bad-anchor",
+                            "anchor_check": True,
+                            "new_evidence": [{"evidence_id": "e3", "technique": "T1046"}],
+                            "expected_reveals": [{"action_type": "unlock", "asset_id": "followup"}],
+                            "source_refs": [{"reference_id": "fixture", "exactness_level": "technique-level"}],
+                        }
+                    ],
+                },
+                {
+                    "scenario_id": "anchor-no-reveal-fail",
+                    "expected_reasonable_assets": ["entry"],
+                    "expected_hidden_assets": [],
+                    "final_expected_assets": ["entry"],
+                    "timeline": [
+                        {
+                            "step_id": "should-wait",
+                            "anchor_check": True,
+                            "expected_no_reveal": True,
+                            "new_evidence": [{"evidence_id": "e4", "technique": "T1046"}],
+                            "source_refs": [{"reference_id": "fixture", "exactness_level": "negative-control"}],
+                        }
+                    ],
+                },
+                {
+                    "scenario_id": "hidden-opened",
+                    "expected_reasonable_assets": ["entry"],
+                    "expected_hidden_assets": ["hidden"],
+                    "final_expected_assets": ["entry"],
+                    "timeline": [
+                        {
+                            "step_id": "hidden",
+                            "new_evidence": [{"evidence_id": "e5", "technique": "T1046"}],
+                            "source_refs": [{"reference_id": "fixture", "exactness_level": "technique-level"}],
+                        }
+                    ],
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    report = evaluate_reveal_policies(
+        scenario_file=scenarios,
+        catalog_path=catalog,
+        prior_path=prior,
+        policies=("all-open",),
+        replay_mode="sequence",
+    )
+
+    rows = {row["scenario_id"]: row for row in report["policies"]["all-open"]["rows"]}
+    assert rows["anchor-ok"]["anchor_step_correctness_rate"] == 1.0
+    assert rows["anchor-ok"]["final_outcome_success"] is True
+    assert rows["anchor-missing"]["anchor_missing_expected_reveals"]
+    assert rows["anchor-no-reveal-fail"]["anchor_failed_no_reveal_count"] == 1
+    assert rows["hidden-opened"]["hidden_violations"] == ["hidden"]
+    aggregate = report["policies"]["all-open"]
+    assert aggregate["anchor_step_count"] == 3
+    assert aggregate["anchor_missing_expected_reveal_count"] == 1
+    assert aggregate["anchor_failed_no_reveal_count"] == 1
+    assert aggregate["final_outcome_success_count"] == 4
 
 
 def test_reveal_policy_reports_trace_level_choice_signals(tmp_path: Path) -> None:

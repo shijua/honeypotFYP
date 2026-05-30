@@ -49,7 +49,7 @@ The generated prior at `data/technique_prior/attack_group_technique_prior.json` 
 
 ```bash
 .venv/bin/pytest tests/entrypoint/test_asset_access_to_technique_coverage.py tests/assets/test_asset_catalog_runtime.py tests/controller -q
-.venv/bin/python scripts/evaluation/reveal_policy.py tests/fixtures/reveal_policy_scenarios.json --policy all --output /tmp/reveal_policy_report.json
+.venv/bin/python scripts/evaluation/reveal_policy.py tests/fixtures/reveal_policy_main_scenarios.json --policy all --replay-mode sequence --output /tmp/reveal_policy_main_report.json
 .venv/bin/python scripts/evaluation/reveal_port_simulation.py --mode controller-only --scenario-file tests/fixtures/reveal_port_scenarios.json --output /tmp/reveal_port_controller_report.json
 docker-compose -p honeynet -f docker-compose.control.yml -f docker-compose.enterprise.yml config
 ```

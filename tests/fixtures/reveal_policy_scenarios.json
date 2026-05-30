@@ -52,6 +52,80 @@
         "action_type": "unlock",
         "asset_id": "malware-sink"
       }
+    ],
+    "timeline": [
+      {
+        "step_id": "s1-t1190",
+        "phase": "Initial Access",
+        "new_evidence": [
+          {
+            "evidence_id": "fit-e1",
+            "public_http_indicator": "combined:php://filter",
+            "public_http_rule": "public_http_exploit_probe",
+            "tactic": "Initial Access",
+            "technique": "T1190",
+            "weight": 0.9
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-lockbit-tool-transfer",
+            "exactness_level": "local-adaptation",
+            "source_behavior": "Initial Access"
+          }
+        ],
+        "expected_reason": "Interactive web exploitation and download intent should reveal the malware sink without opening unrelated data or admin assets."
+      },
+      {
+        "step_id": "s2-t1608",
+        "phase": "Resource Development",
+        "new_evidence": [
+          {
+            "evidence_id": "fit-e2",
+            "public_http_indicator": "combined:php://filter",
+            "public_http_rule": "public_http_exploit_probe",
+            "tactic": "Resource Development",
+            "technique": "T1608",
+            "weight": 0.9
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-lockbit-tool-transfer",
+            "exactness_level": "local-adaptation",
+            "source_behavior": "Resource Development"
+          }
+        ],
+        "expected_reason": "Interactive web exploitation and download intent should reveal the malware sink without opening unrelated data or admin assets."
+      },
+      {
+        "step_id": "s3-t1105",
+        "phase": "Command and Control",
+        "new_evidence": [
+          {
+            "evidence_id": "fit-e3",
+            "public_http_indicator": "combined:ldap://",
+            "public_http_rule": "public_http_exploit_probe",
+            "tactic": "Command and Control",
+            "technique": "T1105",
+            "weight": 0.7
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-lockbit-tool-transfer",
+            "exactness_level": "local-adaptation",
+            "source_behavior": "Command and Control"
+          }
+        ],
+        "expected_reason": "Interactive web exploitation and download intent should reveal the malware sink without opening unrelated data or admin assets.",
+        "expected_reveals": [
+          {
+            "action_type": "unlock",
+            "asset_id": "malware-sink"
+          }
+        ]
+      }
     ]
   },
   {
@@ -85,7 +159,48 @@
       ]
     },
     "boundary": true,
-    "reference_id": "cisa-red-team-aa23-059a"
+    "reference_id": "cisa-red-team-aa23-059a",
+    "timeline": [
+      {
+        "step_id": "s1-t1003",
+        "phase": "boundary",
+        "new_evidence": [
+          {
+            "evidence_id": "boundary-e1",
+            "technique": "T1003",
+            "weight": 0.9
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-red-team-aa23-059a",
+            "exactness_level": "technique-level",
+            "source_behavior": "boundary"
+          }
+        ],
+        "expected_reason": "Enterprise lateral-movement evidence should not force this small SaaS catalogue to reveal assets it does not actually model."
+      },
+      {
+        "step_id": "s2-t1021-002",
+        "phase": "boundary",
+        "new_evidence": [
+          {
+            "evidence_id": "boundary-enterprise-ad-lateral-e2",
+            "technique": "T1021.002",
+            "weight": 0.8
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-red-team-aa23-059a",
+            "exactness_level": "technique-level",
+            "source_behavior": "boundary"
+          }
+        ],
+        "expected_reason": "Enterprise lateral-movement evidence should not force this small SaaS catalogue to reveal assets it does not actually model.",
+        "expected_no_reveal": true
+      }
+    ]
   },
   {
     "scenario_id": "scanner-one-shot-web-probe",
@@ -110,7 +225,30 @@
         "weight": 0.6
       }
     ],
-    "reference_id": "mitre-scan-exploit-negative"
+    "reference_id": "mitre-scan-exploit-negative",
+    "timeline": [
+      {
+        "step_id": "s1-t1190",
+        "phase": "Initial Access",
+        "new_evidence": [
+          {
+            "evidence_id": "scanner-e1",
+            "tactic": "Initial Access",
+            "technique": "T1190",
+            "weight": 0.6
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "mitre-scan-exploit-negative",
+            "exactness_level": "negative-control",
+            "source_behavior": "Initial Access"
+          }
+        ],
+        "expected_reason": "A single scanner-looking exploit attempt without follow-up should produce no reveal.",
+        "expected_no_reveal": true
+      }
+    ]
   },
   {
     "scenario_id": "mixed-discovery-download-persistence",
@@ -172,6 +310,86 @@
       {
         "action_type": "unlock",
         "asset_id": "malware-sink"
+      }
+    ],
+    "timeline": [
+      {
+        "step_id": "s1-t1083",
+        "phase": "Discovery",
+        "new_evidence": [
+          {
+            "evidence_id": "mixed-e1",
+            "public_http_indicator": "path:.map",
+            "public_http_path": "/assets/app.js.map",
+            "tactic": "Discovery",
+            "technique": "T1083",
+            "weight": 0.9
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-ransomware-mixed",
+            "exactness_level": "local-adaptation",
+            "source_behavior": "Discovery"
+          }
+        ],
+        "expected_reason": "The controller should reveal one discovery/developer asset and one payload-transfer asset while keeping unrelated database assets hidden."
+      },
+      {
+        "step_id": "s2-t1105",
+        "phase": "Command and Control",
+        "new_evidence": [
+          {
+            "evidence_id": "mixed-e2",
+            "public_http_indicator": "combined:php://filter",
+            "public_http_rule": "public_http_exploit_probe",
+            "tactic": "Command and Control",
+            "technique": "T1105",
+            "weight": 0.9
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-ransomware-mixed",
+            "exactness_level": "local-adaptation",
+            "source_behavior": "Command and Control"
+          }
+        ],
+        "expected_reason": "The controller should reveal one discovery/developer asset and one payload-transfer asset while keeping unrelated database assets hidden."
+      },
+      {
+        "step_id": "s3-t1548-003",
+        "phase": "Privilege Escalation",
+        "new_evidence": [
+          {
+            "evidence_id": "mixed-e3",
+            "tactic": "Privilege Escalation",
+            "technique": "T1548.003",
+            "weight": 0.7
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-ransomware-mixed",
+            "exactness_level": "technique-level",
+            "source_behavior": "Privilege Escalation"
+          }
+        ],
+        "expected_reason": "The controller should reveal one discovery/developer asset and one payload-transfer asset while keeping unrelated database assets hidden.",
+        "expected_reveals": [
+          {
+            "action_type": "unlock",
+            "asset_id": "git-internal"
+          },
+          {
+            "action_type": "unlock",
+            "asset_id": "malware-sink"
+          }
+        ],
+        "touched_assets": [
+          "git-internal",
+          "malware-sink"
+        ]
       }
     ]
   },
@@ -237,6 +455,87 @@
         "action_type": "unlock",
         "asset_id": "malware-sink"
       }
+    ],
+    "timeline": [
+      {
+        "step_id": "s1-t1083",
+        "phase": "Discovery",
+        "new_evidence": [
+          {
+            "evidence_id": "choice-e1",
+            "public_http_indicator": "path:.map",
+            "public_http_path": "/assets/app.js.map",
+            "tactic": "Discovery",
+            "technique": "T1083",
+            "weight": 0.9
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-lockbit-tool-transfer",
+            "exactness_level": "local-adaptation",
+            "source_behavior": "Discovery"
+          }
+        ],
+        "expected_reason": "When discovery and tool-transfer options are both plausible, the replay marks which revealed direction the attacker actually follows."
+      },
+      {
+        "step_id": "s2-t1105",
+        "phase": "Command and Control",
+        "new_evidence": [
+          {
+            "evidence_id": "choice-e2",
+            "public_http_indicator": "combined:php://filter",
+            "public_http_rule": "public_http_exploit_probe",
+            "tactic": "Command and Control",
+            "technique": "T1105",
+            "weight": 0.9
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-lockbit-tool-transfer",
+            "exactness_level": "local-adaptation",
+            "source_behavior": "Command and Control"
+          }
+        ],
+        "expected_reason": "When discovery and tool-transfer options are both plausible, the replay marks which revealed direction the attacker actually follows."
+      },
+      {
+        "step_id": "s3-t1213",
+        "phase": "Collection",
+        "new_evidence": [
+          {
+            "evidence_id": "choice-e3",
+            "public_http_indicator": "path:.map",
+            "public_http_path": "/assets/app.js.map",
+            "tactic": "Collection",
+            "technique": "T1213",
+            "weight": 0.75
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-lockbit-tool-transfer",
+            "exactness_level": "local-adaptation",
+            "source_behavior": "Collection"
+          }
+        ],
+        "expected_reason": "When discovery and tool-transfer options are both plausible, the replay marks which revealed direction the attacker actually follows.",
+        "expected_reveals": [
+          {
+            "action_type": "unlock",
+            "asset_id": "git-internal"
+          },
+          {
+            "action_type": "unlock",
+            "asset_id": "malware-sink"
+          }
+        ],
+        "touched_assets": [
+          "malware-sink"
+        ]
+      }
     ]
   },
   {
@@ -278,6 +577,35 @@
       {
         "action_type": "unlock",
         "asset_id": "git-internal"
+      }
+    ],
+    "timeline": [
+      {
+        "step_id": "s1-t1083",
+        "phase": "false-positive-reveal",
+        "new_evidence": [
+          {
+            "evidence_id": "false-positive-e1",
+            "technique": "T1083",
+            "weight": 0.75,
+            "public_http_path": "/assets/app.js.map",
+            "public_http_indicator": "path:.map"
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "mitre-discovery-negative",
+            "exactness_level": "local-adaptation",
+            "source_behavior": "false-positive-reveal"
+          }
+        ],
+        "expected_reason": "Short but plausible enumeration may justify a small reveal, but follow-up usefulness remains empty so the trace explains the weak outcome.",
+        "expected_reveals": [
+          {
+            "action_type": "unlock",
+            "asset_id": "git-internal"
+          }
+        ]
       }
     ]
   },
@@ -326,6 +654,58 @@
         "action_type": "unlock",
         "asset_id": "git-internal"
       }
+    ],
+    "timeline": [
+      {
+        "step_id": "s1-t1083",
+        "phase": "Discovery",
+        "new_evidence": [
+          {
+            "evidence_id": "normal-git-e1",
+            "public_http_indicator": "path:.map",
+            "public_http_path": "/assets/app.js.map",
+            "tactic": "Discovery",
+            "technique": "T1083",
+            "weight": 0.9
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-red-team-aa23-059a",
+            "exactness_level": "local-adaptation",
+            "source_behavior": "Discovery"
+          }
+        ],
+        "expected_reason": "A source-map breadcrumb should reveal the internal Git service."
+      },
+      {
+        "step_id": "s2-t1213",
+        "phase": "Collection",
+        "new_evidence": [
+          {
+            "evidence_id": "normal-git-e2",
+            "public_http_indicator": "path:.map",
+            "public_http_path": "/assets/app.js.map",
+            "tactic": "Collection",
+            "technique": "T1213",
+            "weight": 0.7
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-red-team-aa23-059a",
+            "exactness_level": "local-adaptation",
+            "source_behavior": "Collection"
+          }
+        ],
+        "expected_reason": "A source-map breadcrumb should reveal the internal Git service.",
+        "expected_reveals": [
+          {
+            "action_type": "unlock",
+            "asset_id": "git-internal"
+          }
+        ]
+      }
     ]
   },
   {
@@ -372,6 +752,58 @@
       {
         "action_type": "unlock",
         "asset_id": "finance-share"
+      }
+    ],
+    "timeline": [
+      {
+        "step_id": "s1-t1213",
+        "phase": "Collection",
+        "new_evidence": [
+          {
+            "evidence_id": "normal-finance-e1",
+            "public_http_indicator": "path:.bak",
+            "public_http_path": "/backup/db_backup_2024.sql.bak",
+            "tactic": "Collection",
+            "technique": "T1213",
+            "weight": 0.9
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-red-team-aa23-059a",
+            "exactness_level": "local-adaptation",
+            "source_behavior": "Collection"
+          }
+        ],
+        "expected_reason": "A backup path with collection evidence should reveal the finance share."
+      },
+      {
+        "step_id": "s2-t1005",
+        "phase": "Collection",
+        "new_evidence": [
+          {
+            "evidence_id": "normal-finance-e2",
+            "public_http_indicator": "combined:backup",
+            "public_http_path": "/backup/db_backup_2024.sql.bak",
+            "tactic": "Collection",
+            "technique": "T1005",
+            "weight": 0.7
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-red-team-aa23-059a",
+            "exactness_level": "local-adaptation",
+            "source_behavior": "Collection"
+          }
+        ],
+        "expected_reason": "A backup path with collection evidence should reveal the finance share.",
+        "expected_reveals": [
+          {
+            "action_type": "unlock",
+            "asset_id": "finance-share"
+          }
+        ]
       }
     ]
   },
@@ -420,6 +852,58 @@
         "action_type": "unlock",
         "asset_id": "web-admin-console"
       }
+    ],
+    "timeline": [
+      {
+        "step_id": "s1-t1110",
+        "phase": "Credential Access",
+        "new_evidence": [
+          {
+            "evidence_id": "normal-admin-e1",
+            "public_http_indicator": "path:/admin",
+            "public_http_path": "/admin",
+            "tactic": "Credential Access",
+            "technique": "T1110",
+            "weight": 0.9
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "mitre-admin-web-discovery",
+            "exactness_level": "local-adaptation",
+            "source_behavior": "Credential Access"
+          }
+        ],
+        "expected_reason": "Admin-console probing should reveal the web admin console."
+      },
+      {
+        "step_id": "s2-t1078",
+        "phase": "Defense Evasion",
+        "new_evidence": [
+          {
+            "evidence_id": "normal-admin-e2",
+            "public_http_indicator": "path:/admin",
+            "public_http_path": "/admin",
+            "tactic": "Defense Evasion",
+            "technique": "T1078",
+            "weight": 0.7
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "mitre-admin-web-discovery",
+            "exactness_level": "local-adaptation",
+            "source_behavior": "Defense Evasion"
+          }
+        ],
+        "expected_reason": "Admin-console probing should reveal the web admin console.",
+        "expected_reveals": [
+          {
+            "action_type": "unlock",
+            "asset_id": "web-admin-console"
+          }
+        ]
+      }
     ]
   },
   {
@@ -466,6 +950,58 @@
       {
         "action_type": "unlock",
         "asset_id": "ssh-canary"
+      }
+    ],
+    "timeline": [
+      {
+        "step_id": "s1-t1552-001",
+        "phase": "Credential Access",
+        "new_evidence": [
+          {
+            "evidence_id": "normal-ssh-e1",
+            "public_http_indicator": "combined:password",
+            "public_http_path": "/backup/passwords_internal.txt",
+            "tactic": "Credential Access",
+            "technique": "T1552.001",
+            "weight": 0.9
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-red-team-aa23-059a",
+            "exactness_level": "local-adaptation",
+            "source_behavior": "Credential Access"
+          }
+        ],
+        "expected_reason": "A password breadcrumb plus remote-access technique should reveal the SSH canary without prematurely opening database assets."
+      },
+      {
+        "step_id": "s2-t1021-004",
+        "phase": "Lateral Movement",
+        "new_evidence": [
+          {
+            "evidence_id": "normal-ssh-e2",
+            "public_http_indicator": "combined:password",
+            "public_http_path": "/backup/passwords_internal.txt",
+            "tactic": "Lateral Movement",
+            "technique": "T1021.004",
+            "weight": 0.7
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-red-team-aa23-059a",
+            "exactness_level": "local-adaptation",
+            "source_behavior": "Lateral Movement"
+          }
+        ],
+        "expected_reason": "A password breadcrumb plus remote-access technique should reveal the SSH canary without prematurely opening database assets.",
+        "expected_reveals": [
+          {
+            "action_type": "unlock",
+            "asset_id": "ssh-canary"
+          }
+        ]
       }
     ]
   },
@@ -533,6 +1069,91 @@
         "technique": "T1552.001",
         "weight": 0.95
       }
+    ],
+    "timeline": [
+      {
+        "step_id": "s1-t1213",
+        "phase": "Collection",
+        "new_evidence": [
+          {
+            "evidence_id": "config-git-e1",
+            "asset_id": "git-internal",
+            "internal_http_path": "/config/application-prod.yml",
+            "internal_http_indicator": "path:/config",
+            "tactic": "Collection",
+            "technique": "T1213",
+            "weight": 0.95
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-red-team-aa23-059a",
+            "exactness_level": "local-adaptation",
+            "source_behavior": "Collection"
+          }
+        ],
+        "expected_reason": "When the attacker is actively browsing git-internal, the controller may add a repository-local DB credential clue instead of opening a new unrelated port."
+      },
+      {
+        "step_id": "s2-t1083",
+        "phase": "Discovery",
+        "new_evidence": [
+          {
+            "evidence_id": "config-git-e2",
+            "asset_id": "git-internal",
+            "internal_http_path": "/k8s/values-prod.yaml",
+            "internal_http_indicator": "path:.yaml",
+            "tactic": "Discovery",
+            "technique": "T1083",
+            "weight": 0.85
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-red-team-aa23-059a",
+            "exactness_level": "local-adaptation",
+            "source_behavior": "Discovery"
+          }
+        ],
+        "expected_reason": "When the attacker is actively browsing git-internal, the controller may add a repository-local DB credential clue instead of opening a new unrelated port."
+      },
+      {
+        "step_id": "s3-t1552-001",
+        "phase": "Credential Access",
+        "new_evidence": [
+          {
+            "evidence_id": "config-git-e3",
+            "asset_id": "git-internal",
+            "internal_http_path": "/config/application-prod.yml",
+            "internal_http_indicator": "combined:password",
+            "tactic": "Credential Access",
+            "technique": "T1552.001",
+            "weight": 0.95
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-red-team-aa23-059a",
+            "exactness_level": "local-adaptation",
+            "source_behavior": "Credential Access"
+          }
+        ],
+        "expected_reason": "When the attacker is actively browsing git-internal, the controller may add a repository-local DB credential clue instead of opening a new unrelated port.",
+        "expected_reveals": [
+          {
+            "action_type": "configure",
+            "asset_id": "git-internal",
+            "configuration_id": "git-db-credential-clue"
+          }
+        ],
+        "allowed_reveals": [
+          {
+            "action_type": "configure",
+            "asset_id": "git-internal",
+            "configuration_id": "git-deployment-ci-config"
+          }
+        ]
+      }
     ]
   },
   {
@@ -573,6 +1194,38 @@
         "tactic": "Collection",
         "technique": "T1005",
         "weight": 0.95
+      }
+    ],
+    "timeline": [
+      {
+        "step_id": "s1-t1005",
+        "phase": "Collection",
+        "new_evidence": [
+          {
+            "evidence_id": "config-finance-e1",
+            "asset_id": "finance-share",
+            "internal_http_path": "/finance/archive/2024/payroll-archive.zip",
+            "internal_http_indicator": "path:.zip",
+            "tactic": "Collection",
+            "technique": "T1005",
+            "weight": 0.95
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-red-team-aa23-059a",
+            "exactness_level": "local-adaptation",
+            "source_behavior": "Collection"
+          }
+        ],
+        "expected_reason": "When the attacker is still browsing finance-share, a sensitive archive index can be added to that same surface.",
+        "expected_reveals": [
+          {
+            "action_type": "configure",
+            "asset_id": "finance-share",
+            "configuration_id": "finance-backup-archive-index"
+          }
+        ]
       }
     ]
   },
@@ -625,6 +1278,62 @@
         "technique": "T1204.002",
         "weight": 0.8
       }
+    ],
+    "timeline": [
+      {
+        "step_id": "s1-t1105",
+        "phase": "Command and Control",
+        "new_evidence": [
+          {
+            "evidence_id": "config-malware-e1",
+            "asset_id": "malware-sink",
+            "internal_http_path": "/downloads/agent-update.bin",
+            "internal_http_indicator": "path:.bin",
+            "tactic": "Command and Control",
+            "technique": "T1105",
+            "weight": 0.95
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-lockbit-tool-transfer",
+            "exactness_level": "local-adaptation",
+            "source_behavior": "Command and Control"
+          }
+        ],
+        "expected_reason": "When the attacker is actively downloading or staging payloads from malware-sink, the controller can switch the same path to a higher-interaction capture backend."
+      },
+      {
+        "step_id": "s2-t1204-002",
+        "phase": "Execution",
+        "new_evidence": [
+          {
+            "evidence_id": "config-malware-e2",
+            "asset_id": "malware-sink",
+            "internal_http_path": "/downloads/agent-update.bin",
+            "internal_http_indicator": "path:.bin",
+            "tactic": "Execution",
+            "technique": "T1204.002",
+            "weight": 0.8
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "cisa-lockbit-tool-transfer",
+            "exactness_level": "local-adaptation",
+            "source_behavior": "Execution"
+          }
+        ],
+        "expected_reason": "When the attacker is actively downloading or staging payloads from malware-sink, the controller can switch the same path to a higher-interaction capture backend.",
+        "expected_reveals": [
+          {
+            "action_type": "configure",
+            "asset_id": "malware-sink",
+            "target_asset_id": "dionaea-capture",
+            "configuration_id": "malware-dionaea-same-port-upgrade"
+          }
+        ]
+      }
     ]
   },
   {
@@ -664,6 +1373,32 @@
       "recent_asset_ids": [
         "finance-share"
       ]
-    }
+    },
+    "timeline": [
+      {
+        "step_id": "s1-t1213",
+        "phase": "configuration-negative",
+        "new_evidence": [
+          {
+            "evidence_id": "config-stale-e1",
+            "technique": "T1213",
+            "weight": 0.95,
+            "internal_http_path": "/finance/archive/2024/payroll-archive.zip",
+            "internal_http_indicator": "path:.zip",
+            "asset_id": "finance-share"
+          }
+        ],
+        "source_refs": [
+          {
+            "reference_id": "active-path-negative-control",
+            "exactness_level": "negative-control",
+            "source_behavior": "configuration-negative"
+          }
+        ],
+        "expected_reason": "A configuration clue must not be added to git-internal after the attacker has moved to a different active asset path.",
+        "expected_no_reveal": true,
+        "expected_response_gate_wait": true
+      }
+    ]
   }
 ]

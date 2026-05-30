@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import random
 import sys
 from collections import Counter
 from pathlib import Path
@@ -30,6 +29,14 @@ if str(ROOT_DIR) not in sys.path:
 from libs.common.config import RuntimeConfig
 from libs.common.iterables import dedupe_preserve
 from libs.contracts.models import AssetDefinition, ControllerTickRequest, ProfileSnapshot
+from scripts.evaluation.reveal_policy_baselines import (
+    all_open_reveals,
+    gate_only_reveals,
+    passive_no_reveal,
+    random_eligible_reveals,
+    top_recommendation_reveals,
+    unlock_action_summaries,
+)
 from scripts.evaluation.charts import write_reveal_policy_chart
 from services.controller.domain import ControllerService
 from services.controller.repository import FileAssetRepository, FileAttackGroupTechniquePriorRepository
@@ -42,6 +49,7 @@ PolicyName = Literal[
     "top-recommendation",
     "controller",
 ]
+ReplayMode = Literal["snapshot", "sequence"]
 ALL_POLICIES: tuple[PolicyName, ...] = (
     "passive",
     "all-open",
@@ -76,6 +84,12 @@ def main() -> int:
     parser.add_argument("--catalog", type=Path, default=Path("data/assets/catalog.json"))
     parser.add_argument("--prior", type=Path, default=Path("data/technique_prior/attack_group_technique_prior.json"))
     parser.add_argument("--policy", choices=(*ALL_POLICIES, "all"), default="all")
+    parser.add_argument(
+        "--replay-mode",
+        choices=("snapshot", "sequence"),
+        default="snapshot",
+        help="snapshot runs the historical one-tick replay; sequence replays timeline steps with cumulative state.",
+    )
     parser.add_argument("--output", type=Path, help="Optional JSON output path.")
     args = parser.parse_args()
 
@@ -85,6 +99,7 @@ def main() -> int:
         catalog_path=args.catalog,
         prior_path=args.prior,
         policies=policies,
+        replay_mode=args.replay_mode,
     )
     text = json.dumps(report, indent=2, sort_keys=True)
     if args.output:
@@ -103,6 +118,7 @@ def evaluate_reveal_policies(
     prior_path: Path,
     policies: tuple[PolicyName, ...] = ALL_POLICIES,
     config: RuntimeConfig | None = None,
+    replay_mode: ReplayMode = "snapshot",
 ) -> dict[str, Any]:
     """Return aggregate policy metrics for a JSONL scenario file.
 
@@ -118,30 +134,52 @@ def evaluate_reveal_policies(
         "scenario_count": len(scenarios),
         "catalog": str(catalog_path),
         "prior": str(prior_path),
+        "replay_mode": replay_mode,
         "policies": {},
     }
     for policy in policies:
         rows = [
-            evaluate_scenario(
-                scenario,
-                assets=assets,
-                catalog_path=catalog_path,
-                prior_path=prior_path,
-                policy=policy,
-                config=base_config,
+            (
+                evaluate_timeline_scenario(
+                    scenario,
+                    assets=assets,
+                    catalog_path=catalog_path,
+                    prior_path=prior_path,
+                    policy=policy,
+                    config=base_config,
+                )
+                if replay_mode == "sequence"
+                else evaluate_scenario(
+                    scenario,
+                    assets=assets,
+                    catalog_path=catalog_path,
+                    prior_path=prior_path,
+                    policy=policy,
+                    config=base_config,
+                )
             )
             for scenario in scenarios
         ]
         report["policies"][policy] = _aggregate_rows(rows)
     if "controller" in report["policies"]:
         controller = report["policies"]["controller"]
-        report["ok"] = bool(scenarios) and (
-            controller["hidden_violation_rate"] == 0
-            and controller["irrelevant_reveal_rate"] == 0
-            and controller["missing_expected_reveal_count"] == 0
-            and controller["unexpected_reveal_count"] == 0
-            and controller["correct_no_reveal_rate"] == 1.0
-        )
+        if replay_mode == "sequence":
+            report["ok"] = bool(scenarios) and (
+                controller["hidden_violation_rate"] == 0
+                and controller["anchor_missing_expected_reveal_count"] == 0
+                and controller["anchor_unexpected_reveal_count"] == 0
+                and controller["anchor_failed_no_reveal_count"] == 0
+                and controller["final_outcome_success_rate"] == 1.0
+                and controller["source_traceability_declared_rate"] == 1.0
+            )
+        else:
+            report["ok"] = bool(scenarios) and (
+                controller["hidden_violation_rate"] == 0
+                and controller["irrelevant_reveal_rate"] == 0
+                and controller["missing_expected_reveal_count"] == 0
+                and controller["unexpected_reveal_count"] == 0
+                and controller["correct_no_reveal_rate"] == 1.0
+            )
     return report
 
 
@@ -199,65 +237,19 @@ def evaluate_scenario(
         all-open may reveal ["internal-portal", "finance-share"], while controller reveals ["finance-share"].
     """
     request = scenario_request(scenario)
-    if policy == "all-open":
-        opened_assets, decision_events = _all_open_reveals(assets, request)
-        reveal_actions = _unlock_action_summaries(opened_assets)
-    elif policy == "passive":
-        opened_assets, decision_events = _passive_no_reveal(request)
-        reveal_actions = []
-    elif policy == "random-eligible":
-        opened_assets, decision_events = _random_eligible_reveals(assets, request)
-        reveal_actions = _unlock_action_summaries(opened_assets)
-    elif policy == "gate-only":
-        opened_assets, decision_events = _gate_only_reveals(assets, request)
-        reveal_actions = _unlock_action_summaries(opened_assets)
-    elif policy == "top-recommendation":
-        opened_assets, decision_events = _top_recommendation_reveals(
-            assets,
-            request,
-            prior_path=prior_path,
-            config=config,
-        )
-        reveal_actions = _unlock_action_summaries(opened_assets)
-    else:
-        response = ControllerService(
-            FileAssetRepository(catalog_path),
-            FileAttackGroupTechniquePriorRepository(prior_path),
-            config=config,
-        ).tick(request)
-        opened_assets = _controller_opened_assets(response.actions)
-        reveal_actions = _controller_reveal_actions(response.actions)
-        decision_events = [event.model_dump(mode="json") for event in response.decision_events]
-
-    reasonable = set(string_list(scenario.get("expected_reasonable_assets")))
-    hidden = set(string_list(scenario.get("expected_hidden_assets")))
-    useful = (
-        set(string_list(scenario.get("useful_followup_assets")))
-        if "useful_followup_assets" in scenario
-        else reasonable
+    opened_assets, reveal_actions, decision_events = _evaluate_policy_actions(
+        policy=policy,
+        assets=assets,
+        request=request,
+        catalog_path=catalog_path,
+        prior_path=prior_path,
+        config=config,
     )
-    diagnostic = (
-        set(string_list(scenario.get("diagnostic_followup_assets")))
-        if "diagnostic_followup_assets" in scenario
-        else useful
-    )
+    asset_sets = _scenario_asset_sets(scenario)
+    reveal_constraints = _reveal_constraint_result(scenario, reveal_actions)
     opened_set = set(opened_assets)
-    reasonable_reveals = opened_set & reasonable
-    irrelevant_reveals = opened_set - reasonable
-    hidden_violations = opened_set & hidden
-    useful_reveals = opened_set & useful
-    diagnostic_or_useful_reveals = opened_set & (useful | diagnostic)
     expected_no_reveal = bool(scenario.get("expected_no_reveal"))
-    expected_actions = _expected_reveals(scenario)
-    allowed_actions = _allowed_reveals(scenario)
-    action_constraints_declared = bool(expected_actions or allowed_actions)
-    missing_expected_reveals = _missing_expected_reveals(reveal_actions, expected_actions)
-    unexpected_reveal_actions = (
-        _unexpected_reveal_actions(reveal_actions, [*expected_actions, *allowed_actions])
-        if action_constraints_declared
-        else []
-    )
-    gate_opened, _gate_events = _gate_only_reveals(assets, request)
+    gate_opened, _gate_events = gate_only_reveals(assets, request)
     prior_influenced = policy == "controller" and opened_assets != gate_opened
     gate_metrics = _decision_gate_metrics(decision_events)
     main_reveals, explore_reveals = _reveals_by_role(decision_events)
@@ -282,14 +274,14 @@ def evaluate_scenario(
         "opened_asset_count": len(opened_assets),
         "unlock_reveal_count": sum(1 for action in reveal_actions if action["action_type"] == "unlock"),
         "configuration_reveal_count": sum(1 for action in reveal_actions if action["action_type"] == "configure"),
-        "reasonable_reveals": sorted(reasonable_reveals),
-        "irrelevant_reveals": sorted(irrelevant_reveals),
-        "hidden_violations": sorted(hidden_violations),
-        "useful_reveals": sorted(useful_reveals),
-        "diagnostic_or_useful_reveals": sorted(diagnostic_or_useful_reveals),
-        "missing_expected_reveals": missing_expected_reveals,
-        "unexpected_reveal_actions": unexpected_reveal_actions,
-        "action_constraints_declared": action_constraints_declared,
+        "reasonable_reveals": sorted(opened_set & asset_sets["reasonable"]),
+        "irrelevant_reveals": sorted(opened_set - asset_sets["reasonable"]),
+        "hidden_violations": sorted(opened_set & asset_sets["hidden"]),
+        "useful_reveals": sorted(opened_set & asset_sets["useful"]),
+        "diagnostic_or_useful_reveals": sorted(opened_set & (asset_sets["useful"] | asset_sets["diagnostic"])),
+        "missing_expected_reveals": reveal_constraints["missing_expected_reveals"],
+        "unexpected_reveal_actions": reveal_constraints["unexpected_reveal_actions"],
+        "action_constraints_declared": reveal_constraints["action_constraints_declared"],
         "expected_no_reveal": expected_no_reveal,
         "correct_no_reveal": expected_no_reveal and not opened_assets,
         "prior_influenced": prior_influenced,
@@ -307,6 +299,467 @@ def evaluate_scenario(
         "decision_trace_complete": _decision_trace_complete(decision_events) if decision_events else policy == "all-open",
         "decision_events": decision_events,
     }
+
+
+def _evaluate_policy_actions(
+    *,
+    policy: PolicyName,
+    assets: list[AssetDefinition],
+    request: ControllerTickRequest,
+    catalog_path: Path,
+    prior_path: Path,
+    config: RuntimeConfig,
+) -> tuple[list[str], list[dict[str, str]], list[dict[str, Any]]]:
+    """Return opened assets, compact reveal actions, and trace events for one policy."""
+    if policy == "all-open":
+        opened_assets, decision_events = all_open_reveals(assets, request)
+        return opened_assets, unlock_action_summaries(opened_assets), decision_events
+    if policy == "passive":
+        opened_assets, decision_events = passive_no_reveal(request)
+        return opened_assets, [], decision_events
+    if policy == "random-eligible":
+        opened_assets, decision_events = random_eligible_reveals(assets, request)
+        return opened_assets, unlock_action_summaries(opened_assets), decision_events
+    if policy == "gate-only":
+        opened_assets, decision_events = gate_only_reveals(assets, request)
+        return opened_assets, unlock_action_summaries(opened_assets), decision_events
+    if policy == "top-recommendation":
+        opened_assets, decision_events = top_recommendation_reveals(
+            assets,
+            request,
+            prior_path=prior_path,
+            config=config,
+        )
+        return opened_assets, unlock_action_summaries(opened_assets), decision_events
+
+    response = ControllerService(
+        FileAssetRepository(catalog_path),
+        FileAttackGroupTechniquePriorRepository(prior_path),
+        config=config,
+    ).tick(request)
+    return (
+        _controller_opened_assets(response.actions),
+        _controller_reveal_actions(response.actions),
+        [event.model_dump(mode="json") for event in response.decision_events],
+    )
+
+
+def _scenario_asset_sets(scenario: dict[str, Any]) -> dict[str, set[str]]:
+    """Return the scenario asset classes used by all reveal quality metrics."""
+    reasonable = set(string_list(scenario.get("expected_reasonable_assets")))
+    useful = (
+        set(string_list(scenario.get("useful_followup_assets")))
+        if "useful_followup_assets" in scenario
+        else reasonable
+    )
+    diagnostic = (
+        set(string_list(scenario.get("diagnostic_followup_assets")))
+        if "diagnostic_followup_assets" in scenario
+        else useful
+    )
+    return {
+        "reasonable": reasonable,
+        "hidden": set(string_list(scenario.get("expected_hidden_assets"))),
+        "useful": useful,
+        "diagnostic": diagnostic,
+    }
+
+
+def _reveal_constraint_result(
+    scenario: dict[str, Any],
+    reveal_actions: list[dict[str, str]],
+) -> dict[str, Any]:
+    """Compare actual reveal actions with exact expected/allowed constraints."""
+    expected_actions = _reveal_constraints(scenario.get("expected_reveals"))
+    allowed_actions = _reveal_constraints(scenario.get("allowed_reveals"))
+    action_constraints_declared = bool(expected_actions or allowed_actions)
+    return {
+        "action_constraints_declared": action_constraints_declared,
+        "missing_expected_reveals": _missing_expected_reveals(reveal_actions, expected_actions),
+        "unexpected_reveal_actions": (
+            _unexpected_reveal_actions(reveal_actions, [*expected_actions, *allowed_actions])
+            if action_constraints_declared
+            else []
+        ),
+    }
+
+
+def evaluate_timeline_scenario(
+    scenario: dict[str, Any],
+    *,
+    assets: list[AssetDefinition],
+    catalog_path: Path,
+    prior_path: Path,
+    policy: PolicyName,
+    config: RuntimeConfig,
+) -> dict[str, Any]:
+    """Replay one scenario step by step with cumulative profile and exposure state.
+
+    A timeline replay models the reveal loop rather than a single aggregate
+    snapshot: each step adds new evidence, the selected actions update the
+    simulated unlocked/configured state, and later steps see that state.
+    """
+    timeline = scenario_timeline(scenario)
+    cumulative_events: list[dict[str, Any]] = []
+    unlocked_assets = string_list(scenario.get("initial_unlocked_assets"))
+    revealed_configurations = _revealed_configurations(scenario.get("revealed_configurations"))
+    step_rows: list[dict[str, Any]] = []
+
+    for index, step in enumerate(timeline, start=1):
+        step_events = _step_new_evidence(step)
+        cumulative_events.extend(step_events)
+        step_scenario = _scenario_for_timeline_step(
+            scenario=scenario,
+            step=step,
+            cumulative_events=cumulative_events,
+            unlocked_assets=unlocked_assets,
+            revealed_configurations=revealed_configurations,
+            index=index,
+        )
+        step_row = evaluate_scenario(
+            step_scenario,
+            assets=assets,
+            catalog_path=catalog_path,
+            prior_path=prior_path,
+            policy=policy,
+            config=config,
+        )
+        step_rows.append(step_row)
+        unlocked_assets = dedupe_preserve([*unlocked_assets, *step_row["opened_assets"]])
+        _record_revealed_configurations(revealed_configurations, step_row["reveal_actions"])
+
+    final_row = _collapse_timeline_rows(scenario, policy, step_rows)
+    final_row["timeline"] = step_rows
+    final_row["source_traceability_status"] = _source_traceability_status(scenario, timeline)
+    return final_row
+
+
+def scenario_timeline(scenario: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return explicit timeline steps, falling back to one snapshot step.
+
+    Fixtures can migrate incrementally: old one-tick scenarios still replay as
+    a single step, while full-process scenarios declare a `timeline` array.
+    """
+    raw_timeline = scenario.get("timeline")
+    if isinstance(raw_timeline, list) and raw_timeline:
+        return [step for step in raw_timeline if isinstance(step, dict)]
+    return [
+        {
+            "step_id": "snapshot",
+            "phase": "snapshot",
+            "new_evidence": scenario.get("evidence_sequence", []),
+            "profile": scenario.get("profile"),
+            "expected_reveals": scenario.get("expected_reveals"),
+            "allowed_reveals": scenario.get("allowed_reveals"),
+            "expected_no_reveal": scenario.get("expected_no_reveal"),
+            "touched_assets": scenario.get("touched_assets"),
+            "expected_reason": scenario.get("expected_behavior"),
+        }
+    ]
+
+
+def _scenario_for_timeline_step(
+    *,
+    scenario: dict[str, Any],
+    step: dict[str, Any],
+    cumulative_events: list[dict[str, Any]],
+    unlocked_assets: list[str],
+    revealed_configurations: dict[str, list[str]],
+    index: int,
+) -> dict[str, Any]:
+    """Build a normal one-tick scenario for a timeline step."""
+    step_id = str(step.get("step_id") or f"step-{index}")
+    step_scenario: dict[str, Any] = {
+        **scenario,
+        "scenario_id": f"{scenario.get('scenario_id', 'scenario')}::{step_id}",
+        "initial_unlocked_assets": unlocked_assets,
+        "revealed_configurations": revealed_configurations,
+        "evidence_sequence": cumulative_events,
+        "expected_reveals": step.get("expected_reveals", []),
+        "allowed_reveals": step.get("allowed_reveals", []),
+        "expected_no_reveal": bool(step.get("expected_no_reveal")),
+        "touched_assets": step.get("touched_assets", []),
+    }
+    if isinstance(step.get("profile"), dict):
+        step_scenario["profile"] = step["profile"]
+        step_scenario.pop("evidence_sequence", None)
+    else:
+        step_scenario.pop("profile", None)
+    return step_scenario
+
+
+def _step_new_evidence(step: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return the evidence records introduced by one timeline step."""
+    raw_evidence = step.get("new_evidence", [])
+    if isinstance(raw_evidence, dict):
+        return [raw_evidence]
+    return [item for item in raw_evidence if isinstance(item, dict)] if isinstance(raw_evidence, list) else []
+
+
+def _record_revealed_configurations(
+    revealed_configurations: dict[str, list[str]],
+    reveal_actions: list[dict[str, str]],
+) -> None:
+    """Track configured variants so later timeline steps do not reselect them."""
+    for action in reveal_actions:
+        if action.get("action_type") != "configure":
+            continue
+        asset_id = action.get("asset_id")
+        configuration_id = action.get("configuration_id")
+        if not asset_id or not configuration_id:
+            continue
+        revealed_configurations[asset_id] = dedupe_preserve(
+            [*revealed_configurations.get(asset_id, []), configuration_id]
+        )
+
+
+def _collapse_timeline_rows(
+    scenario: dict[str, Any],
+    policy: PolicyName,
+    step_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Aggregate step rows into the historical per-scenario row shape."""
+    opened_assets = dedupe_preserve(
+        asset_id for row in step_rows for asset_id in row["opened_assets"]
+    )
+    reveal_actions = _dedupe_reveal_actions(
+        action for row in step_rows for action in row["reveal_actions"]
+    )
+    decision_events = [
+        event for row in step_rows for event in row.get("decision_events", [])
+    ]
+    reveal_constraints = _reveal_constraint_result(scenario, reveal_actions)
+    asset_sets = _scenario_asset_sets(scenario)
+    opened_set = set(opened_assets)
+    touched_assets = dedupe_preserve(
+        [
+            *string_list(scenario.get("touched_assets")),
+            *[
+                asset_id
+                for step in scenario_timeline(scenario)
+                for asset_id in string_list(step.get("touched_assets"))
+            ],
+            *[
+                asset_id
+                for row in step_rows
+                for asset_id in row.get("touched_reveal_assets", [])
+            ],
+        ]
+    )
+    expected_no_reveal = bool(scenario.get("expected_no_reveal"))
+    step_expected_no_reveal = sum(1 for row in step_rows if row["expected_no_reveal"])
+    step_correct_no_reveal = sum(1 for row in step_rows if row["correct_no_reveal"])
+    response_gate_expected = sum(
+        1 for step in scenario_timeline(scenario) if step.get("expected_response_gate_wait")
+    )
+    response_gate_correct = sum(
+        1
+        for step, row in zip(scenario_timeline(scenario), step_rows)
+        if step.get("expected_response_gate_wait") and not row["opened_assets"]
+    )
+    anchor_metrics = _anchor_metrics(scenario_timeline(scenario), step_rows)
+    final_expected_assets = _final_expected_assets(scenario)
+    missing_final_expected_assets = sorted(set(final_expected_assets) - opened_set)
+    final_outcome_success = _final_outcome_success(
+        scenario=scenario,
+        opened_set=opened_set,
+        missing_final_expected_assets=missing_final_expected_assets,
+    )
+    gate_metrics = _sum_gate_metrics(step_rows)
+    return {
+        "scenario_id": str(scenario.get("scenario_id") or scenario.get("case_id") or "scenario"),
+        "policy": policy,
+        "opened_assets": opened_assets,
+        "reveal_actions": reveal_actions,
+        "main_reveal_assets": dedupe_preserve(asset for row in step_rows for asset in row["main_reveal_assets"]),
+        "explore_reveal_assets": dedupe_preserve(asset for row in step_rows for asset in row["explore_reveal_assets"]),
+        "touched_reveal_assets": sorted(set(touched_assets) & opened_set),
+        "choice_signal": None,
+        "opened_asset_count": len(opened_assets),
+        "unlock_reveal_count": sum(1 for action in reveal_actions if action["action_type"] == "unlock"),
+        "configuration_reveal_count": sum(1 for action in reveal_actions if action["action_type"] == "configure"),
+        "reasonable_reveals": sorted(opened_set & asset_sets["reasonable"]),
+        "irrelevant_reveals": sorted(opened_set - asset_sets["reasonable"]),
+        "hidden_violations": sorted(opened_set & asset_sets["hidden"]),
+        "useful_reveals": sorted((opened_set & asset_sets["useful"]) or (set(touched_assets) & opened_set)),
+        "diagnostic_or_useful_reveals": sorted(opened_set & (asset_sets["useful"] | asset_sets["diagnostic"])),
+        "missing_expected_reveals": reveal_constraints["missing_expected_reveals"],
+        "unexpected_reveal_actions": reveal_constraints["unexpected_reveal_actions"],
+        "action_constraints_declared": reveal_constraints["action_constraints_declared"],
+        "expected_no_reveal": expected_no_reveal,
+        "correct_no_reveal": expected_no_reveal and not opened_assets,
+        "prior_influenced": any(row["prior_influenced"] for row in step_rows),
+        "gate_only_opened_assets": dedupe_preserve(
+            asset for row in step_rows for asset in row["gate_only_opened_assets"]
+        ),
+        "gate_decision_point_count": gate_metrics["decision_point_count"],
+        "gate_ready_asset_total": gate_metrics["ready_asset_total"],
+        "gate_eligible_asset_total": gate_metrics["eligible_asset_total"],
+        "gate_narrowing_rate_total": gate_metrics["narrowing_rate_total"],
+        "gate_ready_assets_before_gate_avg": gate_metrics["ready_assets_before_gate_avg"],
+        "gate_eligible_assets_after_gate_avg": gate_metrics["eligible_assets_after_gate_avg"],
+        "gate_narrowing_rate": gate_metrics["narrowing_rate"],
+        "gate_eligible_bucket_counts": gate_metrics["eligible_bucket_counts"],
+        "rejection_reason_counts": gate_metrics["rejection_reason_counts"],
+        "profile_to_reveal_latency_ticks": _first_reveal_tick(step_rows),
+        "decision_trace_complete": all(row["decision_trace_complete"] for row in step_rows),
+        "decision_events": decision_events,
+        "step_count": len(step_rows),
+        "step_expected_no_reveal_count": step_expected_no_reveal,
+        "step_correct_no_reveal_count": step_correct_no_reveal,
+        "step_no_reveal_correctness_rate": _ratio(step_correct_no_reveal, step_expected_no_reveal),
+        "response_gate_wait_expected_count": response_gate_expected,
+        "response_gate_wait_correct_count": response_gate_correct,
+        "timeline_reveal_efficiency": _ratio(len(set(touched_assets) & opened_set), len(opened_set)),
+        "anchor_step_count": anchor_metrics["anchor_step_count"],
+        "anchor_step_correct_count": anchor_metrics["anchor_step_correct_count"],
+        "anchor_step_correctness_rate": anchor_metrics["anchor_step_correctness_rate"],
+        "anchor_missing_expected_reveals": anchor_metrics["anchor_missing_expected_reveals"],
+        "anchor_unexpected_reveal_actions": anchor_metrics["anchor_unexpected_reveal_actions"],
+        "anchor_failed_no_reveal_count": anchor_metrics["anchor_failed_no_reveal_count"],
+        "final_expected_assets": final_expected_assets,
+        "missing_final_expected_assets": missing_final_expected_assets,
+        "final_outcome_success": final_outcome_success,
+    }
+
+
+def _anchor_metrics(
+    timeline: list[dict[str, Any]],
+    step_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Score only timeline steps explicitly marked as decision anchors."""
+    anchor_rows = [
+        (step, row)
+        for step, row in zip(timeline, step_rows)
+        if step.get("anchor_check")
+    ]
+    missing_expected = [
+        item
+        for _step, row in anchor_rows
+        for item in row["missing_expected_reveals"]
+    ]
+    unexpected_actions = [
+        item
+        for _step, row in anchor_rows
+        for item in row["unexpected_reveal_actions"]
+    ]
+    failed_no_reveal = sum(
+        1
+        for step, row in anchor_rows
+        if step.get("expected_no_reveal") and row["opened_assets"]
+    )
+    correct = 0
+    for step, row in anchor_rows:
+        if step.get("expected_no_reveal"):
+            correct += int(not row["opened_assets"])
+            continue
+        if row["action_constraints_declared"]:
+            correct += int(
+                not row["missing_expected_reveals"]
+                and not row["unexpected_reveal_actions"]
+            )
+        else:
+            correct += 1
+    return {
+        "anchor_step_count": len(anchor_rows),
+        "anchor_step_correct_count": correct,
+        "anchor_step_correctness_rate": _ratio(correct, len(anchor_rows)),
+        "anchor_missing_expected_reveals": missing_expected,
+        "anchor_unexpected_reveal_actions": unexpected_actions,
+        "anchor_failed_no_reveal_count": failed_no_reveal,
+    }
+
+
+def _final_expected_assets(scenario: dict[str, Any]) -> list[str]:
+    """Return the asset set used for scenario-level final outcome scoring."""
+    explicit = string_list(scenario.get("final_expected_assets"))
+    if explicit:
+        return explicit
+    useful = string_list(scenario.get("useful_followup_assets"))
+    if useful:
+        return useful
+    return string_list(scenario.get("expected_reasonable_assets"))
+
+
+def _final_outcome_success(
+    *,
+    scenario: dict[str, Any],
+    opened_set: set[str],
+    missing_final_expected_assets: list[str],
+) -> bool:
+    """Return whether the complete replay achieved its scenario-level goal."""
+    if missing_final_expected_assets:
+        return False
+    if scenario.get("expected_no_reveal"):
+        return not opened_set
+    final_expected = _final_expected_assets(scenario)
+    return bool(final_expected) or not opened_set
+
+
+def _dedupe_reveal_actions(actions: Any) -> list[dict[str, str]]:
+    """De-duplicate compact reveal-action dictionaries in timeline order."""
+    seen: set[str] = set()
+    deduped: list[dict[str, str]] = []
+    for action in actions:
+        if not isinstance(action, dict):
+            continue
+        key = json.dumps(action, sort_keys=True)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(action)
+    return deduped
+
+
+def _sum_gate_metrics(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Aggregate gate metrics from per-step rows."""
+    decision_points = sum(int(row["gate_decision_point_count"]) for row in rows)
+    ready_total = sum(int(row["gate_ready_asset_total"]) for row in rows)
+    eligible_total = sum(int(row["gate_eligible_asset_total"]) for row in rows)
+    narrowing_total = sum(float(row["gate_narrowing_rate_total"]) for row in rows)
+    buckets = Counter[str]()
+    reasons = Counter[str]()
+    for row in rows:
+        buckets.update(row["gate_eligible_bucket_counts"])
+        reasons.update(row["rejection_reason_counts"])
+    return {
+        "decision_point_count": decision_points,
+        "ready_asset_total": ready_total,
+        "eligible_asset_total": eligible_total,
+        "narrowing_rate_total": narrowing_total,
+        "ready_assets_before_gate_avg": _average(ready_total, decision_points),
+        "eligible_assets_after_gate_avg": _average(eligible_total, decision_points),
+        "narrowing_rate": _average(narrowing_total, decision_points),
+        "eligible_bucket_counts": {
+            bucket: buckets.get(bucket, 0)
+            for bucket in ("zero", "one", "two_plus")
+        },
+        "rejection_reason_counts": dict(sorted(reasons.items())),
+    }
+
+
+def _first_reveal_tick(rows: list[dict[str, Any]]) -> int | None:
+    """Return the first 1-based timeline tick that opened an asset/config."""
+    for index, row in enumerate(rows, start=1):
+        if row["opened_assets"]:
+            return index
+    return None
+
+
+def _source_traceability_status(scenario: dict[str, Any], timeline: list[dict[str, Any]]) -> str:
+    """Return whether every full-process step declares source traceability."""
+    if not timeline:
+        return "missing"
+    for step in timeline:
+        source_refs = step.get("source_refs")
+        if not isinstance(source_refs, list) or not source_refs:
+            return "missing"
+        for source_ref in source_refs:
+            if not isinstance(source_ref, dict):
+                return "missing"
+            if not source_ref.get("reference_id") or not source_ref.get("exactness_level"):
+                return "missing"
+    return "declared"
 
 
 def scenario_request(scenario: dict[str, Any]) -> ControllerTickRequest:
@@ -426,18 +879,6 @@ def _choice_signal(
     return "unresolved"
 
 
-def _unlock_action_summaries(asset_ids: list[str]) -> list[dict[str, str]]:
-    return [{"action_type": "unlock", "asset_id": asset_id} for asset_id in asset_ids]
-
-
-def _expected_reveals(scenario: dict[str, Any]) -> list[dict[str, str]]:
-    return _reveal_constraints(scenario.get("expected_reveals"))
-
-
-def _allowed_reveals(scenario: dict[str, Any]) -> list[dict[str, str]]:
-    return _reveal_constraints(scenario.get("allowed_reveals"))
-
-
 def _reveal_constraints(raw_reveals: object) -> list[dict[str, str]]:
     if not isinstance(raw_reveals, list):
         return []
@@ -512,196 +953,6 @@ def profile_from_evidence_sequence(attacker_key: str, raw_events: object) -> Pro
         recent_internal_http_indicators=dedupe_preserve(_values(events, "internal_http_indicator")),
         recent_asset_ids=dedupe_preserve(_values(events, "asset_id", "source_asset_id")),
     )
-
-
-def _all_open_reveals(
-    assets: list[AssetDefinition],
-    request: ControllerTickRequest,
-) -> tuple[list[str], list[dict[str, Any]]]:
-    opened = [
-        asset.asset_id
-        for asset in assets
-        if asset.exposure_type == "internal"
-        and asset.asset_id not in request.unlocked_asset_ids
-        and set(asset.dependencies).issubset(request.unlocked_asset_ids)
-    ]
-    return opened, [
-        {
-            "decision_type": "unlock",
-            "details": {
-                "selected_strategy": "all-open",
-                "selected_technique": None,
-                "eligible_assets": opened,
-                "rejected_assets": {},
-                "prior_degraded": None,
-            },
-        }
-    ]
-
-
-def _passive_no_reveal(request: ControllerTickRequest) -> tuple[list[str], list[dict[str, Any]]]:
-    """Return an explicit no_reveal baseline for scanner/boundary comparisons.
-
-    Example:
-        passive policy with any profile -> no opened assets.
-    """
-    return [], [
-        {
-            "decision_type": "noop",
-            "attacker_key": request.attacker_key,
-            "binding_id": request.binding_id,
-            "details": {
-                "selected_strategy": "passive",
-                "reveal_action": "no_reveal",
-                "no_reveal_reason": "passive baseline never opens assets",
-                "prior_degraded": None,
-            },
-        }
-    ]
-
-
-def _gate_only_reveals(
-    assets: list[AssetDefinition],
-    request: ControllerTickRequest,
-    max_reveals: int = 2,
-) -> tuple[list[str], list[dict[str, Any]]]:
-    """Reveal dependency-unblocked assets whose hard signals match the profile.
-
-    Example:
-        public_http_rule=public_http_exploit_probe opens assets declaring that rule.
-    """
-    opened = [
-        asset.asset_id
-        for asset in assets
-        if _asset_dependency_ready(asset, request)
-        and _asset_unlock_signals_match(asset, request)
-    ][:max_reveals]
-    return opened, [
-        {
-            "decision_type": "unlock" if opened else "noop",
-            "details": {
-                "selected_strategy": "gate-only",
-                "eligible_assets": opened,
-                "rejected_assets": {},
-                "prior_degraded": None,
-            },
-        }
-    ]
-
-
-def _random_eligible_reveals(
-    assets: list[AssetDefinition],
-    request: ControllerTickRequest,
-) -> tuple[list[str], list[dict[str, Any]]]:
-    """Reveal one deterministic random eligible asset.
-
-    Example:
-        eligible=["finance-share", "web-admin-console"] -> one stable choice for baseline comparison.
-    """
-    eligible = [
-        asset.asset_id
-        for asset in assets
-        if _asset_dependency_ready(asset, request)
-        and _asset_unlock_signals_match(asset, request)
-    ]
-    opened = [random.Random(0).choice(eligible)] if eligible else []
-    return opened, [
-        {
-            "decision_type": "unlock" if opened else "noop",
-            "details": {
-                "selected_strategy": "random-eligible",
-                "eligible_assets": eligible,
-                "rejected_assets": {},
-                "prior_degraded": None,
-            },
-        }
-    ]
-
-
-def _top_recommendation_reveals(
-    assets: list[AssetDefinition],
-    request: ControllerTickRequest,
-    *,
-    prior_path: Path,
-    config: RuntimeConfig,
-) -> tuple[list[str], list[dict[str, Any]]]:
-    """Reveal one eligible asset covering the highest supported recommended technique.
-
-    Example:
-        observed {"T1552.001"} + group prior recommends T1005 -> choose an eligible T1005 asset.
-    """
-    observed = {
-        technique
-        for technique, confidence in request.profile.conf_by_technique.items()
-        if float(confidence) >= config.strong_technique_threshold
-    }
-    prior = FileAttackGroupTechniquePriorRepository(prior_path)
-    recommendations = prior.recommend(
-        observed,
-        top_k=config.recommendation_top_k,
-        support_threshold=config.recommendation_support_threshold,
-    )
-    for technique, support in sorted(recommendations.items(), key=lambda item: item[1], reverse=True):
-        for asset in assets:
-            if _asset_dependency_ready(asset, request) and technique in _asset_covered_techniques(asset):
-                return [asset.asset_id], [
-                    {
-                        "decision_type": "unlock",
-                        "details": {
-                            "selected_strategy": "top-recommendation",
-                            "selected_technique": technique,
-                            "recommendation_support": round(support, 4),
-                            "prior_degraded": prior.degraded_reason,
-                        },
-                    }
-                ]
-    return [], [
-        {
-            "decision_type": "noop",
-            "details": {
-                "selected_strategy": "top-recommendation",
-                "reveal_action": "no_reveal",
-                "prior_degraded": prior.degraded_reason,
-            },
-        }
-    ]
-
-
-def _asset_dependency_ready(asset: AssetDefinition, request: ControllerTickRequest) -> bool:
-    return (
-        asset.exposure_type == "internal"
-        and asset.asset_id not in request.unlocked_asset_ids
-        and set(asset.dependencies).issubset(request.unlocked_asset_ids)
-    )
-
-
-def _asset_covered_techniques(asset: AssetDefinition) -> set[str]:
-    selection_profile = asset.default_settings.get("selection_profile")
-    if not isinstance(selection_profile, dict):
-        return set()
-    techniques = selection_profile.get("covered_techniques")
-    return {item for item in techniques if isinstance(item, str)} if isinstance(techniques, list) else set()
-
-
-def _asset_unlock_signals_match(asset: AssetDefinition, request: ControllerTickRequest) -> bool:
-    unlock_signals = asset.default_settings.get("unlock_signals")
-    if not isinstance(unlock_signals, dict) or not unlock_signals:
-        return bool(request.profile.recent_evidence_ids or request.profile.recent_techniques)
-    observed = {
-        "any_http_paths": set(request.profile.recent_public_http_paths),
-        "any_http_rules": set(request.profile.recent_public_http_rules),
-        "any_http_indicators": set(request.profile.recent_public_http_indicators),
-        "any_internal_http_paths": set(request.profile.recent_internal_http_paths),
-        "any_internal_http_rules": set(request.profile.recent_internal_http_rules),
-        "any_internal_http_indicators": set(request.profile.recent_internal_http_indicators),
-        "any_techniques": set(request.profile.recent_techniques),
-        "any_tactics": set(request.profile.recent_tactics),
-    }
-    for key, values in unlock_signals.items():
-        required = {item for item in values if isinstance(item, str)} if isinstance(values, list) else set()
-        if required and observed.get(key, set()).intersection(required):
-            return True
-    return False
 
 
 def _decision_trace_complete(decision_events: list[dict[str, Any]]) -> bool:
@@ -815,6 +1066,25 @@ def _aggregate_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
         gate_bucket_counts.update(row["gate_eligible_bucket_counts"])
         rejection_reason_counts.update(row["rejection_reason_counts"])
     rejection_total = sum(rejection_reason_counts.values())
+    step_count = sum(int(row.get("step_count", 1)) for row in rows)
+    step_expected_no_reveal = sum(int(row.get("step_expected_no_reveal_count", 0)) for row in rows)
+    step_correct_no_reveal = sum(int(row.get("step_correct_no_reveal_count", 0)) for row in rows)
+    response_gate_expected = sum(int(row.get("response_gate_wait_expected_count", 0)) for row in rows)
+    response_gate_correct = sum(int(row.get("response_gate_wait_correct_count", 0)) for row in rows)
+    anchor_steps = sum(int(row.get("anchor_step_count", 0)) for row in rows)
+    anchor_steps_correct = sum(int(row.get("anchor_step_correct_count", 0)) for row in rows)
+    anchor_missing_expected = sum(len(row.get("anchor_missing_expected_reveals", [])) for row in rows)
+    anchor_unexpected_reveals = sum(len(row.get("anchor_unexpected_reveal_actions", [])) for row in rows)
+    anchor_failed_no_reveal = sum(int(row.get("anchor_failed_no_reveal_count", 0)) for row in rows)
+    final_outcome_success = sum(1 for row in rows if row.get("final_outcome_success"))
+    timeline_efficiency_rows = [
+        float(row["timeline_reveal_efficiency"])
+        for row in rows
+        if "timeline_reveal_efficiency" in row
+    ]
+    source_traceability_declared = sum(
+        1 for row in rows if row.get("source_traceability_status") == "declared"
+    )
     # Choice signals are only emitted when a controller row offered both main
     # and explore reveals and the fixture declared follow-up touched assets.
     choice_signals = [
@@ -862,6 +1132,27 @@ def _aggregate_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "expected_no_reveal_count": expected_no_reveal,
         "correct_no_reveal_rate": _ratio(correct_no_reveal, expected_no_reveal),
+        "step_count": step_count,
+        "step_expected_no_reveal_count": step_expected_no_reveal,
+        "step_correct_no_reveal_count": step_correct_no_reveal,
+        "step_no_reveal_correctness_rate": _ratio(step_correct_no_reveal, step_expected_no_reveal),
+        "response_gate_wait_expected_count": response_gate_expected,
+        "response_gate_wait_correct_count": response_gate_correct,
+        "response_gate_wait_correctness_rate": _ratio(response_gate_correct, response_gate_expected),
+        "anchor_step_count": anchor_steps,
+        "anchor_step_correct_count": anchor_steps_correct,
+        "anchor_step_correctness_rate": _ratio(anchor_steps_correct, anchor_steps),
+        "anchor_missing_expected_reveal_count": anchor_missing_expected,
+        "anchor_unexpected_reveal_count": anchor_unexpected_reveals,
+        "anchor_failed_no_reveal_count": anchor_failed_no_reveal,
+        "final_outcome_success_count": final_outcome_success,
+        "final_outcome_success_rate": _ratio(final_outcome_success, len(rows)),
+        "timeline_reveal_efficiency_avg": (
+            round(sum(timeline_efficiency_rows) / len(timeline_efficiency_rows), 6)
+            if timeline_efficiency_rows
+            else None
+        ),
+        "source_traceability_declared_rate": _ratio(source_traceability_declared, len(rows)),
         "prior_influenced_scenario_count": prior_influenced,
         "prior_influence_rate": _ratio(prior_influenced, len(rows)),
         "gate_decision_point_count": gate_decision_points,

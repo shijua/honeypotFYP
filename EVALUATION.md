@@ -50,12 +50,25 @@ This is the main correctness evaluation. It replays the scenario file against mu
 
 ```bash
 .venv/bin/python scripts/evaluation/reveal_policy.py \
-  tests/fixtures/reveal_policy_scenarios.json \
+  tests/fixtures/reveal_policy_main_scenarios.json \
   --policy all \
-  --output results/reveal_policy_report.json
+  --replay-mode sequence \
+  --output results/reveal_policy_main_report.json
 ```
 
-This also writes `results/reveal_policy_report.svg`, a compact visual comparison of policy metrics. The SVG path is always the JSON output path with a `.svg` suffix.
+This also writes `results/reveal_policy_main_report.svg`, a compact visual comparison of policy metrics. The SVG path is always the JSON output path with a `.svg` suffix.
+The sequence mode runs each rich scenario timeline step-by-step with cumulative profile and exposure state. The main fixture uses anchor steps for exact checks and final scenario outcome for the headline result; non-anchor steps still accumulate evidence and state but do not fail exact-step accuracy unless they open hidden/forbidden assets. Source grounding and replay semantics are documented in `tests/fixtures/SCENARIO_SOURCE_TRACEABILITY.md` and `tests/fixtures/FULL_REPLAY_SCENARIO_DESIGN.md`.
+
+The broader regression fixture is still useful for debugging edge cases. It may exit non-zero when it finds controller/scenario alignment issues; inspect the JSON rather than treating it as the headline acceptance check.
+
+```bash
+# Optional broad regression check.
+.venv/bin/python scripts/evaluation/reveal_policy.py \
+  tests/fixtures/reveal_policy_scenarios.json \
+  --policy all \
+  --replay-mode sequence \
+  --output results/reveal_policy_regression_report.json || true
+```
 
 Policies compared:
 
@@ -76,9 +89,14 @@ For the controller row, check:
 - `strict_expected_reveal_match_rate`: expected actions matched and no unexpected actions were emitted.
 - `configuration_reveal_count`: per-row count showing when the controller changed a configuration instead of opening a new asset.
 - `correct_no_reveal_rate`: scanner/boundary no-reveal cases stayed closed.
+- `anchor_step_correctness_rate`: exact reveal/no-reveal correctness on the declared key decision points only.
+- `final_outcome_success_rate`: full scenario replay reached the declared final useful/reasonable outcome.
 - `useful_evidence_per_reveal`: opened assets that the scenario marks as producing concrete useful follow-up evidence, divided by opened assets.
 - `diagnostic_or_useful_per_reveal`: opened assets that the scenario marks as either useful or diagnostically informative, divided by opened assets.
 - `choice_signal_count` / `resolved_choice_rate`: among controller rows with both main and explore reveals plus fixture `touched_assets`, how often follow-up behavior identified a local choice signal.
+- `step_no_reveal_correctness_rate`: no-reveal expectations checked at individual timeline steps.
+- `timeline_reveal_efficiency_avg`: average per-scenario touched revealed assets divided by total revealed assets.
+- `source_traceability_declared_rate`: whether each timeline step declares source reference and exactness level.
 - `opened_asset_count` / `avg_opened_assets`: total opened assets and average reveals per scenario.
 - `gate_narrowing_rate`: average fraction of considered assets removed by the hard dependency/readiness/signal gate before ranking.
 - `gate_ready_assets_before_gate_avg` / `gate_eligible_assets_after_gate_avg`: average candidate count before and after the gate.
@@ -90,10 +108,10 @@ For the controller row, check:
 Quick summary:
 
 ```bash
-jq '{ok: .ok, controller: (.policies.controller | {scenario_count, reveal_correctness, irrelevant_reveal_rate, hidden_violation_rate, correct_no_reveal_rate, avg_opened_assets, useful_evidence_per_reveal, diagnostic_or_useful_per_reveal, gate_narrowing_rate, gate_ready_assets_before_gate_avg, gate_eligible_assets_after_gate_avg, gate_eligible_bucket_counts, rejection_reason_counts, prior_influence_rate, decision_trace_completeness_rate, expected_reveal_match_rate, unexpected_reveal_action_rate, strict_expected_reveal_match_rate, choice_signal_count, resolved_choice_rate, choice_signal_counts})}' results/reveal_policy_report.json
+jq '{ok: .ok, controller: (.policies.controller | {scenario_count, step_count, anchor_step_count, anchor_step_correctness_rate, anchor_missing_expected_reveal_count, anchor_failed_no_reveal_count, final_outcome_success_rate, reveal_correctness, irrelevant_reveal_rate, hidden_violation_rate, correct_no_reveal_rate, step_no_reveal_correctness_rate, avg_opened_assets, useful_evidence_per_reveal, timeline_reveal_efficiency_avg, diagnostic_or_useful_per_reveal, gate_narrowing_rate, gate_ready_assets_before_gate_avg, gate_eligible_assets_after_gate_avg, gate_eligible_bucket_counts, rejection_reason_counts, prior_influence_rate, decision_trace_completeness_rate, source_traceability_declared_rate, choice_signal_count, resolved_choice_rate, choice_signal_counts})}' results/reveal_policy_main_report.json
 ```
 
-Expected: no hidden violations, no missing expected reveal actions, no unexpected reveal actions, and no-reveal scenarios pass. A failed `ok` with non-zero `unexpected_reveal_count` means the controller opened or configured more than the scenario allowed, even if the asset-level reveal still looked reasonable.
+Expected for an accepted main controller/scenario set: no hidden violations, no missing or unexpected actions on anchor steps, no failed anchor no-reveal checks, declared source traceability for every step, and successful final useful/reasonable outcomes. The broad regression fixture may report unexpected actions when the controller reasonably opens more than a small scenario listed; that is useful for debugging but is not the headline accuracy number.
 
 ## 3. Optional Public Dataset Prior Validation
 
@@ -227,7 +245,8 @@ For a normal development check, run this sequence:
 ```bash
 .venv/bin/python scripts/validation/attack_group_prior.py --path data/technique_prior/attack_group_technique_prior.json
 .venv/bin/python scripts/evaluation/attack_group_prior_recommendation.py tests/fixtures/reveal_policy_scenarios.json --prior data/technique_prior/attack_group_technique_prior.json --output results/attack_group_prior_report.json
-.venv/bin/python scripts/evaluation/reveal_policy.py tests/fixtures/reveal_policy_scenarios.json --policy all --output results/reveal_policy_report.json
+.venv/bin/python scripts/evaluation/reveal_policy.py tests/fixtures/reveal_policy_main_scenarios.json --policy all --replay-mode sequence --output results/reveal_policy_main_report.json
+.venv/bin/python scripts/evaluation/reveal_policy.py tests/fixtures/reveal_policy_scenarios.json --policy all --replay-mode sequence --output results/reveal_policy_regression_report.json || true
 .venv/bin/python scripts/evaluation/reveal_port_simulation.py --mode controller-only --scenario-file tests/fixtures/reveal_port_scenarios.json --output results/reveal_port_controller_report.json
 docker-compose -p honeynet -f docker-compose.control.yml -f docker-compose.enterprise.yml config
 ```

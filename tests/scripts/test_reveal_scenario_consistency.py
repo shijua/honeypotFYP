@@ -7,7 +7,7 @@ import pytest
 
 from libs.common.attack import same_technique_family
 from services.controller.repository import FileAssetRepository
-from scripts.evaluation.reveal_policy import load_scenarios
+from scripts.evaluation.reveal_policy import load_scenarios, scenario_timeline
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -17,37 +17,33 @@ pytestmark = pytest.mark.unit
 
 def test_reveal_policy_scenarios_reference_existing_assets_and_covered_techniques() -> None:
     assets = _assets_by_id()
-    scenarios = load_scenarios(ROOT / "tests/fixtures/reveal_policy_scenarios.json")
+    reference_text = (
+        (ROOT / "tests/fixtures/README.md").read_text(encoding="utf-8")
+        + "\n"
+        + (ROOT / "tests/fixtures/SCENARIO_SOURCE_TRACEABILITY.md").read_text(encoding="utf-8")
+    )
+    policy_fixtures = [
+        (ROOT / "tests/fixtures/reveal_policy_main_scenarios.json", set()),
+        (
+            ROOT / "tests/fixtures/reveal_policy_scenarios.json",
+            {
+                "fit",
+                "boundary",
+                "scanner-like",
+                "mixed-signal",
+                "false-positive-reveal",
+                "configuration",
+                "configuration-negative",
+            },
+        ),
+    ]
 
-    assert {
-        "fit",
-        "boundary",
-        "scanner-like",
-        "mixed-signal",
-        "false-positive-reveal",
-        "configuration",
-        "configuration-negative",
-    }.issubset({item.get("scenario_type") for item in scenarios})
-    reference_text = (ROOT / "tests/fixtures/README.md").read_text(encoding="utf-8")
-
-    for scenario in scenarios:
-        assert isinstance(scenario.get("reference_id"), str) and scenario["reference_id"], scenario["scenario_id"]
-        assert scenario["reference_id"] in reference_text, scenario["scenario_id"]
-        expected_assets = _strings(scenario.get("expected_reasonable_assets"))
-        hidden_assets = _strings(scenario.get("expected_hidden_assets"))
-        useful_assets = _strings(scenario.get("useful_followup_assets"))
-        diagnostic_assets = _strings(scenario.get("diagnostic_followup_assets"))
-        touched_assets = _strings(scenario.get("touched_assets"))
-        for asset_id in [*expected_assets, *hidden_assets, *useful_assets, *diagnostic_assets, *touched_assets]:
-            assert asset_id in assets, f"{scenario['scenario_id']} references unknown asset {asset_id}"
-        allowed_touched = set(expected_assets) | set(useful_assets) | set(diagnostic_assets)
-        for asset_id in touched_assets:
-            assert asset_id in allowed_touched, f"{scenario['scenario_id']} touches unlinked asset {asset_id}"
-        _assert_expected_reveals_are_catalog_backed(scenario, assets)
-
-        if scenario.get("expected_no_reveal") or scenario.get("boundary"):
-            continue
-        assert _expected_assets_cover_scenario_technique(scenario, expected_assets, assets), scenario["scenario_id"]
+    for fixture, required_types in policy_fixtures:
+        scenarios = load_scenarios(fixture)
+        if required_types:
+            assert required_types.issubset({item.get("scenario_type") for item in scenarios})
+        for scenario in scenarios:
+            _assert_policy_scenario_is_catalog_backed(scenario, assets, reference_text)
 
 
 def test_reveal_port_scenarios_reference_existing_assets_routes_and_covered_techniques() -> None:
@@ -70,6 +66,39 @@ def _assets_by_id() -> dict[str, Any]:
         asset.asset_id: asset
         for asset in FileAssetRepository(ROOT / "data/assets/catalog.json").list_all()
     }
+
+
+def _assert_policy_scenario_is_catalog_backed(
+    scenario: dict[str, Any],
+    assets: dict[str, Any],
+    reference_text: str,
+) -> None:
+    """Check one policy replay scenario against catalog and source docs."""
+    assert isinstance(scenario.get("reference_id"), str) and scenario["reference_id"], scenario["scenario_id"]
+    assert scenario["reference_id"] in reference_text, scenario["scenario_id"]
+    expected_assets = _strings(scenario.get("expected_reasonable_assets"))
+    hidden_assets = _strings(scenario.get("expected_hidden_assets"))
+    useful_assets = _strings(scenario.get("useful_followup_assets"))
+    diagnostic_assets = _strings(scenario.get("diagnostic_followup_assets"))
+    touched_assets = [
+        *_strings(scenario.get("touched_assets")),
+        *[
+            asset_id
+            for step in scenario_timeline(scenario)
+            for asset_id in _strings(step.get("touched_assets"))
+        ],
+    ]
+    for asset_id in [*expected_assets, *hidden_assets, *useful_assets, *diagnostic_assets, *touched_assets]:
+        assert asset_id in assets, f"{scenario['scenario_id']} references unknown asset {asset_id}"
+    allowed_touched = set(expected_assets) | set(useful_assets) | set(diagnostic_assets)
+    for asset_id in touched_assets:
+        assert asset_id in allowed_touched, f"{scenario['scenario_id']} touches unlinked asset {asset_id}"
+    _assert_expected_reveals_are_catalog_backed(scenario, assets)
+    _assert_timeline_traceability_is_declared(scenario)
+
+    if scenario.get("expected_no_reveal") or scenario.get("boundary"):
+        return
+    assert _expected_assets_cover_scenario_technique(scenario, expected_assets, assets), scenario["scenario_id"]
 
 
 def _expected_assets_cover_scenario_technique(
@@ -101,7 +130,17 @@ def _scenario_techniques(scenario: dict[str, Any]) -> set[str]:
         for event in events:
             if isinstance(event, dict):
                 techniques.update(_strings([event.get("technique"), event.get("tech_id")]))
+    for step in scenario_timeline(scenario):
+        for event in _step_evidence(step):
+            techniques.update(_strings([event.get("technique"), event.get("tech_id")]))
     return techniques
+
+
+def _step_evidence(step: dict[str, Any]) -> list[dict[str, Any]]:
+    evidence = step.get("new_evidence", [])
+    if isinstance(evidence, dict):
+        return [evidence]
+    return [item for item in evidence if isinstance(item, dict)] if isinstance(evidence, list) else []
 
 
 def _strings(value: object) -> list[str]:
@@ -115,6 +154,14 @@ def _assert_expected_reveals_are_catalog_backed(
     reveals = [
         *_scenario_reveal_list(scenario.get("expected_reveals")),
         *_scenario_reveal_list(scenario.get("allowed_reveals")),
+        *[
+            reveal
+            for step in scenario_timeline(scenario)
+            for reveal in [
+                *_scenario_reveal_list(step.get("expected_reveals")),
+                *_scenario_reveal_list(step.get("allowed_reveals")),
+            ]
+        ],
     ]
     for reveal in reveals:
         assert isinstance(reveal, dict), scenario["scenario_id"]
@@ -132,6 +179,21 @@ def _assert_expected_actions_are_catalog_backed(
     for action in scenario.get("expected_actions", []):
         assert isinstance(action, dict), scenario["scenario_id"]
         _assert_expected_action_is_catalog_backed(action, scenario, assets)
+
+
+def _assert_timeline_traceability_is_declared(scenario: dict[str, Any]) -> None:
+    for step in scenario_timeline(scenario):
+        source_refs = step.get("source_refs")
+        assert isinstance(source_refs, list) and source_refs, scenario["scenario_id"]
+        for source_ref in source_refs:
+            assert isinstance(source_ref, dict), scenario["scenario_id"]
+            assert source_ref.get("reference_id"), scenario["scenario_id"]
+            assert source_ref.get("exactness_level") in {
+                "direct",
+                "technique-level",
+                "local-adaptation",
+                "negative-control",
+            }, scenario["scenario_id"]
 
 
 def _assert_expected_action_is_catalog_backed(

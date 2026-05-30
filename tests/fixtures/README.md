@@ -2,9 +2,21 @@
 
 These fixtures are intentionally split by evaluation question.
 
+## `reveal_policy_main_scenarios.json`
+
+Main offline policy replay. This is the headline decision-quality fixture: it uses fewer, richer full-process timelines, exact checks only at `anchor_check` steps, and final scenario outcomes instead of treating every tiny evidence step as a full accuracy point. It checks whether each policy reaches useful/reasonable assets, avoids hidden assets, chooses `no_reveal` for boundary cases, and distinguishes asset unlocks from configuration reveals. The semantics are documented in `FULL_REPLAY_SCENARIO_DESIGN.md`, and detailed source mapping lives in `SCENARIO_SOURCE_TRACEABILITY.md`.
+
+| Scenario | Type | Reference id | Source basis | Expected behavior |
+| --- | --- | --- | --- | --- |
+| `main-ransomware-web-payload-loop` | main-fit | `cisa-lockbit-tool-transfer` | CISA LockBit advisory + ATT&CK T1190/T1608/T1105/T1204.002 | Exploit and payload-staging evidence should expose malware-analysis surfaces while keeping finance/admin assets hidden. |
+| `main-source-map-transfer-choice-loop` | main-mixed | `cisa-ransomware-mixed` | CISA BianLian/LockBit advisories + ATT&CK discovery/tool-transfer behavior | Discovery and tool-transfer signals should expose developer and payload paths without opening database assets. |
+| `main-finance-collection-loop` | main-collection | `cisa-red-team-aa23-059a` | CISA red-team file/data discovery, adapted to backup and finance archive clues | Backup and collection evidence should reveal the finance collection path. |
+| `main-active-git-configuration-loop` | main-configuration | `cisa-red-team-aa23-059a` | CISA red-team config/credential discovery, adapted to active Git browsing | Active repository browsing should materialize Git-local configuration clues. |
+| `main-boundary-enterprise-ad-no-reveal-loop` | main-boundary | `cisa-red-team-aa23-059a` | CISA red-team AD/SMB/credential techniques used as an out-of-scope boundary | Unsupported enterprise AD behavior should remain closed. |
+
 ## `reveal_policy_scenarios.json`
 
-Offline policy replay. This is the main decision-quality evaluation: it checks whether each policy reveals reasonable assets, avoids hidden assets, chooses `no_reveal` for scanner or boundary cases, and distinguishes asset unlocks from configuration reveals. Scenarios can declare required `expected_reveals` and optional `allowed_reveals`; any extra action is reported as unexpected even when the asset-level reveal looks reasonable. The JSON keeps only compact `reference_id` values; the source rationale lives here. Advisory/campaign sources provide the behaviour chain; local paths such as `.map`, `.bak`, `/admin`, or `/downloads/agent-update.bin` are honeynet-specific adaptations. Negative-control scenarios are marked as controlled negatives instead of being presented as real incident reproductions.
+Broad offline policy regression. This fixture keeps the smaller fit, boundary, scanner, mixed-signal, normal, configuration, and negative-control cases. It is useful for debugging exact controller/scenario alignment: scenarios can declare required `expected_reveals` and optional `allowed_reveals`; any extra action is reported as unexpected even when the asset-level reveal looks reasonable. Advisory/campaign sources provide behaviour grounding; local paths such as `.map`, `.bak`, `/admin`, or `/downloads/agent-update.bin` are honeynet-specific adaptations. Negative-control scenarios are marked as controlled negatives instead of being presented as real incident reproductions.
 
 | Scenario | Type | Reference id | Source basis | Expected behavior |
 | --- | --- | --- | --- | --- |
