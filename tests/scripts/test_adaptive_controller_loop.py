@@ -383,6 +383,107 @@ def test_tick_once_processes_new_evidence_once_and_limits_unlock_actions(
     assert trace["records"][0]["dropped_actions"][0]["asset_id"] == "finance-share"
 
 
+def test_tick_once_applies_main_and_explore_by_default(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state_dir = tmp_path / "runtime"
+    state_dir.mkdir()
+    (state_dir / "bindings.json").write_text(
+        json.dumps(
+            {
+                "records": [
+                    {
+                        "attacker_key": "198.51.100.11",
+                        "binding_id": "binding-main-explore",
+                        "unlocked_assets": [],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    (state_dir / "profiles.json").write_text(
+        json.dumps(
+            {
+                "profiles": {
+                    "198.51.100.11": {
+                        "attacker_key": "198.51.100.11",
+                        "recent_tactics": ["Credential Access", "Discovery"],
+                        "recent_techniques": ["T1110", "T1046"],
+                        "recent_evidence_ids": ["e-main-explore"],
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    applied_payloads = []
+
+    def fake_post_json(url, payload, timeout_seconds):
+        if url.endswith("/v1/controller/tick"):
+            return {
+                "candidate_asset_ids": ["internal-portal", "finance-share"],
+                "actions": [
+                    {
+                        "action_type": "unlock",
+                        "binding_id": "binding-main-explore",
+                        "asset_id": "internal-portal",
+                        "reason": "main",
+                    },
+                    {
+                        "action_type": "unlock",
+                        "binding_id": "binding-main-explore",
+                        "asset_id": "finance-share",
+                        "reason": "explore",
+                    },
+                ],
+                "decision_events": [],
+            }
+
+        applied_payloads.append(payload)
+        return {
+            "binding": {
+                "binding_id": "binding-main-explore",
+                "unlocked_assets": ["internal-portal", "finance-share"],
+            },
+            "route_updates": [
+                "binding binding-main-explore exposes internal-portal",
+                "binding binding-main-explore exposes finance-share",
+            ],
+            "runtime_events": [],
+        }
+
+    monkeypatch.setattr(adaptive_controller_loop, "post_json", fake_post_json)
+    trace_file = state_dir / "decision_trace.json"
+
+    applied = adaptive_controller_loop.tick_once(
+        state_dir=state_dir,
+        controller_url="http://controller",
+        orchestrator_url="http://orchestrator",
+        timeout_seconds=0.1,
+        trace_file=trace_file,
+    )
+
+    assert applied == 2
+    assert applied_payloads[0]["actions"] == [
+        {
+            "action_type": "unlock",
+            "binding_id": "binding-main-explore",
+            "asset_id": "internal-portal",
+            "reason": "main",
+        },
+        {
+            "action_type": "unlock",
+            "binding_id": "binding-main-explore",
+            "asset_id": "finance-share",
+            "reason": "explore",
+        },
+    ]
+    trace = json.loads(trace_file.read_text(encoding="utf-8"))
+    assert trace["records"][0]["dropped_actions"] == []
+
+
 def test_tick_once_writes_no_reveal_decision_trace(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,

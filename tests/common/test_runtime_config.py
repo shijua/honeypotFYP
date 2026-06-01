@@ -30,7 +30,7 @@ def test_runtime_config_reads_prior_and_feedback_settings(monkeypatch: pytest.Mo
     monkeypatch.setenv("HONEYPOT_ATTACK_GROUP_PRIOR_PATH", "tmp/group_prior.json")
     monkeypatch.setenv("HONEYPOT_RECOMMENDATION_TOP_K", "40")
     monkeypatch.setenv("HONEYPOT_RECOMMENDATION_SUPPORT_THRESHOLD", "0.15")
-    monkeypatch.setenv("HONEYPOT_STRONG_TECHNIQUE_THRESHOLD", "0.5")
+    monkeypatch.setenv("HONEYPOT_OBSERVED_TECHNIQUE_THRESHOLD", "0.5")
     monkeypatch.setenv("HONEYPOT_FEEDBACK_WINDOW_SECONDS", "120")
     monkeypatch.setenv("HONEYPOT_REVEAL_FEEDBACK_PATH", "tmp/reveal_feedback.json")
 
@@ -39,6 +39,6 @@ def test_runtime_config_reads_prior_and_feedback_settings(monkeypatch: pytest.Mo
     assert config.attack_group_prior_path == "tmp/group_prior.json"
     assert config.recommendation_top_k == 40
     assert config.recommendation_support_threshold == 0.15
-    assert config.strong_technique_threshold == 0.5
+    assert config.observed_technique_threshold == 0.5
     assert config.feedback_window_seconds == 120
     assert config.reveal_feedback_path == "tmp/reveal_feedback.json"

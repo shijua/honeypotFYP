@@ -95,7 +95,7 @@ def tick_once(
     loop_state_file: Path | None = None,
     feedback_file: Path | None = None,
     feedback_window_seconds: int = 300,
-    max_actions_per_trigger: int = 1,
+    max_actions_per_trigger: int = 2,
 ) -> int:
     """Run one adaptive control pass and return number of reveal actions sent."""
     bindings_by_attacker = load_bindings_by_attacker(state_dir)
@@ -894,8 +894,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--max-actions-per-trigger",
         type=int,
-        default=1,
-        help="Maximum unlock actions to apply for one new evidence trigger.",
+        default=2,
+        help="Maximum unlock/configure actions to apply for one new evidence trigger.",
     )
     parser.add_argument(
         "--once",

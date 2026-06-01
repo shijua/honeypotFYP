@@ -35,7 +35,7 @@ def test_evidence_ingest_request_requires_binding_id() -> None:
             event={
                 "ts": "2026-01-01T00:00:00Z",
                 "falco_rule": "Read sensitive file",
-                "priority": "WARNING",
+                "priority": "medium",
                 "output": "Sensitive file read /etc/shadow",
             },
         )
@@ -101,7 +101,7 @@ def test_orchestrator_response_accepts_runtime_and_monitoring_events() -> None:
             {
                 "ts": "2026-01-01T00:00:00Z",
                 "falco_rule": "Honeynet asset template started",
-                "priority": "INFO",
+                "priority": "low",
                 "output": "asset admin-jumpbox started",
                 "tags": ["honeynet_asset_runtime"],
             }

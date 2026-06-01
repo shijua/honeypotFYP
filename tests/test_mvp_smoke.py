@@ -54,7 +54,7 @@ def test_mvp_closes_the_loop_from_binding_to_unlock() -> None:
             event=FalcoEvent(
                 ts="2026-01-01T00:00:00Z",
                 falco_rule="Read sensitive file",
-                priority="WARNING",
+                priority="medium",
                 output="Sensitive file read /etc/shadow",
                 tags=["mitre_credential_access", "T1003"],
                 output_fields={"proc_cmdline": "cat /etc/shadow"},
@@ -89,7 +89,7 @@ def test_mvp_closes_the_loop_from_binding_to_unlock() -> None:
             event=FalcoEvent(
                 ts="2026-01-01T00:00:05Z",
                 falco_rule="HTTP honeypot request",
-                priority="WARNING",
+                priority="medium",
                 output="HTTP GET /backup/db_backup_2024.sql.bak matched public_http_credential_discovery",
                 tags=["mitre_credential_access", "T1552.001"],
                 output_fields={

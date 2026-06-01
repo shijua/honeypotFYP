@@ -213,27 +213,11 @@ def test_internal_assets_declare_selection_profiles() -> None:
 def test_configuration_variants_are_catalog_owned_and_target_existing_assets() -> None:
     assets = _catalog_by_id()
     catalog = MitreAttackCatalog(ROOT / "data/mitre/enterprise-attack.json")
-    expected_variant_assets = {
-        "internal-portal",
-        "git-internal",
-        "finance-share",
-        "ops-db",
-        "redis-cache",
-        "web-admin-console",
-        "vpn-appliance",
-        "malware-sink",
-        "ssh-canary",
-        "ftp-archive",
-        "legacy-telnet",
-        "mail-relay",
-        "admin-jumpbox",
-        "dionaea-capture",
-        "honeytrap-generic",
-    }
 
     for asset in assets.values():
         variants = asset.default_settings.get("configuration_variants", [])
         assert isinstance(variants, list)
+        assert variants, f"{asset.asset_id} has no attacker-visible configuration variant"
         for variant in variants:
             assert isinstance(variant["configuration_id"], str)
             assert isinstance(variant["kind"], str)
@@ -251,8 +235,19 @@ def test_configuration_variants_are_catalog_owned_and_target_existing_assets() -
             if target_asset_id is not None:
                 assert target_asset_id in assets
             materialized_artifacts = variant.get("materialized_artifacts")
-            runtime_effect = variant.get("runtime_effect")
-            assert materialized_artifacts or runtime_effect
+            target_runtime = variant.get("target_runtime")
+            assert materialized_artifacts or target_asset_id
+            assert "runtime_effect" not in variant
+            assert "runtime_artifacts" not in variant
+            assert "protocol_artifacts" not in variant
+            if target_runtime is not None:
+                assert target_asset_id is not None
+                assert isinstance(target_runtime, dict)
+                assert target_runtime.get("backend") == "docker"
+                assert isinstance(target_runtime.get("image"), str)
+                assert target_runtime.get("image")
+                assert isinstance(target_runtime.get("port_mappings"), list)
+                assert target_runtime["port_mappings"]
             if materialized_artifacts is not None:
                 assert isinstance(materialized_artifacts, list)
                 assert materialized_artifacts
@@ -273,12 +268,34 @@ def test_configuration_variants_are_catalog_owned_and_target_existing_assets() -
                     if artifact_type == "route_note":
                         assert isinstance(artifact.get("text"), str)
                         assert artifact["text"]
-            if runtime_effect is not None:
-                assert isinstance(runtime_effect, str)
-                assert runtime_effect
 
-    for asset_id in expected_variant_assets:
-        assert assets[asset_id].default_settings["configuration_variants"]
+
+def test_protocol_base_assets_use_opencanary_with_visible_target_variants() -> None:
+    assets = _catalog_by_id()
+    protocol_base_assets = {
+        "git-internal": "git",
+        "redis-cache": "redis",
+        "ftp-archive": "ftp",
+        "ops-db": "mysql",
+        "ssh-canary": "ssh",
+        "legacy-telnet": "telnet",
+        "mail-relay": "smtp",
+    }
+
+    for asset_id, opencanary_config in protocol_base_assets.items():
+        asset = assets[asset_id]
+        runtime = asset.default_settings["runtime"]
+
+        assert asset.telemetry_source == "opencanary"
+        assert runtime["backend"] == "docker"
+        assert runtime["image"] == "thinkst/opencanary"
+        assert any(f"/deploy/opencanary/internal/{opencanary_config}.conf" in volume for volume in runtime["volumes"])
+        variants = asset.default_settings.get("configuration_variants", [])
+        assert variants
+        assert any(
+            variant.get("target_runtime") or variant.get("target_asset_id")
+            for variant in variants
+        )
 
 
 def test_internal_asset_covered_techniques_exist_in_enterprise_attack() -> None:
@@ -315,5 +332,8 @@ def test_runtime_capture_assets_declare_real_runtime_and_gateway_ports() -> None
         assert runtime["backend"] in {"docker", "compose"}
         assert {item["requested_host_port"] for item in mappings} == public_ports
 
+    assert assets["dionaea-capture"].default_settings["runtime"]["image"] == "ghcr.io/telekom-security/dionaea:24.04.1"
+    assert assets["honeytrap-generic"].default_settings["runtime"]["image"] == "dtagdevsec/glutton:24.04.1"
+    assert assets["honeytrap-generic"].default_settings["runtime"]["user"] == "root"
     assert assets["dionaea-capture"].dependencies == ["malware-sink"]
     assert assets["honeytrap-generic"].dependencies == ["malware-sink"]

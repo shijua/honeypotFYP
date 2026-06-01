@@ -118,7 +118,7 @@ def top_recommendation_reveals(
     observed = {
         technique
         for technique, confidence in request.profile.conf_by_technique.items()
-        if float(confidence) >= config.strong_technique_threshold
+        if float(confidence) >= config.observed_technique_threshold
     }
     prior = FileAttackGroupTechniquePriorRepository(prior_path)
     recommendations = prior.recommend(

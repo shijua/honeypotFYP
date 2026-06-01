@@ -54,6 +54,7 @@ def test_dashboard_summary_endpoint_returns_live_snapshot(
                     "recent_internal_http_rules": ["internal_http_artifact_access"],
                     "recent_internal_http_indicators": ["path:.zip"],
                     "conf_by_tactic": {"Credential Access": 0.7},
+                    "conf_by_technique": {"T1110": 0.6321, "T1087": 0.3935},
                     "updated_at": "2026-01-01T00:00:03Z",
                 }
             }
@@ -177,6 +178,25 @@ def test_dashboard_summary_endpoint_returns_live_snapshot(
                                 "host": "146.169.44.23",
                                 "host_port": 18080,
                                 "container_port": 80,
+                            }
+                        ],
+                    },
+                },
+                {
+                    "binding_id": "binding-1",
+                    "asset_id": "redis-cache",
+                    "asset_name": "Redis Cache",
+                    "status": "stopped",
+                    "template_family": "cache-service",
+                    "settings": {
+                        "container_name": "honeynet-bind-redis-cache",
+                        "runtime_backend": "docker",
+                        "image": "opencanary:local",
+                        "port_mappings": [
+                            {
+                                "host": "146.169.44.23",
+                                "host_port": 16379,
+                                "container_port": 6379,
                             }
                         ],
                     },
@@ -414,11 +434,13 @@ def test_dashboard_summary_endpoint_returns_live_snapshot(
     assert payload["metrics"]["attacker_count"] == 1
     assert payload["metrics"]["active_bindings"] == 1
     assert payload["metrics"]["running_assets"] == 1
+    assert payload["metrics"]["failed_assets"] == 0
     assert payload["metrics"]["containers_up"] == 10
     assert payload["metrics"]["opencanary_event_count"] == 1
     assert payload["bindings"][0]["binding_id"] == "binding-1"
     assert payload["gateway_routes"][0]["exposed_assets"] == ["internal-portal"]
     assert payload["attackers"][0]["current_running_assets"][0]["asset_id"] == "internal-portal"
+    assert payload["attackers"][0]["failed_assets"] == []
     assert payload["attackers"][0]["public_http_evidence"] == [
         "rule:public-http credential or backup discovery",
         "combined:.env",
@@ -441,6 +463,10 @@ def test_dashboard_summary_endpoint_returns_live_snapshot(
         "public_http_credential_discovery"
     ]
     assert payload["attackers"][0]["recent_public_http_indicators"] == ["combined:.env"]
+    assert payload["attackers"][0]["confidence_by_technique"] == {
+        "T1110": 0.6321,
+        "T1087": 0.3935,
+    }
     decision = payload["attackers"][0]["decisions"][0]
     assert decision["actions"] == [
         {
@@ -494,6 +520,7 @@ def test_dashboard_index_serves_html() -> None:
     assert ".status-badge" in css
     assert "async function loadData()" in js
     assert "function renderHealth" in js
+    assert "function techniqueBadgeList" in js
 
 
 def test_forwarder_startup_connection_refusal_is_warning() -> None:
@@ -597,3 +624,94 @@ def test_dashboard_summary_marks_compose_assets_as_running(
     assert running_assets[0]["asset_id"] == "compose-web-lab"
     assert running_assets[0]["runtime_backend"] == "compose"
     assert running_assets[0]["compose_project"] == "honeynet-binding-compose-web-lab"
+
+
+def test_dashboard_summary_ignores_stale_failed_runtime_after_target_swap(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state_dir = tmp_path / "runtime"
+    state_dir.mkdir()
+    _write_json(
+        state_dir / "bindings.json",
+        {
+            "records": [
+                {
+                    "binding_id": "binding-1",
+                    "attacker_key": "198.51.100.10",
+                    "status": "active",
+                    "last_seen_ts": "2026-01-01T00:00:02Z",
+                    "unlocked_assets": ["git-internal"],
+                }
+            ]
+        },
+    )
+    _write_json(
+        state_dir / "asset_runtime.json",
+        {
+            "records": [
+                {
+                    "binding_id": "binding-1",
+                    "asset_id": "git-internal",
+                    "asset_name": "Git Internal",
+                    "status": "running",
+                    "template_family": "git-service",
+                    "settings": {
+                        "container_name": "honeynet-binding-old-git-internal",
+                        "runtime_backend": "docker",
+                        "image": "alpine/git:latest",
+                    },
+                },
+                {
+                    "binding_id": "binding-1",
+                    "asset_id": "git-internal",
+                    "asset_name": "Git Internal",
+                    "status": "running",
+                    "template_family": "git-service",
+                    "settings": {
+                        "container_name": "honeynet-binding-new-git-internal",
+                        "runtime_backend": "docker",
+                        "image": "alpine:3.20",
+                        "configured_runtime": True,
+                        "active_configurations": {
+                            "git-seeded-repository-backend": {
+                                "configuration_id": "git-seeded-repository-backend"
+                            }
+                        },
+                    },
+                },
+            ]
+        },
+    )
+    _write_json(state_dir / "profiles.json", {"profiles": {}})
+    _write_json(state_dir / "cowrie_observations.json", {"observations": []})
+    _write_json(state_dir / "opencanary_observations.json", {"observations": []})
+    _write_json(state_dir / "decision_trace.json", {"records": []})
+
+    monkeypatch.setattr(
+        dashboard_summary,
+        "current_docker_status",
+        lambda: dashboard_summary.DockerStatusProbe(
+            statuses={
+                "honeynet-binding-old-git-internal": "Exited (128) 10 seconds ago",
+                "honeynet-binding-new-git-internal": "Up 8 seconds",
+            },
+            error=None,
+        ),
+    )
+
+    payload = dashboard_summary.summarize_demo(state_dir)
+
+    running_container_names = [
+        asset["container_name"]
+        for asset in payload["attackers"][0]["current_running_assets"]
+    ]
+    assert running_container_names == [
+        "honeynet-binding-new-git-internal"
+    ]
+    running_asset = payload["attackers"][0]["current_running_assets"][0]
+    assert running_asset["configured_runtime"] is True
+    assert running_asset["active_configuration_ids"] == [
+        "git-seeded-repository-backend"
+    ]
+    assert payload["attackers"][0]["failed_assets"] == []

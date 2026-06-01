@@ -114,7 +114,7 @@ class EntrypointService:
                     event=FalcoEvent(
                         ts=now,
                         falco_rule=_falco_rule_for_surface(request.surface),
-                        priority="INFO",
+                        priority="low",
                         output=_format_http_output(request, indicators),
                         tags=tags,
                         output_fields={

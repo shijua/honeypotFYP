@@ -99,7 +99,7 @@ class FileAttackGroupTechniquePriorRepository:
         """Return weighted kNN recommendations from ATT&CK group context.
 
         The implementation uses Sørensen-Dice similarity between the current
-        binding's strongly observed techniques and each ATT&CK group technique set.
+        binding's thresholded observed techniques and each ATT&CK group technique set.
         It follows the ATT&CK behavior forecasting paper's WkNN rule:
         each top-k similar group contributes 1 / (1 - similarity), then support
         is divided by k. K is the number of neighboring groups, not a cap on the

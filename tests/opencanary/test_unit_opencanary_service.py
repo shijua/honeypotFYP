@@ -88,6 +88,30 @@ def test_redis_key_lookup_adds_collection_context() -> None:
     assert evidences[1].source_ref["opencanary_command"] == "KEYS"
 
 
+def test_redis_value_read_maps_to_data_access() -> None:
+    service, _repository, evidence_repository = _service()
+
+    response = service.ingest(
+        OpenCanaryIngestRequest(
+            event=OpenCanaryLogEvent(
+                src_host="198.51.100.30",
+                src_port=53000,
+                dst_host="146.169.44.23",
+                dst_port=6379,
+                utc_time=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                logtype=17001,
+                node_id="opencanary-internal-redis",
+                logdata={"SERVICE": "redis", "COMMAND": "GET"},
+            )
+        )
+    )
+
+    assert response.profile.recent_tactics == ["Discovery", "Collection"]
+    assert response.profile.recent_techniques == ["T1046", "T1005"]
+    evidences = evidence_repository.list_by_attacker("198.51.100.30")
+    assert evidences[1].source_ref["opencanary_command"] == "GET"
+
+
 def test_login_probe_maps_to_credential_access_without_storing_password() -> None:
     service, repository, _evidence_repository = _service()
 

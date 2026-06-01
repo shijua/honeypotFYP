@@ -178,6 +178,7 @@ def test_command_mapping_can_use_elastic_derived_credential_rule() -> None:
 
     assert response.profile.recent_tactics == ["Credential Access"]
     assert response.profile.recent_techniques == ["T1552.001"]
+    assert response.profile.conf_by_technique["T1552.001"] == 0.8647
 
 
 def test_successful_login_stays_descriptive_without_attack_mapping() -> None:

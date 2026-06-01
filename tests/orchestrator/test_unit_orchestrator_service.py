@@ -78,7 +78,8 @@ def test_apply_unlock_updates_binding_assets_and_route_updates() -> None:
 
     assert response.binding.unlocked_assets == ["git-internal"]
     assert response.route_updates == [
-        f"binding {binding.binding_id} exposes git-internal"
+        f"binding {binding.binding_id} exposes git-internal",
+        f"binding {binding.binding_id} routes git-internal",
     ]
     gateway_state = gateway_service.get_state(binding.binding_id)
     assert gateway_state.exposed_assets == ["git-internal"]
@@ -200,7 +201,7 @@ def test_apply_configure_records_configuration_and_unlocks_upgrade_target(
         MockTemplateRuntime(runtime_repository),
     )
     binding = binding_service.resolve(ResolveBindingRequest(attacker_key="198.51.100.54"))
-    orchestrator.apply(
+    response = orchestrator.apply(
         OrchestratorApplyRequest(
             binding_id=binding.binding_id,
             actions=[
@@ -309,7 +310,7 @@ def test_apply_configure_materializes_catalog_files_and_links(
         MockTemplateRuntime(runtime_repository),
     )
     binding = binding_service.resolve(ResolveBindingRequest(attacker_key="198.51.100.56"))
-    orchestrator.apply(
+    response = orchestrator.apply(
         OrchestratorApplyRequest(
             binding_id=binding.binding_id,
             actions=[
@@ -323,7 +324,7 @@ def test_apply_configure_materializes_catalog_files_and_links(
         )
     )
 
-    orchestrator.apply(
+    response = orchestrator.apply(
         OrchestratorApplyRequest(
             binding_id=binding.binding_id,
             actions=[
@@ -373,6 +374,107 @@ def test_apply_configure_materializes_catalog_files_and_links(
             "label": "Admin console access note",
         },
     ]
+
+
+def test_apply_configure_can_swap_same_asset_target_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("HONEYPOT_PROJECT_ROOT_IN_CONTAINER", str(tmp_path))
+    binding_service = BindingService(InMemoryBindingRepository())
+    gateway_service = GatewayService(InMemoryGatewayRouteRepository())
+    runtime_repository = InMemoryTemplateRuntimeRepository()
+    asset = AssetDefinition(
+        asset_id="redis-cache",
+        asset_name="Redis Cache",
+        exposure_type="internal",
+        interaction_level="medium",
+        template_family="cache-service",
+        protocols=["redis"],
+        ports=[6379],
+        default_settings={
+            "runtime": {
+                "backend": "mock",
+                "image": "thinkst/opencanary",
+                "port_mappings": [
+                    {
+                        "host": "127.0.0.1",
+                        "requested_host_port": 16379,
+                        "container_port": 6379,
+                    }
+                ],
+            }
+        },
+        covers_tactics=["Discovery"],
+    )
+    orchestrator = OrchestratorService(
+        binding_service,
+        gateway_service,
+        InMemoryAssetRepository([asset]),
+        MockTemplateRuntime(runtime_repository),
+    )
+    binding = binding_service.resolve(ResolveBindingRequest(attacker_key="198.51.100.57"))
+    orchestrator.apply(
+        OrchestratorApplyRequest(
+            binding_id=binding.binding_id,
+            actions=[
+                ControllerAction(
+                    action_type=ActionType.unlock,
+                    binding_id=binding.binding_id,
+                    asset_id="redis-cache",
+                    reason="start base redis canary",
+                )
+            ],
+        )
+    )
+
+    response = orchestrator.apply(
+        OrchestratorApplyRequest(
+            binding_id=binding.binding_id,
+            actions=[
+                ControllerAction(
+                    action_type=ActionType.configure,
+                    binding_id=binding.binding_id,
+                    asset_id="redis-cache",
+                    configuration_id="redis-seeded-keyspace-backend",
+                    target_asset_id="redis-cache",
+                    configuration={
+                        "kind": "same-port-target-runtime",
+                        "target_asset_id": "redis-cache",
+                        "target_runtime": {
+                            "backend": "docker",
+                            "image": "redis:7-alpine",
+                            "port_mappings": [
+                                {
+                                    "host": "127.0.0.1",
+                                    "requested_host_port": 16379,
+                                    "container_port": 6379,
+                                }
+                            ],
+                        },
+                        "materialized_artifacts": [
+                            {
+                                "type": "route_note",
+                                "text": "Redis reconnects now reach a seeded keyspace backend.",
+                            }
+                        ],
+                    },
+                    reason="swap redis backend",
+                )
+            ],
+        )
+    )
+
+    assert response.route_updates == [
+        f"binding {binding.binding_id} configures redis-cache:redis-seeded-keyspace-backend",
+        f"binding {binding.binding_id} routes redis-cache",
+    ]
+    records = tuple(runtime_repository.list_by_binding(binding.binding_id))
+    running_record = next(record for record in records if record.status == "running")
+    assert running_record.asset_id == "redis-cache"
+    assert running_record.settings["runtime"]["image"] == "redis:7-alpine"
+    assert running_record.settings["configured_runtime"] is True
+    assert "redis-seeded-keyspace-backend" in running_record.settings["active_configurations"]
 
 
 def test_prewarm_starts_catalog_warm_assets_without_gateway_exposure(

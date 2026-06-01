@@ -1,6 +1,6 @@
 {
   "default": {
-    "priority": "INFO",
+    "priority": "low",
     "tags": [],
     "output_template": "{eventid} from {src_ip}",
     "output_fields": [
@@ -17,7 +17,7 @@
   },
   "events": {
     "cowrie.session.connect": {
-      "priority": "INFO",
+      "priority": "low",
       "tags": ["cowrie_connection"],
       "output_template": "cowrie.session.connect from {src_ip}",
       "output_fields": [
@@ -32,7 +32,7 @@
       "profile": false
     },
     "cowrie.session.closed": {
-      "priority": "INFO",
+      "priority": "low",
       "tags": ["cowrie_session"],
       "output_template": "cowrie.session.closed from {src_ip}",
       "output_fields": [
@@ -48,7 +48,7 @@
       "profile": false
     },
     "cowrie.client.version": {
-      "priority": "INFO",
+      "priority": "low",
       "tags": ["cowrie_client_metadata"],
       "output_template": "cowrie.client.version from {src_ip} version={version}",
       "output_fields": [
@@ -64,7 +64,7 @@
       "profile": false
     },
     "cowrie.client.kex": {
-      "priority": "INFO",
+      "priority": "low",
       "tags": ["cowrie_client_metadata", "cowrie_fingerprint"],
       "output_template": "cowrie.client.kex from {src_ip}",
       "output_fields": [
@@ -83,7 +83,7 @@
       "profile": false
     },
     "cowrie.client.fingerprint": {
-      "priority": "INFO",
+      "priority": "low",
       "tags": ["cowrie_client_metadata", "cowrie_fingerprint"],
       "output_template": "cowrie.client.fingerprint from {src_ip}",
       "output_fields": [
@@ -100,7 +100,7 @@
       "profile": false
     },
     "cowrie.login.failed": {
-      "priority": "INFO",
+      "priority": "low",
       "tags": ["mitre_credential_access", "T1110"],
       "output_template": "cowrie.login.failed from {src_ip} username={username}",
       "output_fields": [
@@ -117,7 +117,7 @@
       "profile": true
     },
     "cowrie.login.success": {
-      "priority": "NOTICE",
+      "priority": "medium",
       "tags": ["cowrie_auth_success"],
       "output_template": "cowrie.login.success from {src_ip} username={username}",
       "output_fields": [
@@ -133,7 +133,7 @@
       "profile": false
     },
     "cowrie.command.input": {
-      "priority": "NOTICE",
+      "priority": "medium",
       "tags": ["cowrie_command_input"],
       "output_template": "cowrie.command.input from {src_ip}: {input}",
       "output_fields": [
@@ -150,7 +150,7 @@
       "profile": true
     },
     "cowrie.command.failed": {
-      "priority": "NOTICE",
+      "priority": "medium",
       "tags": ["cowrie_command_failed"],
       "output_template": "cowrie.command.failed from {src_ip}: {input}",
       "output_fields": [
@@ -167,7 +167,7 @@
       "profile": false
     },
     "cowrie.direct-tcpip.request": {
-      "priority": "NOTICE",
+      "priority": "medium",
       "tags": ["cowrie_tunnel_attempt"],
       "output_template": "cowrie.direct-tcpip.request from {src_ip} dst={dst_ip}:{dst_port}",
       "output_fields": [
@@ -184,7 +184,7 @@
       "profile": false
     },
     "cowrie.direct-tcpip.data": {
-      "priority": "INFO",
+      "priority": "low",
       "tags": ["cowrie_tunnel_data"],
       "output_template": "cowrie.direct-tcpip.data from {src_ip}",
       "output_fields": [
@@ -199,7 +199,7 @@
       "profile": false
     },
     "cowrie.session.file_download": {
-      "priority": "NOTICE",
+      "priority": "medium",
       "tags": ["mitre_command_and_control", "T1105"],
       "output_template": "cowrie.session.file_download from {src_ip}",
       "output_fields": [
@@ -216,7 +216,7 @@
       "profile": true
     },
     "cowrie.session.file_upload": {
-      "priority": "NOTICE",
+      "priority": "medium",
       "tags": ["mitre_command_and_control", "T1105"],
       "output_template": "cowrie.session.file_upload from {src_ip}",
       "output_fields": [

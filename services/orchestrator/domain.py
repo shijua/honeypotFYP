@@ -69,6 +69,7 @@ class OrchestratorService:
                             self._template_runtime.monitoring_event_for(runtime_record)
                         )
             elif action.action_type == ActionType.configure and action.asset_id and action.configuration_id:
+                target_runtime = _configuration_target_runtime(action.configuration)
                 binding = self._binding_service.reveal_configurations(
                     request.binding_id,
                     {action.asset_id: [action.configuration_id]},
@@ -76,9 +77,10 @@ class OrchestratorService:
                 route_updates.append(
                     f"binding {request.binding_id} configures {action.asset_id}:{action.configuration_id}"
                 )
-                runtime_record = self._apply_asset_configuration(binding, action)
-                if runtime_record is not None:
-                    runtime_events.append(runtime_record)
+                if target_runtime is None:
+                    runtime_record = self._apply_asset_configuration(binding, action)
+                    if runtime_record is not None:
+                        runtime_events.append(runtime_record)
                 if action.target_asset_id:
                     binding, unlock_route_updates = self._apply_unlocks(
                         binding=binding,
@@ -86,13 +88,35 @@ class OrchestratorService:
                         asset_ids=[action.target_asset_id],
                     )
                     route_updates.extend(unlock_route_updates)
-                    for asset_id in _new_asset_ids_from_route_updates(unlock_route_updates):
-                        runtime_record = self._start_asset_runtime(binding, asset_id)
+                    new_target_ids = _new_asset_ids_from_route_updates(unlock_route_updates)
+                    if action.target_asset_id not in new_target_ids:
+                        # Configuration swaps must make their target route the
+                        # newest route even when the target backend was already
+                        # started by an earlier variant on the same binding.
+                        route_updates.append(
+                            f"binding {request.binding_id} routes {action.target_asset_id}"
+                        )
+                        new_target_ids.append(action.target_asset_id)
+                    for asset_id in new_target_ids:
+                        runtime_record = self._start_asset_runtime(
+                            binding,
+                            asset_id,
+                            runtime_override=target_runtime
+                            if asset_id == action.target_asset_id
+                            else None,
+                        )
                         if runtime_record is not None:
                             runtime_events.append(runtime_record)
                             monitoring_events.append(
                                 self._template_runtime.monitoring_event_for(runtime_record)
                             )
+                if target_runtime is not None:
+                    # Target-runtime variants swap the visible backend first,
+                    # then attach the configuration record to that replacement
+                    # so the audit state follows the container the attacker can reach.
+                    runtime_record = self._apply_asset_configuration(binding, action)
+                    if runtime_record is not None:
+                        runtime_events.append(runtime_record)
             elif action.action_type == ActionType.route_update:
                 route_update = (
                     f"binding {request.binding_id} route update: {action.reason}"
@@ -154,20 +178,34 @@ class OrchestratorService:
         binding_id: str,
         asset_ids: list[str],
     ) -> tuple[BindingRecord, list[str]]:
-        """Persist newly unlocked assets and produce route update strings."""
+        """Persist unlock state and ensure explicitly requested routes are newest.
+
+        A configuration target may share the same public port as its base asset.
+        When a later manual/test unlock names the base asset again, the gateway
+        route must move back to that base runtime rather than leaving the older
+        target route ahead in the per-port route list.
+        """
         previous_assets = list(binding.unlocked_assets)
         updated = self._binding_service.unlock_assets(binding_id, asset_ids)
-        # Only newly exposed assets generate route updates.
+        # Newly exposed assets keep the historical "exposes" wording; assets
+        # already open still get a "routes" update so their route is refreshed.
         new_assets = [
             asset_id
             for asset_id in updated.unlocked_assets
             if asset_id not in previous_assets
+        ]
+        refresh_assets = [
+            asset_id
+            for asset_id in asset_ids
+            if asset_id in previous_assets and asset_id in updated.unlocked_assets
         ]
 
         route_updates = []
         for asset_id in new_assets:
             route_update = f"binding {binding_id} exposes {asset_id}"
             route_updates.append(route_update)
+        for asset_id in refresh_assets:
+            route_updates.append(f"binding {binding_id} routes {asset_id}")
 
         return updated, route_updates
 
@@ -175,6 +213,7 @@ class OrchestratorService:
         self,
         binding: BindingRecord,
         asset_id: str,
+        runtime_override: dict[str, object] | None = None,
     ) -> AssetRuntimeRecord | None:
         """Start runtime state for one unlocked asset when runtime support exists."""
         if self._asset_repository is None or self._template_runtime is None:
@@ -187,6 +226,7 @@ class OrchestratorService:
             binding.binding_id,
             asset,
             attacker_key=binding.attacker_key,
+            runtime_override=runtime_override,
         )
 
     def _apply_asset_configuration(
@@ -268,10 +308,21 @@ def _new_asset_ids_from_route_updates(route_updates: list[str]) -> list[str]:
     """Extract just the asset ids from route update strings."""
     asset_ids = []
     for route_update in route_updates:
-        if " exposes " not in route_update:
-            continue
-        asset_ids.append(route_update.rsplit(" exposes ", 1)[1])
+        if " exposes " in route_update:
+            asset_ids.append(route_update.rsplit(" exposes ", 1)[1])
+        elif " routes " in route_update:
+            asset_ids.append(route_update.rsplit(" routes ", 1)[1])
     return asset_ids
+
+
+def _configuration_target_runtime(configuration: dict[str, object] | None) -> dict[str, object] | None:
+    """Return the Docker runtime a configuration wants to make attacker-visible."""
+    if not isinstance(configuration, dict):
+        return None
+    runtime = configuration.get("target_runtime")
+    if not isinstance(runtime, dict):
+        return None
+    return dict(runtime)
 
 
 def _stopped_monitoring_events(records: list[AssetRuntimeRecord]) -> list[FalcoEvent]:
@@ -282,7 +333,7 @@ def _stopped_monitoring_events(records: list[AssetRuntimeRecord]) -> list[FalcoE
             FalcoEvent(
                 ts=utcnow(),
                 falco_rule="Honeynet asset template stopped",
-                priority="INFO",
+                priority="low",
                 output=(
                     f"asset {record.asset_id} stopped for binding {record.binding_id} "
                     f"template_family={record.template_family or 'unknown'}"

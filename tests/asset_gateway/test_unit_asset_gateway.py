@@ -9,7 +9,10 @@ from services.asset_gateway.app import (
     AssetRoute,
     _internal_portal_session_result,
     _parse_ftp_commands,
+    _parse_git_commands,
     _parse_http_request,
+    _parse_mysql_commands,
+    _parse_redis_commands,
     _parse_smtp_commands,
     _protocol_observer,
     _with_auth_result,
@@ -204,6 +207,27 @@ def test_parse_ftp_commands_extracts_command_verbs_only() -> None:
     assert commands == ["USER", "PASS", "RETR", "STOR"]
 
 
+def test_parse_redis_commands_extracts_resp_command_name() -> None:
+    commands = _parse_redis_commands(b"*2\r\n$3\r\nGET\r\n$21\r\nsession:portal.reader\r\n")
+
+    assert commands == ["GET"]
+
+
+def test_parse_git_commands_extracts_daemon_service_without_overclaiming_ls_remote() -> None:
+    commands = _parse_git_commands(
+        b"0032git-upload-pack /infra-deploy.git\x00host=example\x00"
+    )
+
+    assert commands == ["GIT_UPLOAD_PACK"]
+
+
+def test_parse_mysql_commands_extracts_query_verb() -> None:
+    # MySQL packet header, COM_QUERY byte, then printable SQL.
+    commands = _parse_mysql_commands(b"\x0f\x00\x00\x00\x03SHOW DATABASES")
+
+    assert commands == ["SHOW"]
+
+
 def test_ftp_observer_writes_command_event(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     events_file = tmp_path / "internal_protocol_events.jsonl"
     monkeypatch.setenv("HONEYPOT_INTERNAL_PROTOCOL_EVENTS_FILE", str(events_file))
@@ -224,6 +248,28 @@ def test_ftp_observer_writes_command_event(tmp_path: Path, monkeypatch: pytest.M
     assert event["src_host"] == "198.51.100.10"
     assert event["logdata"]["SERVICE"] == "ftp"
     assert event["logdata"]["COMMANDS"] == ["USER", "PASS", "RETR"]
+
+
+def test_git_observer_writes_parsed_protocol_event(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    events_file = tmp_path / "internal_protocol_events.jsonl"
+    monkeypatch.setenv("HONEYPOT_INTERNAL_PROTOCOL_EVENTS_FILE", str(events_file))
+    route = AssetRoute(
+        attacker_key="198.51.100.10",
+        binding_id="binding-a",
+        asset_id="git-internal",
+        public_port=19418,
+        backend_host="git-internal",
+        backend_port=9418,
+    )
+
+    observer = _protocol_observer(route, "198.51.100.10")
+
+    assert observer is not None
+    observer(b"0032git-upload-pack /infra-deploy.git\x00host=example\x00")
+    event = json.loads(events_file.read_text(encoding="utf-8").strip())
+    assert event["logdata"]["SERVICE"] == "git"
+    assert event["logdata"]["COMMANDS"] == ["GIT_UPLOAD_PACK"]
+    assert event["logdata"]["REPO"] == "infra-deploy.git"
 
 
 def test_high_interaction_observer_writes_gateway_probe(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -28,7 +28,7 @@ def test_ingest_maps_falco_event_into_attack_profile() -> None:
             event=FalcoEvent(
                 ts=datetime(2026, 1, 1, tzinfo=timezone.utc),
                 falco_rule="Read sensitive file",
-                priority="WARNING",
+                priority="medium",
                 output="Sensitive file read /etc/shadow",
                 tags=["filesystem", "mitre_credential_access", "T1003"],
                 output_fields={"proc_cmdline": "cat /etc/shadow"},
@@ -62,7 +62,7 @@ def test_event_priority_weights_profile_confidence() -> None:
             event=FalcoEvent(
                 ts=datetime(2026, 1, 1, tzinfo=timezone.utc),
                 falco_rule="Read sensitive file",
-                priority="INFO",
+                priority="low",
                 output="Sensitive file read /etc/shadow",
                 tags=["mitre_credential_access", "T1003"],
                 output_fields={},
@@ -76,7 +76,7 @@ def test_event_priority_weights_profile_confidence() -> None:
             event=FalcoEvent(
                 ts=datetime(2026, 1, 1, tzinfo=timezone.utc),
                 falco_rule="Read sensitive file",
-                priority="WARNING",
+                priority="medium",
                 output="Sensitive file read /etc/shadow",
                 tags=["mitre_credential_access", "T1003"],
                 output_fields={},
@@ -87,6 +87,53 @@ def test_event_priority_weights_profile_confidence() -> None:
     assert (
         warning_response.profile.conf_by_technique["T1003"]
         > info_response.profile.conf_by_technique["T1003"]
+    )
+
+
+def test_sigma_confidence_labels_weight_profile_confidence() -> None:
+    low_service = ProfilerService(
+        InMemoryEvidenceRepository(),
+        InMemoryProfileRepository(),
+        build_test_attack_catalog(),
+    )
+    medium_service = ProfilerService(
+        InMemoryEvidenceRepository(),
+        InMemoryProfileRepository(),
+        build_test_attack_catalog(),
+    )
+    high_service = ProfilerService(
+        InMemoryEvidenceRepository(),
+        InMemoryProfileRepository(),
+        build_test_attack_catalog(),
+    )
+
+    def ingest_with_priority(service: ProfilerService, priority: str, host_octet: int):
+        return service.ingest(
+            EvidenceIngestRequest(
+                attacker_key=f"198.51.100.{host_octet}",
+                binding_id=f"binding-{priority}",
+                event=FalcoEvent(
+                    ts=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                    falco_rule="Cowrie command rule",
+                    priority=priority,
+                    output="matched command mapping",
+                    tags=["mitre_discovery", "T1083"],
+                    output_fields={},
+                ),
+            )
+        )
+
+    low_response = ingest_with_priority(low_service, "low", 31)
+    medium_response = ingest_with_priority(medium_service, "medium", 32)
+    high_response = ingest_with_priority(high_service, "high", 33)
+
+    assert low_response.evidences[0].weight == 0.5
+    assert medium_response.evidences[0].weight == 1.0
+    assert high_response.evidences[0].weight == 2.0
+    assert (
+        low_response.profile.conf_by_technique["T1083"]
+        < medium_response.profile.conf_by_technique["T1083"]
+        < high_response.profile.conf_by_technique["T1083"]
     )
 
 
@@ -106,7 +153,7 @@ def test_profile_recent_sequence_respects_time_window() -> None:
             event=FalcoEvent(
                 ts=start,
                 falco_rule="MySQL probe",
-                priority="INFO",
+                priority="low",
                 output="mysql service probe",
                 tags=[],
                 output_fields={},
@@ -120,7 +167,7 @@ def test_profile_recent_sequence_respects_time_window() -> None:
             event=FalcoEvent(
                 ts=start + timedelta(seconds=600),
                 falco_rule="Read sensitive file",
-                priority="WARNING",
+                priority="medium",
                 output="Sensitive file read /etc/shadow",
                 tags=["mitre_credential_access", "T1003"],
                 output_fields={},
@@ -146,7 +193,7 @@ def test_profile_rebuild_accepts_mixed_naive_and_aware_datetimes() -> None:
             event=FalcoEvent(
                 ts=datetime(2026, 1, 1, 12, 0, 0),
                 falco_rule="OpenCanary redis event",
-                priority="INFO",
+                priority="low",
                 output="redis probe",
                 tags=["mitre_discovery", "T1046"],
                 output_fields={},
@@ -160,7 +207,7 @@ def test_profile_rebuild_accepts_mixed_naive_and_aware_datetimes() -> None:
             event=FalcoEvent(
                 ts=datetime(2026, 1, 1, 12, 1, 0, tzinfo=timezone.utc),
                 falco_rule="HTTP honeypot request",
-                priority="INFO",
+                priority="low",
                 output="GET /.env",
                 tags=[],
                 output_fields={},
@@ -186,7 +233,7 @@ def test_ingest_extracts_subtechnique_ids_from_realistic_falco_tags() -> None:
             event=FalcoEvent(
                 ts=datetime(2026, 1, 1, tzinfo=timezone.utc),
                 falco_rule="Read sensitive file trusted_after",
-                priority="WARNING",
+                priority="medium",
                 output="Possible credential leak in container",
                 tags=[
                     "maturity_stable",
@@ -220,7 +267,7 @@ def test_ingest_uses_catalog_default_when_only_tactic_tag_is_present() -> None:
             event=FalcoEvent(
                 ts=datetime(2026, 1, 1, tzinfo=timezone.utc),
                 falco_rule="Launch Privileged Container",
-                priority="CRITICAL",
+                priority="high",
                 output="Privileged container started",
                 tags=["mitre_privilege_escalation"],
                 output_fields={},
@@ -246,7 +293,7 @@ def test_ingest_keeps_untagged_events_unclassified() -> None:
             event=FalcoEvent(
                 ts=datetime(2026, 1, 1, tzinfo=timezone.utc),
                 falco_rule="Unexpected process launch",
-                priority="WARNING",
+                priority="medium",
                 output="Command execution observed",
                 tags=[],
                 output_fields={"proc_cmdline": "bash -c whoami"},
@@ -276,7 +323,7 @@ def test_ingest_preserves_public_http_source_ref_fields() -> None:
             event=FalcoEvent(
                 ts=datetime(2026, 1, 1, tzinfo=timezone.utc),
                 falco_rule="HTTP honeypot request",
-                priority="WARNING",
+                priority="medium",
                 output="HTTP GET /api/search?q=1 union select 1 matched public_http_injection_probe",
                 tags=["mitre_discovery", "T1046"],
                 output_fields={
@@ -323,7 +370,7 @@ def test_ingest_preserves_internal_http_source_ref_fields() -> None:
             event=FalcoEvent(
                 ts=datetime(2026, 1, 1, tzinfo=timezone.utc),
                 falco_rule="Internal HTTP asset request",
-                priority="INFO",
+                priority="low",
                 output="internal HTTP GET /downloads/agent-update.bin asset=malware-sink",
                 tags=["mitre_collection", "T1005"],
                 output_fields={
@@ -366,7 +413,7 @@ def test_ingest_maps_multi_tactic_public_http_tags_per_technique() -> None:
             event=FalcoEvent(
                 ts=datetime(2026, 1, 1, tzinfo=timezone.utc),
                 falco_rule="HTTP honeypot request",
-                priority="INFO",
+                priority="low",
                 output="GET /api/search?q=1%20union%20select%201",
                     tags=[
                         "mitre_initial_access",

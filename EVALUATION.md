@@ -67,7 +67,7 @@ The broader regression fixture is still useful for debugging edge cases. It may 
   tests/fixtures/reveal_policy_scenarios.json \
   --policy all \
   --replay-mode sequence \
-  --output results/reveal_policy_regression_report.json || true
+  --output results/reveal_policy_regression_report.json
 ```
 
 Policies compared:
@@ -137,9 +137,9 @@ Run the offline dataset validation:
 
 Expected: `trace_count > 0` when labelled local datasets exist. The script scans CSV, JSON, JSONL, YAML, and ZIP files for ordered ATT&CK technique traces, then reports the same family-aware precision, recall, specificity, and accuracy metrics used by scenario prior evaluation. It skips raw files larger than 2 MB by default; raise `--max-file-bytes` only when you specifically want to scan larger logs. A low score means the active group prior does not explain those public traces well; it does not mean the live honeynet route path is broken.
 
-## 4. Controller-Only Port Reveal
+## 4. Optional Controller-Only Route Check
 
-This validates that scenario evidence causes the controller to select assets whose fixed ports match the expected route plan. It still does not start Docker.
+This is an engineering check for route selection, not a headline behaviour metric. It validates that scenario evidence causes the controller to select assets whose fixed ports match the expected route plan. It still does not start Docker.
 
 ```bash
 .venv/bin/python scripts/evaluation/reveal_port_simulation.py \
@@ -158,9 +158,9 @@ Expected: `ok=true` and all default scenarios pass. This is the fastest way to c
 
 This command writes JSON only. Route-check failures are easier to inspect from `summary`, `failure_reason`, `expected_routes`, and `actual_routes` than from a pass/fail chart.
 
-## 5. Live Port Reveal
+## 5. Optional Live Route Check
 
-This starts or uses the running compose stack, applies unlock actions, and checks the actual asset-gateway route table. It mutates `data/runtime/*.json`.
+This starts or uses the running compose stack, applies unlock actions, and checks the actual asset-gateway route table. It mutates `data/runtime/*.json`. Use it to debug the controller -> orchestrator -> gateway path. Use manual traffic checks for attacker-visible behaviour and technique evidence.
 
 Important boundary: `live-apply` does not run attacker commands, browser clicks, curl probes, SSH sessions, FTP transfers, or shell commands. It validates the control-plane and data-plane route result: controller selection -> orchestrator apply -> Docker runtime -> `asset_gateway_routes.json`. Use `ATTACK_TESTING_GUIDE.md` after this when you need to verify real attacker traffic and ATT&CK evidence.
 
@@ -247,10 +247,11 @@ For a normal development check, run this sequence:
 .venv/bin/python scripts/evaluation/attack_group_prior_recommendation.py tests/fixtures/reveal_policy_scenarios.json --prior data/technique_prior/attack_group_technique_prior.json --output results/attack_group_prior_report.json
 .venv/bin/python scripts/evaluation/reveal_policy.py tests/fixtures/reveal_policy_main_scenarios.json --policy all --replay-mode sequence --output results/reveal_policy_main_report.json
 .venv/bin/python scripts/evaluation/reveal_policy.py tests/fixtures/reveal_policy_scenarios.json --policy all --replay-mode sequence --output results/reveal_policy_regression_report.json || true
+# Optional route-selection sanity check, not attacker-behaviour evaluation.
 .venv/bin/python scripts/evaluation/reveal_port_simulation.py --mode controller-only --scenario-file tests/fixtures/reveal_port_scenarios.json --output results/reveal_port_controller_report.json
 docker-compose -p honeynet -f docker-compose.control.yml -f docker-compose.enterprise.yml config
 ```
 
-Plot-producing evaluation commands write the JSON report plus a sibling matplotlib SVG with the same filename stem. Port simulation writes JSON only because the route-level pass/fail chart duplicates the report summary.
+Plot-producing evaluation commands write the JSON report plus a sibling matplotlib SVG with the same filename stem. The route simulation command writes JSON only because it is an engineering route check and the pass/fail chart duplicates the report summary.
 
 Then run live-apply and latency only when Docker images and ports are available.

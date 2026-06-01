@@ -393,13 +393,9 @@
     "default_settings": {
       "runtime": {
         "backend": "docker",
-        "warm_standby": true,
         "image": "thinkst/opencanary",
         "network": "{project_name}_net_internal",
         "memory_limit": "256m",
-        "tmpfs": [
-          "/run"
-        ],
         "volumes": [
           "{host_project_root}/deploy/opencanary/internal/git.conf:/root/.opencanary.conf:ro",
           "{host_project_root}/deploy/opencanary/var:/var/tmp"
@@ -416,7 +412,8 @@
           "host": "127.0.0.1",
           "port_setting": "host_port"
         },
-        "source": "opencanary/git"
+        "source": "opencanary/git",
+        "warm_standby": true
       },
       "repo_names": [
         "infra-deploy",
@@ -475,51 +472,6 @@
         },
         "telemetry_value": 0.9
       },
-      "configuration_variants": [
-        {
-          "configuration_id": "git-deployment-ci-config",
-          "kind": "content",
-          "required_markers": [
-            "any_internal_http_paths:/config/application-prod.yml",
-            "any_internal_http_paths:/k8s/values-prod.yaml",
-            "any_techniques:T1213",
-            "any_techniques:T1083"
-          ],
-          "covered_techniques": [
-            "T1213",
-            "T1083"
-          ],
-          "telemetry_value": 0.9,
-          "reveal_outputs": [
-            "deployment configuration files",
-            "CI configuration files",
-            "service host references"
-          ],
-          "reason": "Repository browsing can reveal CI and deployment configuration before planting stronger credential clues.",
-          "runtime_effect": "Starts or configures the protocol/high-interaction runtime surface; no static HTTP page is modified."
-        },
-        {
-          "configuration_id": "git-db-credential-clue",
-          "kind": "content",
-          "required_markers": [
-            "any_techniques:T1213",
-            "any_techniques:T1083",
-            "any_internal_http_indicators:combined:password"
-          ],
-          "covered_techniques": [
-            "T1552.001",
-            "T1078",
-            "T1110"
-          ],
-          "telemetry_value": 0.95,
-          "reveal_outputs": [
-            "fake database credential clue",
-            "ops-db credential reuse path"
-          ],
-          "reason": "Repository browsing can reveal a staged database credential clue without opening another asset immediately.",
-          "runtime_effect": "Starts or configures the protocol/high-interaction runtime surface; no static HTTP page is modified."
-        }
-      ],
       "planned_clone_mode": "seeded-git-daemon",
       "planned_repositories": [
         "infra-deploy",
@@ -532,7 +484,61 @@
         "match": "service",
         "service": "git",
         "expected_trigger": "git protocol probe through the asset-gateway fixed port"
-      }
+      },
+      "configuration_variants": [
+        {
+          "configuration_id": "git-seeded-repository-backend",
+          "kind": "same-port-target-runtime",
+          "required_markers": [
+            "any_techniques:T1213"
+          ],
+          "covered_techniques": [
+            "T1213",
+            "T1083"
+          ],
+          "telemetry_value": 0.82,
+          "reveal_outputs": [
+            "git upload-pack service",
+            "infra-deploy repository refs",
+            "deployment config files"
+          ],
+          "target_asset_id": "git-internal",
+          "target_runtime": {
+            "backend": "docker",
+            "image": "alpine:3.20",
+            "network": "{project_name}_net_internal",
+            "memory_limit": "256m",
+            "entrypoint": "sh",
+            "volumes": [
+              "{host_project_root}/deploy/internal-assets/git-internal/seed:/seed:ro"
+            ],
+            "port_mappings": [
+              {
+                "host": "127.0.0.1",
+                "requested_host_port": 19418,
+                "container_port": 9418
+              }
+            ],
+            "healthcheck": {
+              "type": "tcp",
+              "host": "127.0.0.1",
+              "port_setting": "host_port"
+            },
+            "source": "alpine git-daemon seeded repository",
+            "command": [
+              "-lc",
+              "set -e; apk add --no-cache git git-daemon >/dev/null; rm -rf /tmp/work /tmp/infra-deploy.git; cp -R /seed/infra-deploy /tmp/work; cd /tmp/work; git init >/dev/null; git config user.email ops@example.invalid; git config user.name ops-seed; git add .; git commit -m seed >/dev/null; git clone --bare . /tmp/infra-deploy.git >/dev/null; exec git daemon --verbose --reuseaddr --export-all --base-path=/tmp --listen=0.0.0.0 --port=9418 /tmp/infra-deploy.git"
+            ]
+          },
+          "materialized_artifacts": [
+            {
+              "type": "route_note",
+              "text": "git ls-remote on the existing Git port now reaches a seeded infra-deploy repository."
+            }
+          ],
+          "reason": "Repository browsing on the active Git surface can justify swapping the canary into a seeded Git backend."
+        }
+      ]
     },
     "covers_tactics": [
       "Credential Access",
@@ -563,13 +569,9 @@
     "default_settings": {
       "runtime": {
         "backend": "docker",
-        "warm_standby": true,
         "image": "thinkst/opencanary",
         "network": "{project_name}_net_internal",
         "memory_limit": "256m",
-        "tmpfs": [
-          "/run"
-        ],
         "volumes": [
           "{host_project_root}/deploy/opencanary/internal/mysql.conf:/root/.opencanary.conf:ro",
           "{host_project_root}/deploy/opencanary/var:/var/tmp"
@@ -586,7 +588,8 @@
           "host": "127.0.0.1",
           "port_setting": "host_port"
         },
-        "source": "opencanary/mysql"
+        "source": "opencanary/mysql",
+        "warm_standby": true
       },
       "database_names": [
         "ops",
@@ -654,44 +657,52 @@
       },
       "configuration_variants": [
         {
-          "configuration_id": "ops-db-login-database-names",
-          "kind": "service-configuration",
+          "configuration_id": "ops-db-schema-banner-backend",
+          "kind": "same-port-target-runtime",
           "required_markers": [
-            "any_techniques:T1078",
-            "any_techniques:T1110",
-            "any_techniques:T1552.001"
+            "any_techniques:T1078"
           ],
           "covered_techniques": [
             "T1078",
             "T1110"
           ],
-          "telemetry_value": 0.9,
+          "telemetry_value": 0.82,
           "reveal_outputs": [
-            "database login prompt",
-            "database name list",
-            "credential reuse telemetry"
+            "MySQL-compatible handshake",
+            "configured MySQL version banner",
+            "database login telemetry"
           ],
-          "reason": "Credential clues from Git or backup material can justify exposing concrete database names and login attempts.",
-          "runtime_effect": "Starts or configures the protocol/high-interaction runtime surface; no static HTTP page is modified."
-        },
-        {
-          "configuration_id": "ops-db-schema-table-hints",
-          "kind": "content",
-          "required_markers": [
-            "any_techniques:T1005",
-            "any_techniques:T1078"
+          "target_asset_id": "ops-db",
+          "target_runtime": {
+            "backend": "docker",
+            "image": "thinkst/opencanary",
+            "network": "{project_name}_net_internal",
+            "memory_limit": "256m",
+            "volumes": [
+              "{host_project_root}/deploy/opencanary/configured/mysql_schema_banner.conf:/root/.opencanary.conf:ro",
+              "{host_project_root}/deploy/opencanary/var:/var/tmp"
+            ],
+            "port_mappings": [
+              {
+                "host": "127.0.0.1",
+                "requested_host_port": 13306,
+                "container_port": 3306
+              }
+            ],
+            "healthcheck": {
+              "type": "tcp",
+              "host": "127.0.0.1",
+              "port_setting": "host_port"
+            },
+            "source": "opencanary/mysql configured schema banner"
+          },
+          "materialized_artifacts": [
+            {
+              "type": "route_note",
+              "text": "MySQL clients on the existing database port now see a configured MySQL version banner."
+            }
           ],
-          "covered_techniques": [
-            "T1005"
-          ],
-          "telemetry_value": 0.85,
-          "reveal_outputs": [
-            "schema hints",
-            "table-name hints",
-            "query-like access prompts"
-          ],
-          "reason": "Repeated database interaction can justify schema and table-name hints as a collection test.",
-          "runtime_effect": "Starts or configures the protocol/high-interaction runtime surface; no static HTTP page is modified."
+          "reason": "A database login attempt or valid-token path can justify a schema-specific DB surface."
         }
       ]
     },
@@ -725,31 +736,16 @@
         "backend": "docker",
         "image": "ghcr.io/telekom-security/cowrie:24.04.1",
         "network": "{project_name}_net_internal",
-        "memory_limit": "256m",
-        "pids_limit": 256,
-        "cap_drop": [
-          "ALL"
-        ],
-        "cap_add": [
-          "NET_BIND_SERVICE",
-          "NET_ADMIN"
-        ],
-        "security_opt": [
-          "no-new-privileges"
-        ],
-        "entrypoint": "/bin/sh",
-        "command": [
-          "-lc",
-          "mkdir -p /tmp/cowrie /tmp/cowrie/data etc log/tty && printf 'root:x:*\\n' > etc/userdb.txt && sed -i 's/^auth_class = .*/auth_class = UserDB/' cowrie.cfg && exec /usr/bin/twistd --nodaemon -y cowrie.tac --pidfile /tmp/cowrie/cowrie.pid cowrie"
-        ],
+        "memory_limit": "512m",
+        "pids_limit": 512,
         "volumes": [
-          "{host_project_root}/data/runtime/high_interaction/{binding_id_short}/admin-jumpbox/log/cowrie:/home/cowrie/cowrie/log"
+          "{host_project_root}/data/runtime/high_interaction/{binding_id_short}/admin-jumpbox:/home/cowrie/cowrie/log"
         ],
         "port_mappings": [
           {
             "host": "127.0.0.1",
             "requested_host_port": 10222,
-            "container_port": 22
+            "container_port": 2222
           }
         ],
         "healthcheck": {
@@ -757,7 +753,12 @@
           "host": "127.0.0.1",
           "port_setting": "host_port"
         },
-        "source": "tpotce/docker/cowrie",
+        "source": "cowrie",
+        "entrypoint": "sh",
+        "command": [
+          "-lc",
+          "mkdir -p /tmp/cowrie /home/cowrie/cowrie/log /home/cowrie/cowrie/honeyfs/etc; touch /home/cowrie/cowrie/honeyfs/etc/issue.net; exec /usr/bin/twistd --nodaemon -y cowrie.tac --pidfile /tmp/cowrie/cowrie.pid cowrie"
+        ],
         "sidecar_forwarders": [
           {
             "name": "cowrie-runtime-forwarder",
@@ -771,7 +772,7 @@
             "command": [
               "bash",
               "-lc",
-              "PYTHONPATH=/app python scripts/forwarders/cowrie_json.py --log-file /cowrie-var/log/cowrie/cowrie.json --adapter-url http://cowrie-adapter:8011/v1/cowrie/events --asset-id admin-jumpbox --attacker-key {attacker_key} --poll-seconds 0.5"
+              "PYTHONPATH=/app python scripts/forwarders/cowrie_json.py --log-file /cowrie-var/cowrie.json --adapter-url http://cowrie-adapter:8011/v1/cowrie/events --asset-id admin-jumpbox --attacker-key {attacker_key} --poll-seconds 0.5"
             ]
           }
         ]
@@ -846,56 +847,80 @@
       "telemetry_validation": {
         "kind": "cowrie",
         "event_file": "cowrie_observations.json",
-        "match": "asset_id",
-        "expected_trigger": "SSH login or command through the asset-gateway Cowrie runtime"
+        "expected_trigger": "SSH command input through the Cowrie jumpbox"
       },
       "configuration_variants": [
         {
-          "configuration_id": "jumpbox-interactive-discovery-shell",
-          "kind": "service-configuration",
+          "configuration_id": "jumpbox-cowrie-operator-profile",
+          "kind": "same-port-target-runtime",
           "required_markers": [
-            "any_techniques:T1059",
-            "any_techniques:T1033",
-            "any_techniques:T1082"
+            "any_techniques:T1059"
           ],
           "covered_techniques": [
             "T1059",
             "T1033",
             "T1082"
           ],
-          "telemetry_value": 1,
+          "telemetry_value": 0.9,
           "reveal_outputs": [
-            "interactive shell prompt",
-            "ordinary discovery breadcrumbs",
-            "command sequence telemetry"
+            "Cowrie shell prompt",
+            "jumpbox hostname",
+            "command telemetry"
           ],
-          "reason": "Strong shell or admin-host evidence can justify an interactive discovery shell.",
-          "runtime_effect": "Starts or configures the protocol/high-interaction runtime surface; no static HTTP page is modified."
-        },
-        {
-          "configuration_id": "jumpbox-privilege-cleanup-breadcrumbs",
-          "kind": "content",
-          "required_markers": [
-            "any_techniques:T1548",
-            "any_techniques:T1053",
-            "any_techniques:T1070",
-            "any_techniques:T1003"
+          "target_asset_id": "admin-jumpbox",
+          "target_runtime": {
+            "backend": "docker",
+            "image": "ghcr.io/telekom-security/cowrie:24.04.1",
+            "network": "{project_name}_net_internal",
+            "memory_limit": "512m",
+            "pids_limit": 512,
+            "volumes": [
+              "{host_project_root}/deploy/cowrie/jumpbox_profile.cfg:/home/cowrie/cowrie/cowrie.cfg:ro",
+              "{host_project_root}/data/runtime/high_interaction/{binding_id_short}/admin-jumpbox:/home/cowrie/cowrie/log"
+            ],
+            "port_mappings": [
+              {
+                "host": "127.0.0.1",
+                "requested_host_port": 10222,
+                "container_port": 2222
+              }
+            ],
+            "healthcheck": {
+              "type": "tcp",
+              "host": "127.0.0.1",
+              "port_setting": "host_port"
+            },
+            "source": "cowrie configured admin jumpbox",
+            "sidecar_forwarders": [
+              {
+                "name": "cowrie-runtime-forwarder",
+                "image": "python:3.10-slim",
+                "network": "{project_name}_net_control",
+                "working_dir": "/app",
+                "volumes": [
+                  "{host_project_root}:/app",
+                  "{host_project_root}/data/runtime/high_interaction/{binding_id_short}/admin-jumpbox:/cowrie-var"
+                ],
+                "command": [
+                  "bash",
+                  "-lc",
+                  "PYTHONPATH=/app python scripts/forwarders/cowrie_json.py --log-file /cowrie-var/cowrie.json --adapter-url http://cowrie-adapter:8011/v1/cowrie/events --asset-id admin-jumpbox --attacker-key {attacker_key} --poll-seconds 0.5"
+                ]
+              }
+            ],
+            "entrypoint": "sh",
+            "command": [
+              "-lc",
+              "mkdir -p /tmp/cowrie /home/cowrie/cowrie/log /home/cowrie/cowrie/honeyfs/etc; touch /home/cowrie/cowrie/honeyfs/etc/issue.net; exec /usr/bin/twistd --nodaemon -y cowrie.tac --pidfile /tmp/cowrie/cowrie.pid cowrie"
+            ]
+          },
+          "materialized_artifacts": [
+            {
+              "type": "route_note",
+              "text": "SSH reconnects on the admin jumpbox port now use the configured jumpbox-02 Cowrie profile."
+            }
           ],
-          "covered_techniques": [
-            "T1548",
-            "T1053",
-            "T1070",
-            "T1003"
-          ],
-          "telemetry_value": 0.95,
-          "reveal_outputs": [
-            "privilege breadcrumb",
-            "scheduled-task hint",
-            "log-cleaning hint",
-            "credential-dump probe path"
-          ],
-          "reason": "Repeated shell and privilege checks can justify deeper privilege or cleanup breadcrumbs.",
-          "runtime_effect": "Starts or configures the protocol/high-interaction runtime surface; no static HTTP page is modified."
+          "reason": "Interactive shell behaviour on the active jumpbox path can justify a richer Cowrie profile."
         }
       ]
     },
@@ -932,13 +957,9 @@
     "default_settings": {
       "runtime": {
         "backend": "docker",
-        "warm_standby": true,
         "image": "thinkst/opencanary",
         "network": "{project_name}_net_internal",
         "memory_limit": "256m",
-        "tmpfs": [
-          "/run"
-        ],
         "volumes": [
           "{host_project_root}/deploy/opencanary/internal/redis.conf:/root/.opencanary.conf:ro",
           "{host_project_root}/deploy/opencanary/var:/var/tmp"
@@ -955,7 +976,8 @@
           "host": "127.0.0.1",
           "port_setting": "host_port"
         },
-        "source": "opencanary/redis"
+        "source": "opencanary/redis",
+        "warm_standby": true
       },
       "image_references": [
         "thinkst/opencanary"
@@ -1017,26 +1039,53 @@
       },
       "configuration_variants": [
         {
-          "configuration_id": "redis-session-key-references",
-          "kind": "content",
+          "configuration_id": "redis-seeded-keyspace-backend",
+          "kind": "same-port-target-runtime",
           "required_markers": [
-            "any_internal_http_paths:/keys.txt",
-            "any_internal_http_indicators:combined:redis",
-            "any_techniques:T1552.001",
-            "any_techniques:T1005"
+            "any_techniques:T1046"
           ],
           "covered_techniques": [
-            "T1552.001",
+            "T1046",
             "T1005"
           ],
-          "telemetry_value": 0.8,
+          "telemetry_value": 0.78,
           "reveal_outputs": [
-            "cache key references",
-            "session key names",
-            "upstream service hints"
+            "Redis key listing",
+            "session key clue",
+            "ops host cache clue"
           ],
-          "reason": "Cache host or credential interest can justify exposing session-key details.",
-          "runtime_effect": "Starts or configures the protocol/high-interaction runtime surface; no static HTTP page is modified."
+          "target_asset_id": "redis-cache",
+          "target_runtime": {
+            "backend": "docker",
+            "image": "redis:7-alpine",
+            "network": "{project_name}_net_internal",
+            "memory_limit": "256m",
+            "port_mappings": [
+              {
+                "host": "127.0.0.1",
+                "requested_host_port": 16379,
+                "container_port": 6379
+              }
+            ],
+            "healthcheck": {
+              "type": "tcp",
+              "host": "127.0.0.1",
+              "port_setting": "host_port"
+            },
+            "source": "redis seeded keyspace",
+            "command": [
+              "sh",
+              "-lc",
+              "redis-server --bind 0.0.0.0 --protected-mode no --save '' --appendonly no --daemonize yes; sleep 0.5; redis-cli SET session:portal.reader nbp_reader_2026_04_window >/dev/null; redis-cli SET cache:ops:db01 db01.internal.local >/dev/null; redis-cli LPUSH recent:exports finance-drop.zip >/dev/null; tail -f /dev/null"
+            ]
+          },
+          "materialized_artifacts": [
+            {
+              "type": "route_note",
+              "text": "redis-cli KEYS '*' on the existing Redis port now returns seeded session and cache keys."
+            }
+          ],
+          "reason": "Redis enumeration on the active cache surface can justify a seeded keyspace backend."
         }
       ]
     },
@@ -1290,13 +1339,9 @@
     "default_settings": {
       "runtime": {
         "backend": "docker",
-        "warm_standby": true,
         "image": "thinkst/opencanary",
         "network": "{project_name}_net_internal",
         "memory_limit": "256m",
-        "tmpfs": [
-          "/run"
-        ],
         "volumes": [
           "{host_project_root}/deploy/opencanary/internal/ftp.conf:/root/.opencanary.conf:ro",
           "{host_project_root}/deploy/opencanary/var:/var/tmp"
@@ -1313,7 +1358,8 @@
           "host": "127.0.0.1",
           "port_setting": "host_port"
         },
-        "source": "opencanary/ftp"
+        "source": "opencanary/ftp",
+        "warm_standby": true
       },
       "archive_names": [
         "finance-drop",
@@ -1377,42 +1423,52 @@
       },
       "configuration_variants": [
         {
-          "configuration_id": "ftp-backup-archive-directory",
-          "kind": "service-configuration",
+          "configuration_id": "ftp-archive-review-banner",
+          "kind": "same-port-target-runtime",
           "required_markers": [
-            "any_techniques:T1005",
-            "any_techniques:T1567.002"
+            "any_techniques:T1039"
           ],
           "covered_techniques": [
-            "T1005",
-            "T1567.002"
+            "T1039",
+            "T1005"
           ],
           "telemetry_value": 0.78,
           "reveal_outputs": [
-            "backup-like archive directory",
-            "file-name selection telemetry"
+            "archive FTP banner",
+            "archive-account prompt",
+            "FTP command telemetry"
           ],
-          "reason": "Archive and collection interest can justify an FTP archive directory.",
-          "runtime_effect": "Starts or configures the protocol/high-interaction runtime surface; no static HTTP page is modified."
-        },
-        {
-          "configuration_id": "ftp-credential-protected-archive",
-          "kind": "service-configuration",
-          "required_markers": [
-            "any_techniques:T1110",
-            "any_techniques:T1552.001"
+          "target_asset_id": "ftp-archive",
+          "target_runtime": {
+            "backend": "docker",
+            "image": "thinkst/opencanary",
+            "network": "{project_name}_net_internal",
+            "memory_limit": "256m",
+            "volumes": [
+              "{host_project_root}/deploy/opencanary/configured/ftp_archive_banner.conf:/root/.opencanary.conf:ro",
+              "{host_project_root}/deploy/opencanary/var:/var/tmp"
+            ],
+            "port_mappings": [
+              {
+                "host": "127.0.0.1",
+                "requested_host_port": 12121,
+                "container_port": 21
+              }
+            ],
+            "healthcheck": {
+              "type": "tcp",
+              "host": "127.0.0.1",
+              "port_setting": "host_port"
+            },
+            "source": "opencanary/tcpbanner configured ftp archive"
+          },
+          "materialized_artifacts": [
+            {
+              "type": "route_note",
+              "text": "The existing FTP archive port now shows an archive review banner and account prompt."
+            }
           ],
-          "covered_techniques": [
-            "T1110",
-            "T1552.001"
-          ],
-          "telemetry_value": 0.8,
-          "reveal_outputs": [
-            "credential-protected archive prompt",
-            "password guess telemetry"
-          ],
-          "reason": "Password-file clues or repeated archive access can justify an archive authentication prompt.",
-          "runtime_effect": "Starts or configures the protocol/high-interaction runtime surface; no static HTTP page is modified."
+          "reason": "Archive-transfer behaviour can justify making the FTP archive prompt more specific."
         }
       ]
     },
@@ -1445,13 +1501,9 @@
     "default_settings": {
       "runtime": {
         "backend": "docker",
-        "warm_standby": true,
         "image": "thinkst/opencanary",
         "network": "{project_name}_net_internal",
         "memory_limit": "256m",
-        "tmpfs": [
-          "/run"
-        ],
         "volumes": [
           "{host_project_root}/deploy/opencanary/internal/ssh.conf:/root/.opencanary.conf:ro",
           "{host_project_root}/deploy/opencanary/var:/var/tmp"
@@ -1468,7 +1520,8 @@
           "host": "127.0.0.1",
           "port_setting": "host_port"
         },
-        "source": "opencanary/ssh"
+        "source": "opencanary/ssh",
+        "warm_standby": true
       },
       "hostname": "ssh-gw-02",
       "image_references": [
@@ -1524,44 +1577,75 @@
       },
       "configuration_variants": [
         {
-          "configuration_id": "ssh-login-banner-prompt",
-          "kind": "service-configuration",
+          "configuration_id": "ssh-cowrie-jumpbox-profile",
+          "kind": "same-port-target-runtime",
           "required_markers": [
-            "any_techniques:T1021.004",
-            "any_techniques:T1110",
-            "any_internal_http_indicators:combined:password"
+            "any_techniques:T1021.004"
           ],
           "covered_techniques": [
             "T1021.004",
             "T1110"
           ],
-          "telemetry_value": 0.75,
+          "telemetry_value": 0.84,
           "reveal_outputs": [
-            "lightweight SSH login prompt",
-            "host banner",
+            "Cowrie SSH login prompt",
+            "jumpbox hostname",
             "credential attempt telemetry"
           ],
-          "reason": "Leaked password or SSH credential-reuse interest can justify a lightweight SSH prompt.",
-          "runtime_effect": "Starts or configures the protocol/high-interaction runtime surface; no static HTTP page is modified."
-        },
-        {
-          "configuration_id": "ssh-jumpbox-hostname-hint",
-          "kind": "content",
-          "required_markers": [
-            "any_techniques:T1021.004",
-            "any_techniques:T1078"
+          "target_asset_id": "ssh-canary",
+          "target_runtime": {
+            "backend": "docker",
+            "image": "ghcr.io/telekom-security/cowrie:24.04.1",
+            "network": "{project_name}_net_internal",
+            "memory_limit": "512m",
+            "pids_limit": 512,
+            "volumes": [
+              "{host_project_root}/deploy/cowrie/jumpbox_profile.cfg:/home/cowrie/cowrie/cowrie.cfg:ro",
+              "{host_project_root}/data/runtime/high_interaction/{binding_id_short}/ssh-canary:/home/cowrie/cowrie/log"
+            ],
+            "port_mappings": [
+              {
+                "host": "127.0.0.1",
+                "requested_host_port": 12222,
+                "container_port": 2222
+              }
+            ],
+            "healthcheck": {
+              "type": "tcp",
+              "host": "127.0.0.1",
+              "port_setting": "host_port"
+            },
+            "source": "cowrie configured ssh canary",
+            "sidecar_forwarders": [
+              {
+                "name": "cowrie-runtime-forwarder",
+                "image": "python:3.10-slim",
+                "network": "{project_name}_net_control",
+                "working_dir": "/app",
+                "volumes": [
+                  "{host_project_root}:/app",
+                  "{host_project_root}/data/runtime/high_interaction/{binding_id_short}/ssh-canary:/cowrie-var"
+                ],
+                "command": [
+                  "bash",
+                  "-lc",
+                  "PYTHONPATH=/app python scripts/forwarders/cowrie_json.py --log-file /cowrie-var/cowrie.json --adapter-url http://cowrie-adapter:8011/v1/cowrie/events --asset-id ssh-canary --attacker-key {attacker_key} --poll-seconds 0.5"
+                ]
+              }
+            ],
+            "entrypoint": "sh",
+            "command": [
+              "-lc",
+              "mkdir -p /tmp/cowrie /home/cowrie/cowrie/log /home/cowrie/cowrie/honeyfs/etc; touch /home/cowrie/cowrie/honeyfs/etc/issue.net; exec /usr/bin/twistd --nodaemon -y cowrie.tac --pidfile /tmp/cowrie/cowrie.pid cowrie"
+            ]
+          },
+          "materialized_artifacts": [
+            {
+              "type": "route_note",
+              "text": "SSH reconnects on the existing canary port now land on a Cowrie jumpbox profile."
+            }
           ],
-          "covered_techniques": [
-            "T1021",
-            "T1078"
-          ],
-          "telemetry_value": 0.78,
-          "reveal_outputs": [
-            "jumpbox hostname hint",
-            "remote-access pivot clue"
-          ],
-          "reason": "Repeated SSH-specific login or valid-account reuse can justify a hint toward the jumpbox path.",
-          "runtime_effect": "Starts or configures the protocol/high-interaction runtime surface; no static HTTP page is modified."
+          "reason": "An active SSH login path can justify upgrading the low-interaction canary into a Cowrie jumpbox profile."
         }
       ]
     },
@@ -1597,9 +1681,6 @@
         "image": "thinkst/opencanary",
         "network": "{project_name}_net_internal",
         "memory_limit": "256m",
-        "tmpfs": [
-          "/run"
-        ],
         "volumes": [
           "{host_project_root}/deploy/opencanary/internal/telnet.conf:/root/.opencanary.conf:ro",
           "{host_project_root}/deploy/opencanary/var:/var/tmp"
@@ -1616,7 +1697,8 @@
           "host": "127.0.0.1",
           "port_setting": "host_port"
         },
-        "source": "opencanary/telnet"
+        "source": "opencanary/telnet",
+        "warm_standby": true
       },
       "hostname": "legacy-switch-01",
       "image_references": [
@@ -1670,41 +1752,52 @@
       },
       "configuration_variants": [
         {
-          "configuration_id": "telnet-legacy-device-banner",
-          "kind": "service-configuration",
+          "configuration_id": "legacy-telnet-console-prompt",
+          "kind": "same-port-target-runtime",
           "required_markers": [
-            "any_techniques:T1046",
             "any_techniques:T1021"
           ],
           "covered_techniques": [
-            "T1046",
-            "T1021"
+            "T1021",
+            "T1046"
           ],
-          "telemetry_value": 0.65,
+          "telemetry_value": 0.7,
           "reveal_outputs": [
-            "legacy network-device banner",
-            "service-probing telemetry"
+            "legacy console banner",
+            "login prompt",
+            "telnet command telemetry"
           ],
-          "reason": "Legacy host references or broad service scanning can justify a Telnet banner.",
-          "runtime_effect": "Starts or configures the protocol/high-interaction runtime surface; no static HTTP page is modified."
-        },
-        {
-          "configuration_id": "telnet-basic-credential-prompt",
-          "kind": "service-configuration",
-          "required_markers": [
-            "any_techniques:T1110",
-            "any_internal_http_indicators:combined:password"
+          "target_asset_id": "legacy-telnet",
+          "target_runtime": {
+            "backend": "docker",
+            "image": "thinkst/opencanary",
+            "network": "{project_name}_net_internal",
+            "memory_limit": "256m",
+            "volumes": [
+              "{host_project_root}/deploy/opencanary/configured/telnet_legacy_prompt.conf:/root/.opencanary.conf:ro",
+              "{host_project_root}/deploy/opencanary/var:/var/tmp"
+            ],
+            "port_mappings": [
+              {
+                "host": "127.0.0.1",
+                "requested_host_port": 12323,
+                "container_port": 23
+              }
+            ],
+            "healthcheck": {
+              "type": "tcp",
+              "host": "127.0.0.1",
+              "port_setting": "host_port"
+            },
+            "source": "opencanary/tcpbanner configured telnet"
+          },
+          "materialized_artifacts": [
+            {
+              "type": "route_note",
+              "text": "Telnet reconnects now show a Northbridge legacy console prompt."
+            }
           ],
-          "covered_techniques": [
-            "T1110"
-          ],
-          "telemetry_value": 0.68,
-          "reveal_outputs": [
-            "basic credential prompt",
-            "username/password attempt telemetry"
-          ],
-          "reason": "Password material or repeated Telnet probing can justify a credential prompt.",
-          "runtime_effect": "Starts or configures the protocol/high-interaction runtime surface; no static HTTP page is modified."
+          "reason": "A telnet probe on the active legacy path can justify a more specific legacy console prompt."
         }
       ]
     },
@@ -1722,7 +1815,7 @@
     "asset_name": "Mail Relay",
     "exposure_type": "internal",
     "interaction_level": "medium",
-    "description": "A Mailoney-backed mail service for SMTP enumeration and credential attempts.",
+    "description": "An OpenCanary TCP-banner SMTP canary used as the base mail-relay sensor before SMTP profile upgrades.",
     "template_family": "mail-service",
     "protocols": [
       "smtp"
@@ -1731,15 +1824,19 @@
       25
     ],
     "source_refs": [
-      "tpotce:mailoney"
+      "opencanary:smtp"
     ],
-    "telemetry_source": "mailoney",
+    "telemetry_source": "opencanary",
     "default_settings": {
       "runtime": {
         "backend": "docker",
-        "image": "dtagdevsec/mailoney:24.04",
+        "image": "thinkst/opencanary",
         "network": "{project_name}_net_internal",
         "memory_limit": "256m",
+        "volumes": [
+          "{host_project_root}/deploy/opencanary/internal/smtp.conf:/root/.opencanary.conf:ro",
+          "{host_project_root}/deploy/opencanary/var:/var/tmp"
+        ],
         "port_mappings": [
           {
             "host": "127.0.0.1",
@@ -1752,7 +1849,8 @@
           "host": "127.0.0.1",
           "port_setting": "host_port"
         },
-        "source": "tpotce/docker/mailoney"
+        "source": "opencanary/smtp",
+        "warm_standby": true
       },
       "domains": [
         "corp.example"
@@ -1809,7 +1907,7 @@
         "telemetry_value": 0.75
       },
       "telemetry_validation": {
-        "kind": "mailoney",
+        "kind": "opencanary",
         "event_file": "opencanary_observations.json",
         "match": "service",
         "service": "smtp",
@@ -1817,42 +1915,53 @@
       },
       "configuration_variants": [
         {
-          "configuration_id": "mail-smtp-domain-hints",
-          "kind": "service-configuration",
+          "configuration_id": "mailoney-auth-relay-backend",
+          "kind": "same-port-target-runtime",
           "required_markers": [
-            "any_techniques:T1046",
             "any_techniques:T1087.003"
           ],
           "covered_techniques": [
-            "T1046",
-            "T1087.003"
-          ],
-          "telemetry_value": 0.75,
-          "reveal_outputs": [
-            "SMTP banner",
-            "mail-domain hints",
-            "recipient probing telemetry"
-          ],
-          "reason": "Mail hostname or address-enumeration behaviour can justify SMTP domain hints.",
-          "runtime_effect": "Starts or configures the protocol/high-interaction runtime surface; no static HTTP page is modified."
-        },
-        {
-          "configuration_id": "mail-smtp-auth-prompt",
-          "kind": "service-configuration",
-          "required_markers": [
-            "any_techniques:T1110"
-          ],
-          "covered_techniques": [
+            "T1087.003",
             "T1110"
           ],
-          "telemetry_value": 0.8,
+          "telemetry_value": 0.82,
           "reveal_outputs": [
-            "SMTP auth prompt",
-            "mail login clue",
-            "credential attempt telemetry"
+            "Mailoney SMTP banner",
+            "open relay SMTP command responses",
+            "recipient telemetry"
           ],
-          "reason": "Leaked account or credential-reuse interest can justify SMTP authentication telemetry.",
-          "runtime_effect": "Starts or configures the protocol/high-interaction runtime surface; no static HTTP page is modified."
+          "target_asset_id": "mail-relay",
+          "target_runtime": {
+            "backend": "docker",
+            "image": "dtagdevsec/mailoney:24.04",
+            "network": "{project_name}_net_internal",
+            "memory_limit": "256m",
+            "port_mappings": [
+              {
+                "host": "127.0.0.1",
+                "requested_host_port": 2525,
+                "container_port": 25
+              }
+            ],
+            "healthcheck": {
+              "type": "tcp",
+              "host": "127.0.0.1",
+              "port_setting": "host_port"
+            },
+            "source": "tpotce/mailoney configured open relay",
+            "command": [
+              "sh",
+              "-lc",
+              "mkdir -p /tmp/mailoney; python3 /opt/mailoney/mailoney.py -i 0.0.0.0 -p 25 -s mail-relay.internal.local -t open_relay -logpath /tmp/mailoney"
+            ]
+          },
+          "materialized_artifacts": [
+            {
+              "type": "route_note",
+              "text": "SMTP reconnects on the existing relay port now reach Mailoney postfix credential mode."
+            }
+          ],
+          "reason": "Recipient probing on the active SMTP path can justify switching to a Mailoney relay-interaction backend."
         }
       ]
     },
@@ -2511,47 +2620,28 @@
       },
       "configuration_variants": [
         {
-          "configuration_id": "dionaea-payload-capture-backend",
-          "kind": "service-configuration",
+          "configuration_id": "dionaea-to-glutton-http-capture",
+          "kind": "adjacent-high-interaction-upgrade",
           "required_markers": [
-            "any_techniques:T1105",
-            "any_techniques:T1204.002",
-            "any_internal_http_indicators:path:.bin"
+            "any_techniques:T1204.002"
           ],
           "covered_techniques": [
-            "T1105",
-            "T1204.002"
+            "T1190",
+            "T1105"
           ],
-          "telemetry_value": 1,
+          "telemetry_value": 0.86,
           "reveal_outputs": [
-            "payload metadata",
-            "requested filenames",
-            "transfer timing"
+            "Glutton generic HTTP capture route",
+            "payload probe telemetry"
           ],
-          "reason": "Download requests or binary-transfer evidence can justify payload-capture mode.",
-          "runtime_effect": "Starts or configures the protocol/high-interaction runtime surface; no static HTTP page is modified."
-        },
-        {
-          "configuration_id": "dionaea-protocol-capture-surface",
-          "kind": "service-configuration",
-          "required_markers": [
-            "any_techniques:T1041",
-            "any_techniques:T1567",
-            "any_techniques:T1005"
+          "target_asset_id": "honeytrap-generic",
+          "materialized_artifacts": [
+            {
+              "type": "route_note",
+              "text": "Follow-up generic payload probes can be routed to the Glutton capture backend."
+            }
           ],
-          "covered_techniques": [
-            "T1041",
-            "T1567",
-            "T1005"
-          ],
-          "telemetry_value": 0.95,
-          "reveal_outputs": [
-            "SMB capture surface",
-            "FTP capture surface",
-            "database-probe capture surface"
-          ],
-          "reason": "Repeated payload-transfer or protocol-specific follow-up can justify protocol capture surfaces.",
-          "runtime_effect": "Starts or configures the protocol/high-interaction runtime surface; no static HTTP page is modified."
+          "reason": "Payload interaction with Dionaea can justify an adjacent generic capture backend."
         }
       ]
     },
@@ -2568,10 +2658,10 @@
   },
   {
     "asset_id": "honeytrap-generic",
-    "asset_name": "Generic TCP Capture Backend",
+    "asset_name": "Glutton Generic Capture Backend",
     "exposure_type": "internal",
     "interaction_level": "medium",
-    "description": "A generic TCP capture service for unknown probing and payload-transfer behaviour.",
+    "description": "A Glutton-backed generic TCP/HTTP capture service for unknown probing and payload-transfer behaviour.",
     "template_family": "generic-capture-service",
     "protocols": [
       "tcp"
@@ -2580,28 +2670,32 @@
       80
     ],
     "source_refs": [
-      "local:generic-tcp-capture"
+      "tpotce:glutton",
+      "mushorg:glutton"
     ],
     "telemetry_source": "high_interaction",
     "default_settings": {
       "runtime": {
         "backend": "docker",
-        "image": "python:3.10-slim",
+        "image": "dtagdevsec/glutton:24.04.1",
         "network": "{project_name}_net_internal",
         "memory_limit": "512m",
         "pids_limit": 512,
+        "user": "root",
         "cap_drop": [
           "ALL"
         ],
         "cap_add": [
+          "NET_ADMIN",
+          "NET_RAW",
           "NET_BIND_SERVICE"
         ],
         "security_opt": [
           "no-new-privileges"
         ],
         "volumes": [
-          "{host_project_root}:/app",
-          "{host_project_root}/data/runtime/high_interaction/{binding_id_short}/honeytrap-generic:/runtime-logs"
+          "{host_project_root}/data/runtime/high_interaction/{binding_id_short}/honeytrap-generic:/var/log/glutton",
+          "{host_project_root}/data/runtime/high_interaction/{binding_id_short}/honeytrap-generic-var:/var/lib/glutton"
         ],
         "port_mappings": [
           {
@@ -2615,25 +2709,15 @@
           "host": "127.0.0.1",
           "port_setting": "host_port"
         },
-        "source": "local/generic-tcp-capture",
-        "working_dir": "/app",
+        "source": "tpotce/glutton",
         "command": [
-          "python",
-          "scripts/runtime/generic_tcp_capture.py",
-          "--host",
-          "0.0.0.0",
-          "--port",
-          "80",
-          "--log-file",
-          "/runtime-logs/honeytrap.json",
-          "--asset-id",
-          "honeytrap-generic",
-          "--service",
-          "tcp"
+          "sh",
+          "-lc",
+          "bin/server -d true -i eth0 -l /var/log/glutton/glutton.log --var-dir /var/lib/glutton & pid=$!; while kill -0 $pid 2>/dev/null; do chmod 0644 /var/log/glutton/glutton.log 2>/dev/null || true; sleep 1; done; wait $pid"
         ],
         "sidecar_forwarders": [
           {
-            "name": "honeytrap-forwarder",
+            "name": "glutton-forwarder",
             "image": "python:3.10-slim",
             "network": "{project_name}_net_control",
             "working_dir": "/app",
@@ -2644,13 +2728,13 @@
             "command": [
               "bash",
               "-lc",
-              "PYTHONPATH=/app python scripts/forwarders/high_interaction_logs.py --log-file /runtime-logs/honeytrap.json --adapter-url http://high-interaction-adapter:8014/v1/high-interaction/events --source honeytrap --asset-id honeytrap-generic --service tcp --event-type backend.log --asset-routes-file data/runtime/asset_gateway_routes.json --poll-seconds 0.5"
+              "PYTHONPATH=/app python scripts/forwarders/high_interaction_logs.py --log-file /runtime-logs/glutton.log --adapter-url http://high-interaction-adapter:8014/v1/high-interaction/events --source honeytrap --asset-id honeytrap-generic --service tcp --event-type backend.log --asset-routes-file data/runtime/asset_gateway_routes.json --poll-seconds 0.5"
             ]
           }
         ]
       },
       "image_references": [
-        "python:3.10-slim"
+        "dtagdevsec/glutton:24.04.1"
       ],
       "real_backend": true,
       "upgrade_source": "malware-sink",
@@ -2672,11 +2756,11 @@
           "Initial Access": 4
         },
         "reveal_outputs": [
-          "generic TCP banner interaction",
+          "Glutton generic TCP/HTTP interaction",
           "unknown payload capture",
           "probe metadata"
         ],
-        "selection_notes": "Reveal only after generic TCP probing or payload-transfer intent; use when a specific protocol backend is not justified.",
+        "selection_notes": "Reveal only after generic TCP probing or payload-transfer intent; use when Dionaea is not protocol-specific enough for the follow-up.",
         "asset_group": "generic-capture",
         "upgrade_source": "malware-sink",
         "covered_techniques": [
@@ -2701,48 +2785,61 @@
         "event_file": "high_interaction_observations.json",
         "match": "asset_id",
         "source": "honeytrap",
-        "expected_trigger": "TCP/HTTP probe through the generic TCP capture asset-gateway route"
+        "expected_trigger": "TCP/HTTP probe through the Glutton generic capture asset-gateway route"
       },
       "configuration_variants": [
         {
-          "configuration_id": "honeytrap-minimal-generic-banner",
-          "kind": "service-configuration",
+          "configuration_id": "honeytrap-wordpot-web-capture",
+          "kind": "same-port-target-runtime",
           "required_markers": [
-            "any_techniques:T1046",
             "any_techniques:T1190"
           ],
           "covered_techniques": [
-            "T1046",
-            "T1190"
+            "T1190",
+            "T1046"
           ],
-          "telemetry_value": 0.9,
+          "telemetry_value": 0.84,
           "reveal_outputs": [
-            "generic TCP listener",
-            "minimal banner",
-            "first-payload metadata"
+            "Wordpot HTTP honeypot page",
+            "generic web exploit request telemetry"
           ],
-          "reason": "Unknown TCP probing can justify a generic listener when no protocol-specific lure fits.",
-          "runtime_effect": "Starts or configures the protocol/high-interaction runtime surface; no static HTTP page is modified."
-        },
-        {
-          "configuration_id": "honeytrap-payload-metadata-capture",
-          "kind": "service-configuration",
-          "required_markers": [
-            "any_techniques:T1105",
-            "any_internal_http_indicators:path:.bin",
-            "any_internal_http_indicators:path:/upload"
+          "target_asset_id": "honeytrap-generic",
+          "target_runtime": {
+            "backend": "docker",
+            "image": "dtagdevsec/wordpot:24.04.1",
+            "network": "{project_name}_net_internal",
+            "memory_limit": "512m",
+            "pids_limit": 512,
+            "user": "root",
+            "entrypoint": "sh",
+            "volumes": [
+              "{host_project_root}/data/runtime/high_interaction/{binding_id_short}/honeytrap-generic-wordpot:/opt/wordpot/logs"
+            ],
+            "port_mappings": [
+              {
+                "host": "127.0.0.1",
+                "requested_host_port": 19999,
+                "container_port": 80
+              }
+            ],
+            "healthcheck": {
+              "type": "tcp",
+              "host": "127.0.0.1",
+              "port_setting": "host_port"
+            },
+            "source": "tpotce/wordpot configured web capture",
+            "command": [
+              "-lc",
+              "mkdir -p /opt/wordpot/logs; exec ./wordpot --host 0.0.0.0 --port 80 --title Wordpress"
+            ]
+          },
+          "materialized_artifacts": [
+            {
+              "type": "route_note",
+              "text": "HTTP reconnects on the generic capture port now reach a Wordpot web honeypot backend."
+            }
           ],
-          "covered_techniques": [
-            "T1105"
-          ],
-          "telemetry_value": 0.92,
-          "reveal_outputs": [
-            "raw payload metadata",
-            "filenames",
-            "transfer direction"
-          ],
-          "reason": "Binary-transfer hints can justify payload metadata capture when no specific protocol backend is justified.",
-          "runtime_effect": "Starts or configures the protocol/high-interaction runtime surface; no static HTTP page is modified."
+          "reason": "Generic exploit payload traffic can justify switching the capture port to an open-source Wordpot web honeypot."
         }
       ]
     },

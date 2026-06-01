@@ -109,7 +109,7 @@ class CowrieService:
 
         evidences: list[TechniqueEvidence] = []
         profile = self._current_or_empty_profile(event.src_ip)
-        for profile_tags, output in _profile_inputs(
+        for profile_tags, output, priority in _profile_inputs(
             event,
             mapping,
             tags,
@@ -124,7 +124,7 @@ class CowrieService:
                     event=FalcoEvent(
                         ts=event.timestamp,
                         falco_rule=event.eventid,
-                        priority=mapping.priority,
+                        priority=priority,
                         output=output,
                         tags=profile_tags,
                         output_fields=_output_fields(event, mapping),
@@ -174,9 +174,9 @@ def _profile_inputs(
     mapping: CowrieEventMapping,
     base_tags: list[str],
     command_rule_catalog: CowrieCommandRuleCatalog,
-) -> list[tuple[list[str], str]]:
+) -> list[tuple[list[str], str, str]]:
     base_output = _format_output(event, mapping)
-    profile_inputs = _attack_profile_inputs(base_tags, base_output)
+    profile_inputs = _attack_profile_inputs(base_tags, base_output, mapping.priority)
 
     command = _event_value(event, mapping.command_field)
     if not isinstance(command, str):
@@ -187,6 +187,7 @@ def _profile_inputs(
             (
                 [rule.technique_id],
                 f"{base_output} [{rule.name}; confidence={rule.confidence}]",
+                rule.confidence,
             )
         )
     return profile_inputs
@@ -195,7 +196,8 @@ def _profile_inputs(
 def _attack_profile_inputs(
     tags: list[str],
     output: str,
-) -> list[tuple[list[str], str]]:
+    priority: str,
+) -> list[tuple[list[str], str, str]]:
     """Return profiler inputs only when tags contain explicit ATT&CK signal.
 
     Descriptive Cowrie tags such as `cowrie_command_input` are useful on stored
@@ -204,7 +206,7 @@ def _attack_profile_inputs(
     mapping rules match the exact input.
     """
     if any(tag.startswith("mitre_") or tag.startswith("T") for tag in tags):
-        return [(tags, output)]
+        return [(tags, output, priority)]
     return []
 
 

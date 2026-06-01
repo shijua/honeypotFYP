@@ -584,8 +584,8 @@
   },
   {
     "scenario_id": "honeytrap-generic-probe",
-    "title": "Honeytrap generic probe",
-    "expected_behavior": "Generic transfer/probe evidence should select honeytrap-generic and expose port 19999.",
+    "title": "Glutton generic probe",
+    "expected_behavior": "Generic transfer/probe evidence should select the Glutton-backed honeytrap-generic asset and expose port 19999.",
     "attacker_key": "198.51.100.226",
     "initial_unlocked_assets": [
       "malware-sink"
@@ -668,8 +668,8 @@
   },
   {
     "scenario_id": "generic-transfer-honeytrap",
-    "title": "Generic transfer honeytrap",
-    "expected_behavior": "Generic upload/transfer evidence should select honeytrap-generic and expose port 19999.",
+    "title": "Generic transfer capture",
+    "expected_behavior": "Generic upload/transfer evidence should select the Glutton-backed honeytrap-generic asset and expose port 19999.",
     "attacker_key": "198.51.100.228",
     "initial_unlocked_assets": [
       "malware-sink"

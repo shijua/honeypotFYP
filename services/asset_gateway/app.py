@@ -26,6 +26,7 @@ import argparse
 import asyncio
 import json
 import os
+import re
 from dataclasses import dataclass, replace
 from datetime import timezone
 from pathlib import Path
@@ -453,6 +454,47 @@ def _protocol_observer(
         return lambda data: _report_smtp_commands(data, route=route, client_ip=client_ip)
     if route.asset_id == "ftp-archive" or route.public_port == 12121:
         return lambda data: _report_ftp_commands(data, route=route, client_ip=client_ip)
+    if route.asset_id == "redis-cache" or route.public_port == 16379:
+        return lambda data: _report_simple_protocol_event(
+            data,
+            route=route,
+            client_ip=client_ip,
+            service="redis",
+            logtype=637901,
+            commands=_parse_redis_commands(data),
+        )
+    if route.asset_id == "git-internal" or route.public_port == 19418:
+        return lambda data: _report_git_protocol_event(data, route=route, client_ip=client_ip)
+    if route.asset_id == "ops-db" or route.public_port == 13306:
+        return lambda data: _report_simple_protocol_event(
+            data,
+            route=route,
+            client_ip=client_ip,
+            service="mysql",
+            logtype=330601,
+            commands=_parse_mysql_commands(data),
+            extra=_login_probe_context(_parse_mysql_commands(data)),
+        )
+    if route.asset_id == "ssh-canary" or route.public_port == 12222:
+        return lambda data: _report_simple_protocol_event(
+            data,
+            route=route,
+            client_ip=client_ip,
+            service="ssh",
+            logtype=22001,
+            commands=_parse_login_protocol_commands(data, fallback="SSH_CLIENT_DATA"),
+            extra={"USERNAME": "observed", "PASSWORD": "[redacted]"},
+        )
+    if route.asset_id == "legacy-telnet" or route.public_port == 12323:
+        return lambda data: _report_simple_protocol_event(
+            data,
+            route=route,
+            client_ip=client_ip,
+            service="telnet",
+            logtype=23001,
+            commands=_parse_login_protocol_commands(data, fallback="TELNET_INPUT"),
+            extra={"USERNAME": "observed", "PASSWORD": "[redacted]"},
+        )
     source = _high_interaction_source(route.asset_id)
     if source:
         return lambda data: _report_high_interaction_probe(
@@ -491,6 +533,67 @@ def _report_smtp_commands(
         "dst_port": route.backend_port,
         "utc_time": utcnow().astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
         "logtype": 25001,
+        "node_id": f"asset-gateway-{route.asset_id}",
+        "logdata": logdata,
+    }
+    _append_jsonl(_internal_protocol_events_path(), event)
+
+
+def _report_git_protocol_event(
+    data: bytes,
+    *,
+    route: AssetRoute,
+    client_ip: str,
+) -> None:
+    """Write a Git protocol probe without pretending every request is ls-remote."""
+    commands = _parse_git_commands(data)
+    if not commands:
+        return
+    extra: dict[str, object] = {}
+    repo = _parse_git_repo(data)
+    if repo:
+        extra["REPO"] = repo
+    _report_simple_protocol_event(
+        data,
+        route=route,
+        client_ip=client_ip,
+        service="git",
+        logtype=941801,
+        commands=commands,
+        extra=extra,
+    )
+
+
+def _report_simple_protocol_event(
+    data: bytes,
+    *,
+    route: AssetRoute,
+    client_ip: str,
+    service: str,
+    logtype: int,
+    commands: list[str],
+    extra: dict[str, object] | None = None,
+) -> None:
+    """Write a gateway-observed protocol probe as OpenCanary-shaped evidence."""
+    if not data and service not in {"git"}:
+        return
+    logdata: dict[str, object] = {
+        "SERVICE": service,
+        "ASSET_ID": route.asset_id,
+        "COMMANDS": commands,
+        "ASSET_GATEWAY_PUBLIC_PORT": route.public_port,
+        "ASSET_GATEWAY_BACKEND_HOST": route.backend_host,
+    }
+    if commands:
+        logdata["COMMAND"] = commands[0]
+    if extra:
+        logdata.update(extra)
+    event = {
+        "src_host": client_ip,
+        "dst_host": route.backend_host,
+        "dst_port": route.backend_port,
+        "utc_time": utcnow().astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "logtype": logtype,
         "node_id": f"asset-gateway-{route.asset_id}",
         "logdata": logdata,
     }
@@ -588,6 +691,136 @@ def _parse_smtp_commands(data: bytes) -> list[str]:
     return dedupe_preserve(commands)
 
 
+def _parse_redis_commands(data: bytes) -> list[str]:
+    """Extract Redis command names from inline or RESP array input."""
+    text = data.decode("iso-8859-1", errors="ignore")
+    commands: list[str] = []
+    if text.startswith("*"):
+        for match in re.findall(r"\r?\n([A-Za-z]+)\r?\n", text):
+            commands.append(match.upper())
+            break
+    else:
+        first = text.strip().split()
+        if first:
+            commands.append(first[0].upper())
+    return dedupe_preserve(commands)
+
+
+def _parse_git_commands(data: bytes) -> list[str]:
+    """Extract coarse Git daemon actions from pkt-line client data.
+
+    Git clone and ls-remote both commonly start with `git-upload-pack`, so the
+    gateway records that protocol action instead of over-claiming `LS_REMOTE`.
+    """
+    text = data.decode("iso-8859-1", errors="ignore")
+    commands: list[str] = []
+    service_markers = {
+        "git-upload-pack": "GIT_UPLOAD_PACK",
+        "git-receive-pack": "GIT_RECEIVE_PACK",
+        "git-upload-archive": "GIT_UPLOAD_ARCHIVE",
+    }
+    for marker, command in service_markers.items():
+        if marker in text:
+            commands.append(command)
+    if "command=ls-refs" in text or "\nls-refs\n" in text:
+        commands.append("GIT_LS_REFS")
+    if "command=fetch" in text or "\nfetch\n" in text:
+        commands.append("GIT_FETCH")
+    if not commands and data:
+        commands.append("GIT_CONNECT")
+    return dedupe_preserve(commands)
+
+
+def _parse_git_repo(data: bytes) -> str | None:
+    """Return the requested Git repository path when it is visible in the packet."""
+    text = data.decode("iso-8859-1", errors="ignore")
+    match = re.search(r"git-(?:upload-pack|receive-pack|upload-archive)\s+([^\x00\s]+)", text)
+    if not match:
+        return None
+    repo = match.group(1).strip("/")
+    return repo or None
+
+
+def _parse_mysql_commands(data: bytes) -> list[str]:
+    """Extract MySQL command/query intent without storing query arguments."""
+    if not data:
+        return []
+    commands: list[str] = []
+    if len(data) >= 5:
+        command_byte = data[4]
+        if command_byte == 0x03:
+            commands.extend(_sql_verbs(data[5:]))
+            if not commands:
+                commands.append("MYSQL_QUERY")
+        elif command_byte == 0x16:
+            commands.append("MYSQL_STMT_PREPARE")
+        elif command_byte == 0x17:
+            commands.append("MYSQL_STMT_EXECUTE")
+        elif command_byte == 0x02:
+            commands.append("MYSQL_INIT_DB")
+        elif command_byte == 0x0E:
+            commands.append("MYSQL_PING")
+        elif command_byte == 0x01:
+            commands.append("MYSQL_QUIT")
+    if not commands:
+        commands.extend(_sql_verbs(data))
+    if not commands:
+        commands.append("MYSQL_LOGIN")
+    return dedupe_preserve(commands)
+
+
+def _sql_verbs(data: bytes) -> list[str]:
+    """Return recognized SQL verbs from printable payload text."""
+    text = data.decode("iso-8859-1", errors="ignore")
+    verbs = {
+        "ALTER",
+        "CREATE",
+        "DELETE",
+        "DESC",
+        "DESCRIBE",
+        "DROP",
+        "EXPLAIN",
+        "INSERT",
+        "SELECT",
+        "SHOW",
+        "UPDATE",
+        "USE",
+    }
+    commands: list[str] = []
+    for raw_line in text.replace("\r", "\n").split("\n"):
+        parts = raw_line.strip().split()
+        if parts and parts[0].upper() in verbs:
+            commands.append(parts[0].upper())
+    return dedupe_preserve(commands)
+
+
+def _login_probe_context(commands: list[str]) -> dict[str, object]:
+    """Mark only handshake/login-shaped DB probes as credential attempts."""
+    if commands == ["MYSQL_LOGIN"]:
+        return {"USERNAME": "observed", "PASSWORD": "[redacted]"}
+    return {}
+
+
+def _parse_login_protocol_commands(data: bytes, *, fallback: str) -> list[str]:
+    """Extract coarse login protocol input while avoiding raw username storage."""
+    text = data.decode("iso-8859-1", errors="ignore")
+    if text.startswith("SSH-"):
+        return ["SSH_CLIENT_HELLO"]
+    commands = _parse_text_commands(data)
+    return commands or ([fallback] if data else [])
+
+
+def _parse_text_commands(data: bytes) -> list[str]:
+    """Extract coarse command words from plain protocol probes."""
+    text = data.decode("iso-8859-1", errors="ignore")
+    commands: list[str] = []
+    for raw_line in text.replace("\r", "\n").split("\n"):
+        parts = raw_line.strip().split()
+        if parts:
+            commands.append(parts[0].upper())
+    return dedupe_preserve(commands)
+
+
 def _report_high_interaction_probe(
     data: bytes,
     *,
@@ -598,7 +831,7 @@ def _report_high_interaction_probe(
     """Write generic TCP interaction metadata for upgraded high-interaction assets.
 
     Backend-specific sidecars can provide richer logs, but this gateway-level
-    record guarantees a TCP probe to Dionaea/Honeytrap still creates
+    record guarantees a TCP probe to Dionaea/Glutton still creates
     adapter-visible telemetry during smoke tests.
     """
     if not data:

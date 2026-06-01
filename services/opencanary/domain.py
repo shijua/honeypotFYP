@@ -43,16 +43,15 @@ _PORT_SERVICE_HINTS = {
 }
 _LOGIN_LOGTYPES = {2000, 4002, 6001, 8001, 9001, 9002}
 _LATERAL_LOGIN_SERVICES = {"ftp", "ssh", "telnet"}
-_REDIS_COLLECTION_COMMANDS = {
+_REDIS_DATA_ACCESS_COMMANDS = {
     "GET",
     "HGET",
     "HGETALL",
-    "KEYS",
     "LRANGE",
     "MGET",
-    "SCAN",
     "SMEMBERS",
 }
+_REDIS_REPOSITORY_DISCOVERY_COMMANDS = {"KEYS", "SCAN"}
 _REDIS_CREDENTIAL_COMMANDS = {"AUTH", "CONFIG"}
 _SMTP_CREDENTIAL_COMMANDS = {"AUTH"}
 _SMTP_DISCOVERY_COMMANDS = {"EHLO", "HELO"}
@@ -110,7 +109,7 @@ class OpenCanaryService:
                 event=FalcoEvent(
                     ts=event_time,
                     falco_rule=f"OpenCanary {service} event",
-                    priority="NOTICE" if login_probe else "INFO",
+                    priority="medium" if login_probe else "low",
                     output=_format_output(event, service, username, password_seen),
                     tags=tags,
                     output_fields={
@@ -259,12 +258,15 @@ def _redis_tags(logdata: dict[str, Any]) -> list[str]:
     Example:
         COMMAND=INFO -> Discovery/T1046
         COMMAND=KEYS -> Discovery/T1046 plus Collection/T1213
+        COMMAND=GET -> Discovery/T1046 plus Collection/T1005
     """
     command = _command_from_logdata(logdata)
     if command in _REDIS_CREDENTIAL_COMMANDS:
         return ["mitre_discovery", "T1046", "mitre_credential_access", "T1552.001"]
-    if command in _REDIS_COLLECTION_COMMANDS:
+    if command in _REDIS_REPOSITORY_DISCOVERY_COMMANDS:
         return ["mitre_discovery", "T1046", "mitre_collection", "T1213"]
+    if command in _REDIS_DATA_ACCESS_COMMANDS:
+        return ["mitre_discovery", "T1046", "mitre_collection", "T1005"]
     return ["mitre_discovery", "T1046"]
 
 

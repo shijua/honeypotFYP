@@ -128,10 +128,10 @@ def _profile_tags(
 def _priority_for(event: HighInteractionLogEvent) -> str:
     text = _event_text(event)
     if _contains(text, "payload", "download", "upload", "exploit", "shellcode"):
-        return "WARNING"
+        return "high"
     if _contains(text, "login", "auth", "password"):
-        return "NOTICE"
-    return "INFO"
+        return "medium"
+    return "low"
 
 
 def _format_output(event: HighInteractionLogEvent) -> str:

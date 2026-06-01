@@ -27,7 +27,7 @@ class RuntimeConfig:
     attack_group_prior_path: str = "data/technique_prior/attack_group_technique_prior.json"
     recommendation_top_k: int = 40
     recommendation_support_threshold: float = 0.15
-    strong_technique_threshold: float = 0.5
+    observed_technique_threshold: float = 0.5
     feedback_window_seconds: int = 300
     reveal_feedback_path: str = "data/runtime/reveal_feedback.json"
     cowrie_event_mapping_path: str = "data/cowrie/event_mappings.json"
@@ -51,12 +51,12 @@ class RuntimeConfig:
                 HONEYPOT_ATTACK_GROUP_PRIOR_PATH=tmp/group_prior.json
                 HONEYPOT_RECOMMENDATION_TOP_K=40
                 HONEYPOT_RECOMMENDATION_SUPPORT_THRESHOLD=0.15
-                HONEYPOT_STRONG_TECHNIQUE_THRESHOLD=0.5
+                HONEYPOT_OBSERVED_TECHNIQUE_THRESHOLD=0.5
             Output:
                 config.attack_group_prior_path == "tmp/group_prior.json"
                 config.recommendation_top_k == 40
                 config.recommendation_support_threshold == 0.15
-                config.strong_technique_threshold == 0.5
+                config.observed_technique_threshold == 0.5
         """
         config = cls()
         config.state_dir = os.getenv("HONEYPOT_STATE_DIR", config.state_dir)
@@ -88,9 +88,9 @@ class RuntimeConfig:
             "HONEYPOT_RECOMMENDATION_SUPPORT_THRESHOLD",
             config.recommendation_support_threshold,
         )
-        config.strong_technique_threshold = _env_float(
-            "HONEYPOT_STRONG_TECHNIQUE_THRESHOLD",
-            config.strong_technique_threshold,
+        config.observed_technique_threshold = _env_float(
+            "HONEYPOT_OBSERVED_TECHNIQUE_THRESHOLD",
+            config.observed_technique_threshold,
         )
         config.feedback_window_seconds = _env_int(
             "HONEYPOT_FEEDBACK_WINDOW_SECONDS",

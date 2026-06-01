@@ -157,14 +157,8 @@ def _attacker_report(
         _runtime_summary(item, docker_probe)
         for item in attacker_runtime
     ]
-    current_assets = [
-        asset
-        for asset in historical_assets
-        if asset.get("runtime_backend") in {"docker", "compose"}
-        and str(asset.get("current_container_status", "")).startswith("Up")
-        and not _asset_summary_is_failed(asset)
-    ]
-    failed_assets = [asset for asset in historical_assets if _asset_summary_is_failed(asset)]
+    current_assets = _current_runtime_assets(historical_assets)
+    failed_assets = _failed_runtime_assets(historical_assets, current_assets)
 
     return {
         "attacker_key": attacker_key,
@@ -187,6 +181,7 @@ def _attacker_report(
         ),
         "recent_tactics": profile.get("recent_tactics", []),
         "recent_techniques": profile.get("recent_techniques", []),
+        "confidence_by_technique": profile.get("conf_by_technique", {}),
         # These fields explain why catalog-gated internal assets became
         # eligible, e.g. a .bak request on the public site unlocking finance.
         "recent_public_http_paths": profile.get("recent_public_http_paths", []),
@@ -353,6 +348,7 @@ def _runtime_summary(
         failure_detail = str(settings.get("runtime_failure"))
     elif current_status not in {"unknown", "unavailable"} and not str(current_status).startswith("Up"):
         failure_detail = str(current_status)
+    active_configuration_ids = _active_configuration_ids(settings)
     return {
         "asset_id": record.get("asset_id"),
         "asset_name": record.get("asset_name"),
@@ -366,13 +362,24 @@ def _runtime_summary(
         "current_container_status": current_status,
         "failure_detail": failure_detail,
         "image": settings.get("image"),
+        "configured_runtime": bool(settings.get("configured_runtime")),
+        "active_configuration_ids": active_configuration_ids,
         "ports": [_format_port_mapping(item) for item in _port_mappings(settings)],
     }
+
+
+def _active_configuration_ids(settings: dict[str, Any]) -> list[str]:
+    active_configurations = settings.get("active_configurations", {})
+    if not isinstance(active_configurations, dict):
+        return []
+    return sorted(str(configuration_id) for configuration_id in active_configurations)
 
 
 def _asset_summary_is_failed(asset: dict[str, Any]) -> bool:
     if asset.get("status") == "failed":
         return True
+    if asset.get("status") == "stopped":
+        return False
     if asset.get("runtime_backend") not in {"docker", "compose"}:
         return False
     current_status = str(asset.get("current_container_status", ""))
@@ -381,6 +388,35 @@ def _asset_summary_is_failed(asset: dict[str, Any]) -> bool:
         statuses = [str(status) for status in container_statuses.values()]
         return not statuses or any(not status.startswith("Up") for status in statuses)
     return bool(current_status) and current_status not in {"unknown", "unavailable"} and not current_status.startswith("Up")
+
+
+def _asset_summary_key(asset: dict[str, Any]) -> str:
+    return str(asset.get("asset_id") or asset.get("container_name") or "")
+
+
+def _current_runtime_assets(historical_assets: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    latest_running_by_asset: dict[str, dict[str, Any]] = {}
+    for asset in historical_assets:
+        if asset.get("runtime_backend") not in {"docker", "compose"}:
+            continue
+        if not str(asset.get("current_container_status", "")).startswith("Up"):
+            continue
+        if _asset_summary_is_failed(asset):
+            continue
+        latest_running_by_asset[_asset_summary_key(asset)] = asset
+    return list(latest_running_by_asset.values())
+
+
+def _failed_runtime_assets(
+    historical_assets: list[dict[str, Any]],
+    current_assets: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    running_keys = {_asset_summary_key(asset) for asset in current_assets}
+    return [
+        asset
+        for asset in historical_assets
+        if _asset_summary_key(asset) not in running_keys and _asset_summary_is_failed(asset)
+    ]
 
 
 def _decision_summary(record: dict[str, Any]) -> dict[str, Any]:

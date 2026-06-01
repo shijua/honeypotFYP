@@ -129,21 +129,6 @@ class ProfilerService:
             snapshot = ProfileSnapshot(attacker_key=attacker_key)
             return self._profile_repository.upsert(snapshot)
 
-        tactic_evidences = [
-            evidence for evidence in evidences if evidence.group is not None
-        ]
-        conf_by_tactic = self._summarize_dimension(
-            evidences=tactic_evidences,
-            key_fn=lambda evidence: evidence.group,
-        )
-        technique_evidences = [
-            evidence for evidence in evidences if evidence.tech_id is not None
-        ]
-        conf_by_technique = self._summarize_dimension(
-            evidences=technique_evidences,
-            key_fn=lambda evidence: evidence.tech_id,
-        )
-
         latest_ts = utc_aware(evidences[-1].ts)
         recent_cutoff = latest_ts - timedelta(
             seconds=self._config.chain_window_seconds
@@ -152,6 +137,20 @@ class ProfilerService:
         recent_evidences = [
             evidence for evidence in evidences if utc_aware(evidence.ts) >= recent_cutoff
         ]
+        tactic_evidences = [
+            evidence for evidence in recent_evidences if evidence.group is not None
+        ]
+        conf_by_tactic = self._summarize_dimension(
+            evidences=tactic_evidences,
+            key_fn=lambda evidence: evidence.group,
+        )
+        technique_evidences = [
+            evidence for evidence in recent_evidences if evidence.tech_id is not None
+        ]
+        conf_by_technique = self._summarize_dimension(
+            evidences=technique_evidences,
+            key_fn=lambda evidence: evidence.tech_id,
+        )
 
         snapshot = ProfileSnapshot(
             attacker_key=attacker_key,
@@ -216,27 +215,14 @@ class ProfilerService:
 
         confidences: dict[str, float] = {}
         for key, items in grouped.items():
-            count = len(items)
-            avg_weight = sum(item.weight for item in items) / count
-            # Log scaling dampens repeated noisy events.
-            score = avg_weight * math.log1p(count)
+            score = sum(item.weight for item in items)
             confidences[key] = round(1 - math.exp(-score), 4)
 
         return confidences
 
     def _priority_to_weight(self, priority: str) -> float:
-        # Use Falco priority as a simple evidence weight.
-        weights = {
-            "EMERGENCY": 4.0,
-            "ALERT": 3.8,
-            "CRITICAL": 3.5,
-            "ERROR": 3.0,
-            "WARNING": 2.5,
-            "NOTICE": 2.0,
-            "INFO": 1.5,
-            "DEBUG": 1.0,
-        }
-        return weights.get(priority.upper(), 1.0)
+        label = str(priority or "low").strip().lower()
+        return {"low": 0.5, "medium": 1.0, "high": 2.0}.get(label, 0.5)
 
     def _derive_attack_mappings(self, event: FalcoEvent) -> list[AttackMapping]:
         # Interpret tags in order so a rule can emit

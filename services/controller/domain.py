@@ -1,7 +1,7 @@
 """Technique-informed decision logic for choosing the next assets to expose.
 
 The controller keeps asset exposure explainable: profile evidence creates a
-set of strongly observed ATT&CK techniques, an ATT&CK group prior recommends
+set of thresholded ATT&CK technique observations, an ATT&CK group prior recommends
 nearby technique directions, and the catalogue decides which concrete assets
 can plausibly test those directions.
 """
@@ -171,9 +171,9 @@ class ControllerService:
         decisions: list[DecisionEvent] = []
         considered: list[CandidateScore] = []
         rejected: dict[str, str] = {}
-        strong_observed = self._strong_observed_techniques(request.profile)
+        thresholded_observed = self._thresholded_observed_techniques(request.profile)
         recommendations = self._technique_prior_repository.recommend(
-            strong_observed,
+            thresholded_observed,
             top_k=self._config.recommendation_top_k,
             support_threshold=self._config.recommendation_support_threshold,
         )
@@ -200,7 +200,7 @@ class ControllerService:
                     request,
                     strategy=strategy,
                     exploit_context=exploit_context,
-                    strong_observed=strong_observed,
+                    thresholded_observed=thresholded_observed,
                     recommendations=recommendations,
                 )
                 if candidate is not None:
@@ -345,7 +345,11 @@ class ControllerService:
                 target_asset_id = string_or_none(variant.get("target_asset_id"))
                 target_asset = asset_by_id.get(target_asset_id) if target_asset_id else None
                 if target_asset_id and (
-                    target_asset is None or target_asset_id in planned_unlocked_asset_ids
+                    target_asset is None
+                    or (
+                        target_asset_id != source_asset.asset_id
+                        and target_asset_id in planned_unlocked_asset_ids
+                    )
                 ):
                     continue
                 if target_asset is not None and not self._runtime_is_available(target_asset):
@@ -397,7 +401,7 @@ class ControllerService:
         *,
         strategy: str,
         exploit_context: CandidateScore | None,
-        strong_observed: set[str],
+        thresholded_observed: set[str],
         recommendations: dict[str, float],
     ) -> CandidateScore | None:
         """Classify one reveal option against observed and recommended techniques.
@@ -416,8 +420,11 @@ class ControllerService:
             technique: self._technique_candidate_parts(
                 technique,
                 profile.conf_by_technique,
-                strong_observed,
+                thresholded_observed,
                 recommendations,
+                has_concrete_marker=_has_concrete_dependency_marker(
+                    option.matched_dependency_markers
+                ),
             )
             for technique in option.covered_techniques
         }
@@ -437,6 +444,18 @@ class ControllerService:
             for technique, parts in technique_scores.items()
             if str(parts["candidate_type"]) != "none" and float(parts["signal_score"]) > 0
         }
+        matched_markers = list(option.matched_dependency_markers)
+        if strategy == "explore":
+            if exploit_context is None:
+                return None
+            if len({technique_family(item) for item in thresholded_observed}) < 2:
+                return None
+            if not (_has_concrete_dependency_marker(matched_markers) or option.upgrade_context):
+                return None
+            technique_scores = _explore_technique_scores(
+                technique_scores,
+                exploit_context,
+            )
         if not technique_scores:
             return None
 
@@ -456,28 +475,12 @@ class ControllerService:
         matched_profile_technique = string_or_none(selected_parts.get("matched_profile_technique"))
         matched_prior_technique = string_or_none(selected_parts.get("matched_prior_technique"))
 
-        matched_markers = list(option.matched_dependency_markers)
         telemetry_value = option.telemetry_value
         expected_technique_gain = _expected_technique_gain(
-            option.covered_techniques,
+            tuple(technique_scores),
             profile.conf_by_technique,
             recommendations,
         )
-
-        if strategy == "explore":
-            if exploit_context is None:
-                return None
-            if same_technique_family(str(selected_technique), str(exploit_context.selected_technique)):
-                return None
-            if any(
-                same_technique_family(str(selected_technique), covered)
-                for covered in exploit_context.covered_techniques
-            ):
-                return None
-            if len({technique_family(item) for item in strong_observed}) < 2:
-                return None
-            if not (_has_concrete_dependency_marker(matched_markers) or option.upgrade_context):
-                return None
 
         return CandidateScore(
             asset=option.asset,
@@ -508,10 +511,12 @@ class ControllerService:
         self,
         technique: str,
         confidences: dict[str, float],
-        strong_observed: set[str],
+        thresholded_observed: set[str],
         recommendations: dict[str, float],
+        *,
+        has_concrete_marker: bool,
     ) -> dict[str, Any]:
-        """Classify one technique as recommended, continuation, or unsupported.
+        """Classify one technique as recommended, continuation, weak, or unsupported.
 
         Example:
             Input:
@@ -534,15 +539,22 @@ class ControllerService:
             recommendation_support = family_prior
             matched_prior_technique = family_prior_technique
             match_type = "family"
-        strongly_observed = any(same_technique_family(technique, item) for item in strong_observed)
+        observed_for_continuation = any(
+            same_technique_family(technique, item) for item in thresholded_observed
+        )
         candidate_type = "none"
         signal_score = 0.0
-        if strongly_observed:
+        if observed_for_continuation:
             candidate_type = "continuation"
             signal_score = min(1.0, current_confidence)
         elif recommendation_support > 0:
             candidate_type = "recommended"
             signal_score = recommendation_support
+        elif has_concrete_marker and current_confidence > 0:
+            # Weak fallback: no prior support yet, but a concrete breadcrumb
+            # makes it reasonable to test a low-confidence observed direction.
+            candidate_type = "weak_evidence"
+            signal_score = min(1.0, current_confidence)
         return {
             "signal_score": signal_score,
             "confidence": current_confidence,
@@ -553,11 +565,11 @@ class ControllerService:
             "matched_prior_technique": matched_prior_technique,
         }
 
-    def _strong_observed_techniques(self, profile) -> set[str]:
+    def _thresholded_observed_techniques(self, profile) -> set[str]:
         return {
             technique
             for technique, confidence in profile.conf_by_technique.items()
-            if float(confidence) >= self._config.strong_technique_threshold
+            if float(confidence) >= self._config.observed_technique_threshold
         }
 
     def _eligibility(
@@ -727,7 +739,7 @@ class ControllerService:
             "matched_dependency_markers": list(candidate.matched_dependency_markers),
             "matched_dependency_marker_count": candidate.matched_dependency_marker_count,
             "prior_degraded": self._technique_prior_repository.degraded_reason,
-            "observed_techniques": sorted(self._strong_observed_techniques(request.profile)),
+            "observed_techniques": sorted(self._thresholded_observed_techniques(request.profile)),
             "eligible_assets": eligible_asset_ids,
             "rejected_assets": dict(rejected),
             "ordering": _controller_ordering_details(candidate),
@@ -816,6 +828,39 @@ def _best_family_score(
     return best_score, best_technique
 
 
+def _explore_technique_scores(
+    technique_scores: dict[str, dict[str, Any]],
+    exploit_context: CandidateScore,
+) -> dict[str, dict[str, Any]]:
+    """Keep only technique directions not already covered by the main reveal.
+
+    Example:
+        main covers T1046 and T1083; an explore option covering T1083 and T1105
+        is still valid, but only T1105 contributes to its explore score.
+    """
+    return {
+        technique: parts
+        for technique, parts in technique_scores.items()
+        if _is_distinct_explore_technique(technique, exploit_context)
+    }
+
+
+def _is_distinct_explore_technique(
+    technique: str,
+    exploit_context: CandidateScore,
+) -> bool:
+    """Return whether a technique family is new relative to the main reveal."""
+    if exploit_context.selected_technique and same_technique_family(
+        technique,
+        exploit_context.selected_technique,
+    ):
+        return False
+    return not any(
+        same_technique_family(technique, covered)
+        for covered in exploit_context.covered_techniques
+    )
+
+
 def _expected_technique_gain(
     covered_techniques: tuple[str, ...],
     confidences: dict[str, float],
@@ -824,8 +869,8 @@ def _expected_technique_gain(
     """Return expected new technique gain for one reveal candidate.
 
     G(a) = sum p_t * (1 - C_t) over covered techniques. Prior support is the
-    plausibility term; profile confidence only discounts techniques that are
-    already strongly represented.
+    plausibility term; the candidate technique's own profile confidence is the
+    novelty discount.
     """
     return sum(
         _technique_gain(technique, confidences, recommendations)
@@ -838,11 +883,8 @@ def _technique_gain(
     confidences: dict[str, float],
     recommendations: dict[str, float],
 ) -> float:
-    """Return p_t * (1-C_t) for one technique family."""
-    confidence = max(
-        float(confidences.get(technique, 0.0)),
-        _best_family_score(technique, confidences)[0],
-    )
+    """Return p_t * (1-C_t) with family matching only for prior support."""
+    confidence = float(confidences.get(technique, 0.0))
     support = max(
         float(recommendations.get(technique, 0.0)),
         _best_family_score(technique, recommendations)[0],

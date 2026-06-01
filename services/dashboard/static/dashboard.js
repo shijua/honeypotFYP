@@ -61,6 +61,29 @@ function badgeList(items, className = "") {
   return items.map(item => `<span class="badge ${className}">${escapeHtml(item)}</span>`).join("");
 }
 
+function techniqueBadgeList(techniques, confidences = {}) {
+  const labels = (techniques || []).map(technique => {
+    const confidence = Number(confidences[technique]);
+    return Number.isFinite(confidence) ? `${technique}:${confidence.toFixed(2)}` : technique;
+  });
+  return badgeList(labels, "warn");
+}
+
+function assetConfigurationLabels(assets) {
+  return (assets || []).flatMap(asset => {
+    const assetId = asset.asset_id || asset.asset_name || "asset";
+    const configurationIds = asset.active_configuration_ids || [];
+    return configurationIds.map(configurationId => `${assetId}:${configurationId}`);
+  });
+}
+
+function runningAssetLabel(asset) {
+  const assetId = asset.asset_id || asset.asset_name || "asset";
+  const configurationIds = asset.active_configuration_ids || [];
+  const target = configurationIds.length ? `${assetId}:${configurationIds.join(",")}` : assetId;
+  return `${target} ${asset.ports.join(", ")}`;
+}
+
 function detailOpenAttribute(key, defaultOpen = false) {
   const open = detailOpenState.has(key) ? detailOpenState.get(key) : defaultOpen;
   return open ? " open" : "";
@@ -224,14 +247,15 @@ function renderAttackers(attackers) {
         </summary>
         <div class="attacker-body">
           <div class="kv"><div class="key">Tactics</div><div>${badgeList(attacker.recent_tactics || [])}</div></div>
-          <div class="kv"><div class="key">Techniques</div><div>${badgeList(attacker.recent_techniques || [], "warn")}</div></div>
+          <div class="kv"><div class="key">Techniques</div><div>${techniqueBadgeList(attacker.recent_techniques || [], attacker.confidence_by_technique || {})}</div></div>
           <div class="kv"><div class="key">Commands</div><div>${badgeList(attacker.commands || [])}</div></div>
           <div class="kv"><div class="key">Recent HTTP Evidence</div><div>${badgeList(attacker.public_http_evidence || [])}</div></div>
           <div class="kv"><div class="key">Recent Internal HTTP</div><div>${badgeList(attacker.internal_http_evidence || [])}</div></div>
           <div class="kv"><div class="key">Unlocked</div><div>${badgeList(attacker.unlocked_assets || [])}</div></div>
-          <div class="kv"><div class="key">Running</div><div>${badgeList((attacker.current_running_assets || []).map(asset => `${asset.asset_id} ${asset.ports.join(", ")}`))}</div></div>
+          <div class="kv"><div class="key">Configured</div><div>${badgeList(assetConfigurationLabels(attacker.current_running_assets || []), "warn")}</div></div>
+          <div class="kv"><div class="key">Running</div><div>${badgeList((attacker.current_running_assets || []).map(asset => runningAssetLabel(asset)))}</div></div>
           <div class="kv"><div class="key">Failed</div><div>${badgeList((attacker.failed_assets || []).map(asset => `${asset.asset_id} ${asset.failure_detail || asset.current_container_status || "failed"}`), "bad")}</div></div>
-          <div class="kv decision-kv"><div class="key">Decisions</div><div>${renderDecisions(attacker.decisions || [], attacker.attacker_key || "-")}</div></div>
+          <div class="kv decision-kv"><div class="key">Decisions</div><div>${renderDecisions(attacker.decisions || [], attacker.attacker_key || "-", attacker.confidence_by_technique || {})}</div></div>
         </div>
       </details>
     `;
@@ -239,16 +263,16 @@ function renderAttackers(attackers) {
   </div>`;
 }
 
-function renderDecisions(decisions, attackerKey) {
+function renderDecisions(decisions, attackerKey, confidences = {}) {
   if (!decisions.length) {
     return '<span class="subtle">none</span>';
   }
   return `<div class="decision-list">
-    ${decisions.slice(-3).reverse().map(decision => renderDecision(decision, attackerKey)).join("")}
+    ${decisions.slice(-3).reverse().map(decision => renderDecision(decision, attackerKey, confidences)).join("")}
   </div>`;
 }
 
-function renderDecision(decision, attackerKey) {
+function renderDecision(decision, attackerKey, confidences = {}) {
   const events = decision.decision_events || [];
   const eventRows = events.length
     ? events.map(event => renderDecisionEvent(event)).join("")
@@ -266,7 +290,7 @@ function renderDecision(decision, attackerKey) {
     <summary class="decision-meta">
       <span class="mono">${escapeHtml(decision.ts || "-")}</span>
       <span class="subtle">${escapeHtml(summary)}</span>
-      <span>${badgeList(decision.recent_techniques || [], "warn")}</span>
+      <span>${techniqueBadgeList(decision.recent_techniques || [], confidences)}</span>
     </summary>
     ${eventRows}
     <div class="decision-row subtle">actions ${badgeList(actionLabels)} dropped ${badgeList(droppedLabels, "bad")}</div>

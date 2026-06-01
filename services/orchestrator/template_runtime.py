@@ -94,13 +94,20 @@ class MockTemplateRuntime:
         attacker_key: str | None = None,
         *,
         warm_standby: bool = False,
+        runtime_override: dict[str, object] | None = None,
     ) -> AssetRuntimeRecord:
         """Record that an asset is running with its catalog default settings."""
         existing = _existing_running_record(self._repository, binding_id, asset.asset_id)
-        if existing is not None:
+        if existing is not None and runtime_override is None:
             return existing
+        if existing is not None and runtime_override is not None:
+            self._repository.upsert(existing.model_copy(update={"status": "stopped"}))
 
         settings = dict(asset.default_settings)
+        if runtime_override is not None:
+            settings["runtime"] = dict(runtime_override)
+            settings["runtime_backend"] = str(runtime_override.get("backend", "mock"))
+            settings["configured_runtime"] = True
         if warm_standby:
             settings["warm_standby_hidden"] = True
         record = _runtime_record_from_asset(binding_id, asset, settings=settings)
@@ -198,10 +205,11 @@ class DockerTemplateRuntime:
         attacker_key: str | None = None,
         *,
         warm_standby: bool = False,
+        runtime_override: dict[str, object] | None = None,
     ) -> AssetRuntimeRecord:
         """Start one supported asset as a real Docker container."""
         existing = _existing_running_record(self._repository, binding_id, asset.asset_id)
-        if existing is not None:
+        if existing is not None and runtime_override is None:
             return _attach_gateway_route_for_existing_record(
                 self._repository,
                 existing,
@@ -211,15 +219,23 @@ class DockerTemplateRuntime:
 
         if shutil.which("docker") is None:
             raise RuntimeError("docker CLI is not available on this host")
-        if not self.supports(asset):
+        if runtime_override is None and not self.supports(asset):
             raise RuntimeError(f"asset {asset.asset_id} is not supported by DockerTemplateRuntime")
 
-        runtime = dict(asset.default_settings.get("runtime", {}))
+        runtime = dict(runtime_override or asset.default_settings.get("runtime", {}))
+        if runtime_override is not None and runtime.get("backend") != "docker":
+            raise RuntimeError(f"configured runtime for {asset.asset_id} is not Docker-backed")
         image = runtime.get("image")
         if not isinstance(image, str) or not image:
             raise RuntimeError(f"asset {asset.asset_id} runtime is missing a Docker image")
         container_name = _container_name(binding_id, asset.asset_id)
         asset_gateway_managed = is_asset_gateway_managed(asset, runtime)
+
+        if existing is not None:
+            # A configuration variant with target_runtime is an intentional
+            # same-asset backend swap. Remove the old visible container so the
+            # attacker-facing route lands on the replacement within one reconnect.
+            self._stop_runtime_record(existing)
 
         docker_args, runtime_settings = self._docker_args_for_runtime(
             binding_id,
@@ -229,6 +245,8 @@ class DockerTemplateRuntime:
             image,
             asset_gateway_managed=asset_gateway_managed,
         )
+        if runtime_override is not None:
+            runtime_settings["configured_runtime"] = True
         existing_container_status = _container_status(container_name)
         if existing_container_status.startswith("Up"):
             self._verify_started_container(
@@ -298,28 +316,31 @@ class DockerTemplateRuntime:
         for record in self._repository.list_by_binding(binding_id):
             if record.status != "running":
                 continue
-            sidecar_containers = record.settings.get("sidecar_containers", [])
-            if isinstance(sidecar_containers, list):
-                for sidecar in sidecar_containers:
-                    if isinstance(sidecar, str) and sidecar:
-                        subprocess.run(
-                            ["docker", "rm", "-f", sidecar],
-                            check=False,
-                            capture_output=True,
-                            text=True,
-                        )
-            container_name = record.settings.get("container_name")
-            if isinstance(container_name, str) and container_name:
-                subprocess.run(
-                    ["docker", "rm", "-f", container_name],
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                )
-            updated = record.model_copy(update={"status": "stopped"})
-            self._repository.upsert(updated)
-            stopped.append(updated)
+            stopped.append(self._stop_runtime_record(record))
         return stopped
+
+    def _stop_runtime_record(self, record: AssetRuntimeRecord) -> AssetRuntimeRecord:
+        """Remove the Docker containers for one runtime record and mark it stopped."""
+        sidecar_containers = record.settings.get("sidecar_containers", [])
+        if isinstance(sidecar_containers, list):
+            for sidecar in sidecar_containers:
+                if isinstance(sidecar, str) and sidecar:
+                    subprocess.run(
+                        ["docker", "rm", "-f", sidecar],
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+        container_name = record.settings.get("container_name")
+        if isinstance(container_name, str) and container_name:
+            subprocess.run(
+                ["docker", "rm", "-f", container_name],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        updated = record.model_copy(update={"status": "stopped"})
+        return self._repository.upsert(updated)
 
     def list_accessible_asset_ids(self, binding_id: str) -> list[str]:
         """Return Docker assets whose containers are still Up right now."""
@@ -636,8 +657,11 @@ class ComposeTemplateRuntime:
         attacker_key: str | None = None,
         *,
         warm_standby: bool = False,
+        runtime_override: dict[str, object] | None = None,
     ) -> AssetRuntimeRecord:
         """Start one supported asset through Docker Compose."""
+        if runtime_override is not None:
+            raise RuntimeError("ComposeTemplateRuntime does not support target_runtime swaps")
         existing = _existing_running_record(self._repository, binding_id, asset.asset_id)
         if existing is not None:
             return _attach_gateway_route_for_existing_record(
@@ -785,9 +809,14 @@ class HybridTemplateRuntime:
         attacker_key: str | None = None,
         *,
         warm_standby: bool = False,
+        runtime_override: dict[str, object] | None = None,
     ) -> AssetRuntimeRecord:
         """Start with Docker when supported, otherwise return a mock record."""
-        if self._compose_runtime is not None and self._compose_runtime.supports(asset):
+        if (
+            runtime_override is None
+            and self._compose_runtime is not None
+            and self._compose_runtime.supports(asset)
+        ):
             try:
                 return self._compose_runtime.start_asset(
                     binding_id,
@@ -807,13 +836,14 @@ class HybridTemplateRuntime:
                     },
                 ).model_copy(update={"status": "failed"})
                 return self._mock_runtime.upsert_record(failed)
-        if self._docker_runtime.supports(asset):
+        if runtime_override is not None or self._docker_runtime.supports(asset):
             try:
                 return self._docker_runtime.start_asset(
                     binding_id,
                     asset,
                     attacker_key,
                     warm_standby=warm_standby,
+                    runtime_override=runtime_override,
                 )
             except Exception as exc:
                 failed = _runtime_record_from_asset(
@@ -832,6 +862,7 @@ class HybridTemplateRuntime:
             asset,
             attacker_key,
             warm_standby=warm_standby,
+            runtime_override=runtime_override,
         )
 
     def prewarm_asset(
@@ -985,14 +1016,16 @@ def _write_configuration_artifact(
     configuration_id: str,
     configuration: dict[str, object],
 ) -> dict[str, object]:
-    """Materialize HTTP configuration reveals into the mounted static asset tree."""
+    """Materialize visible HTTP config clues or write route-note audit metadata."""
     route_notes = _configuration_route_notes(configuration)
     html_root = _static_html_mount_root(record)
     if html_root is None:
-        if route_notes:
-            return {"route_notes": route_notes}
-        runtime_effect = configuration.get("runtime_effect")
-        return {"runtime_effect": runtime_effect} if isinstance(runtime_effect, str) else {}
+        return _write_runtime_configuration_manifest(
+            record,
+            configuration_id,
+            configuration,
+            route_notes=route_notes,
+        )
     reveal_dir = html_root / "_reveals"
     reveal_dir.mkdir(parents=True, exist_ok=True)
     safe_id = _safe_artifact_name(configuration_id)
@@ -1033,6 +1066,50 @@ def _write_configuration_artifact(
         "materialized_artifacts": materialized,
         "route_notes": route_notes,
     }
+
+
+def _write_runtime_configuration_manifest(
+    record: AssetRuntimeRecord,
+    configuration_id: str,
+    configuration: dict[str, object],
+    *,
+    route_notes: list[str],
+) -> dict[str, object]:
+    """Write an operator audit manifest for non-HTTP route changes."""
+    if not route_notes:
+        return {}
+    context = _runtime_format_context(record.binding_id, record.asset_id)
+    safe_id = _safe_artifact_name(configuration_id)
+    manifest_dir = (
+        _container_project_root()
+        / "data"
+        / "runtime"
+        / "configuration_artifacts"
+        / context["binding_id_short"]
+        / record.asset_id
+    )
+    manifest_dir.mkdir(parents=True, exist_ok=True)
+    artifact_path = manifest_dir / f"{safe_id}.json"
+    artifact = {
+        "asset_id": record.asset_id,
+        "configuration_id": configuration_id,
+        "kind": configuration.get("kind"),
+        "reason": configuration.get("reason"),
+        "covered_techniques": configuration.get("covered_techniques", []),
+        "reveal_outputs": configuration.get("reveal_outputs", []),
+        "target_asset_id": configuration.get("target_asset_id"),
+        "route_notes": route_notes,
+        "generated_at": utcnow().isoformat(),
+    }
+    artifact_path.write_text(
+        json.dumps(artifact, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    result: dict[str, object] = {
+        "path": str(artifact_path),
+        "route_notes": route_notes,
+    }
+    return result
 
 
 def _static_html_mount_root(record: AssetRuntimeRecord) -> Path | None:
@@ -1213,7 +1290,7 @@ def _monitoring_event_for_record(
     return FalcoEvent(
         ts=record.started_at,
         falco_rule=f"Honeynet asset template {lifecycle}",
-        priority="INFO",
+        priority="low",
         output=(
             f"asset {record.asset_id} {lifecycle} for binding {record.binding_id} "
             f"template_family={record.template_family or 'unknown'}"
@@ -1364,8 +1441,7 @@ def _prepare_runtime_volume_sources(
 
     Some high-interaction images drop privileges after startup. If Docker creates
     the bind source implicitly, it is root-owned and those backends cannot write
-    their JSON/text logs. Limit the chmod to runtime artifact directories so
-    catalog config files and repo source mounts are left untouched.
+    their JSON/text logs.
     """
     volumes = runtime.get("volumes", [])
     if not isinstance(volumes, list):
@@ -1378,7 +1454,8 @@ def _prepare_runtime_volume_sources(
         local_source = _container_visible_host_path(source, context)
         path = Path(local_source)
         path.mkdir(parents=True, exist_ok=True)
-        path.chmod(0o777)
+        if "/data/runtime/high_interaction/" in source:
+            path.chmod(0o777)
 
 
 def _prepare_static_asset_volume_copies(

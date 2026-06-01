@@ -24,7 +24,7 @@ class CowrieEventMapping:
     create profiler evidence.
 
     Example:
-        CowrieEventMapping(priority="INFO", tags=("cowrie_client_metadata",), profile=False)
+        CowrieEventMapping(priority="low", tags=("cowrie_client_metadata",), profile=False)
     """
 
     priority: str
@@ -79,7 +79,7 @@ def _mapping_from_payload(payload: object) -> CowrieEventMapping:
     if not isinstance(payload, dict):
         payload = {}
     return CowrieEventMapping(
-        priority=str(payload.get("priority", "INFO")),
+        priority=str(payload.get("priority", "low")),
         tags=tuple(str(tag) for tag in payload.get("tags", [])),
         output_template=str(payload.get("output_template", "{eventid} from {src_ip}")),
         output_fields=tuple(

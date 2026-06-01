@@ -6,7 +6,7 @@ import pytest
 
 from libs.common.config import RuntimeConfig
 from libs.contracts.models import AssetDefinition, ControllerTickRequest, ProfileSnapshot
-from services.controller.domain import ControllerService
+from services.controller.domain import ControllerService, _technique_gain
 from tests.support.inmemory_repositories import (
     InMemoryAssetRepository,
     InMemoryTechniquePriorRepository,
@@ -14,6 +14,14 @@ from tests.support.inmemory_repositories import (
 
 
 pytestmark = pytest.mark.unit
+
+
+def test_technique_gain_requires_prior_support() -> None:
+    assert _technique_gain("T1105", {"T1105": 0.7}, {}) == 0.0
+
+
+def test_technique_gain_uses_family_match_only_for_prior_support() -> None:
+    assert _technique_gain("T1552.001", {"T1552": 0.8}, {"T1552": 0.6}) == pytest.approx(0.45)
 
 
 def _assets() -> list[AssetDefinition]:
@@ -103,6 +111,79 @@ def test_tick_uses_expected_gain_then_secondary_explore() -> None:
     assert response.decision_events[1].details["reveal_role"] == "explore"
 
 
+def test_explore_reuses_multitech_asset_when_distinct_family_remains() -> None:
+    assets = [
+        AssetDefinition(
+            asset_id="main-credential",
+            asset_name="Credential Cache",
+            exposure_type="internal",
+            interaction_level="medium",
+            covers_tactics=["Credential Access"],
+            dependencies=[],
+            default_settings={
+                "selection_profile": {
+                    "asset_group": "credential-store",
+                    "covered_techniques": ["T1552.001"],
+                    "optional_dependency_signals": {
+                        "any_http_indicators": ["path:/credential"],
+                        "any_techniques": ["T1552.001"],
+                    },
+                    "telemetry_value": 1.0,
+                }
+            },
+        ),
+        AssetDefinition(
+            asset_id="mixed-explore",
+            asset_name="Mixed Discovery Surface",
+            exposure_type="internal",
+            interaction_level="medium",
+            covers_tactics=["Credential Access", "Discovery"],
+            dependencies=[],
+            default_settings={
+                "selection_profile": {
+                    "asset_group": "portal",
+                    "covered_techniques": ["T1552.001", "T1046"],
+                    "optional_dependency_signals": {
+                        "any_http_indicators": ["path:/discovery"],
+                        "any_techniques": ["T1046"],
+                    },
+                    "telemetry_value": 0.4,
+                }
+            },
+        ),
+    ]
+    service = ControllerService(
+        InMemoryAssetRepository(assets),
+        InMemoryTechniquePriorRepository(),
+        config=RuntimeConfig(),
+    )
+
+    response = service.tick(
+        ControllerTickRequest(
+            attacker_key="198.51.100.43",
+            binding_id="binding-multitech",
+            profile=ProfileSnapshot(
+                attacker_key="198.51.100.43",
+                conf_by_technique={"T1552.001": 0.9, "T1046": 0.7},
+                recent_techniques=["T1552.001", "T1046"],
+                recent_public_http_indicators=["path:/credential", "path:/discovery"],
+                recent_evidence_ids=["e-mixed"],
+            ),
+        )
+    )
+
+    assert [action.asset_id for action in response.actions] == [
+        "main-credential",
+        "mixed-explore",
+    ]
+    assert response.decision_events[1].details["selected_strategy"] == "explore"
+    assert response.decision_events[1].details["selected_technique"] == "T1046"
+    assert response.decision_events[1].details["covered_techniques"] == [
+        "T1552.001",
+        "T1046",
+    ]
+
+
 def test_tick_returns_noop_when_everything_is_already_unlocked() -> None:
     service = ControllerService(
         InMemoryAssetRepository(_assets()),
@@ -139,6 +220,104 @@ def test_tick_keeps_scanner_only_profile_closed() -> None:
                 conf_by_technique={"T1190": 0.8},
                 recent_techniques=["T1190"],
                 recent_evidence_ids=["e-scan"],
+            ),
+        )
+    )
+
+    assert response.actions[0].action_type == "noop"
+    assert response.decision_events[0].details["reveal_action"] == "no_reveal"
+
+
+def test_tick_uses_weak_evidence_fallback_with_concrete_marker() -> None:
+    assets = [
+        AssetDefinition(
+            asset_id="weak-transfer",
+            asset_name="Weak Transfer Sink",
+            exposure_type="internal",
+            interaction_level="medium",
+            covers_tactics=["Command and Control"],
+            dependencies=[],
+            default_settings={
+                "selection_profile": {
+                    "asset_group": "payload-transfer",
+                    "covered_techniques": ["T1105"],
+                    "optional_dependency_signals": {
+                        "any_http_indicators": ["path:/dropper.bin"],
+                        "any_techniques": ["T1105"],
+                    },
+                    "telemetry_value": 0.7,
+                }
+            },
+        )
+    ]
+    service = ControllerService(
+        InMemoryAssetRepository(assets),
+        InMemoryTechniquePriorRepository(),
+        config=RuntimeConfig(unlock_cap=1),
+    )
+
+    response = service.tick(
+        ControllerTickRequest(
+            attacker_key="198.51.100.39",
+            binding_id="binding-weak",
+            profile=ProfileSnapshot(
+                attacker_key="198.51.100.39",
+                conf_by_technique={"T1105": 0.3},
+                recent_techniques=["T1105"],
+                recent_public_http_indicators=["path:/dropper.bin"],
+                recent_evidence_ids=["e-weak"],
+            ),
+        )
+    )
+
+    assert response.actions[0].asset_id == "weak-transfer"
+    details = response.decision_events[0].details
+    assert details["candidate_type"] == "weak_evidence"
+    assert details["selected_technique"] == "T1105"
+    assert details["technique_signal_score"] == 0.3
+    assert details["expected_technique_gain"] == 0.0
+    assert details["matched_dependency_markers"] == [
+        "any_http_indicators:path:/dropper.bin",
+        "any_techniques:T1105",
+    ]
+
+
+def test_tick_does_not_use_weak_evidence_without_concrete_marker() -> None:
+    assets = [
+        AssetDefinition(
+            asset_id="technique-only-transfer",
+            asset_name="Technique Only Transfer Sink",
+            exposure_type="internal",
+            interaction_level="medium",
+            covers_tactics=["Command and Control"],
+            dependencies=[],
+            default_settings={
+                "selection_profile": {
+                    "asset_group": "payload-transfer",
+                    "covered_techniques": ["T1105"],
+                    "optional_dependency_signals": {
+                        "any_techniques": ["T1105"],
+                    },
+                    "telemetry_value": 0.7,
+                }
+            },
+        )
+    ]
+    service = ControllerService(
+        InMemoryAssetRepository(assets),
+        InMemoryTechniquePriorRepository(),
+        config=RuntimeConfig(unlock_cap=1),
+    )
+
+    response = service.tick(
+        ControllerTickRequest(
+            attacker_key="198.51.100.40",
+            binding_id="binding-no-marker",
+            profile=ProfileSnapshot(
+                attacker_key="198.51.100.40",
+                conf_by_technique={"T1105": 0.3},
+                recent_techniques=["T1105"],
+                recent_evidence_ids=["e-no-marker"],
             ),
         )
     )
