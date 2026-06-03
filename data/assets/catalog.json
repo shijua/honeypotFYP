@@ -2398,7 +2398,7 @@
         },
         {
           "configuration_id": "malware-dionaea-same-port-upgrade",
-          "kind": "same-port-high-interaction-upgrade",
+          "kind": "target-runtime-same-port",
           "target_asset_id": "dionaea-capture",
           "public_port": 18085,
           "required_markers": [
@@ -2424,7 +2424,7 @@
         },
         {
           "configuration_id": "malware-honeytrap-generic-listener",
-          "kind": "adjacent-generic-capture-listener",
+          "kind": "target-runtime-adjacent-listener",
           "target_asset_id": "honeytrap-generic",
           "public_port": 19999,
           "required_markers": [

@@ -3,10 +3,13 @@
 
 The evaluator treats each scenario's ordered techniques as a small validation
 trace. For every prefix, it asks the active prior for recommendations and checks
-paper-style recall, specificity, and accuracy over ATT&CK technique families.
+candidate-prior quality over ATT&CK technique families. K is the number of
+similar ATT&CK groups used by the prior, not the number of emitted techniques.
 
 Example:
-    python scripts/evaluation/attack_group_prior_recommendation.py tests/fixtures/reveal_policy_scenarios.json
+    python scripts/evaluation/attack_group_prior_recommendation.py \
+        tests/fixtures/reveal_policy_main_scenarios.json \
+        tests/fixtures/reveal_policy_scenarios.json
 """
 
 from __future__ import annotations
@@ -28,16 +31,18 @@ from scripts.evaluation.charts import write_prior_recommendation_chart
 from scripts.evaluation.reveal_policy import load_scenarios
 from services.controller.repository import FileAttackGroupTechniquePriorRepository
 
+DEFAULT_K_SWEEP = (5, 10, 20, 40)
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Evaluate ATT&CK group prior recommendations on scenario traces.")
-    parser.add_argument("scenario_file", type=Path)
+    parser.add_argument("scenario_files", type=Path, nargs="+")
     parser.add_argument("--prior", type=Path, default=Path("data/technique_prior/attack_group_technique_prior.json"))
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
 
     report = evaluate_prior_recommendations(
-        scenario_file=args.scenario_file,
+        scenario_files=args.scenario_files,
         prior_path=args.prior,
     )
     text = json.dumps(report, indent=2, sort_keys=True)
@@ -52,7 +57,8 @@ def main() -> int:
 
 def evaluate_prior_recommendations(
     *,
-    scenario_file: Path,
+    scenario_file: Path | None = None,
+    scenario_files: list[Path] | tuple[Path, ...] | None = None,
     prior_path: Path,
     config: RuntimeConfig | None = None,
 ) -> dict[str, Any]:
@@ -61,16 +67,19 @@ def evaluate_prior_recommendations(
     Example:
         future T1548.003 and recommended T1548 -> recall hit because both share family T1548.
     """
-    scenarios = load_scenarios(scenario_file)
+    files = list(scenario_files or ([scenario_file] if scenario_file is not None else []))
+    if not files:
+        raise ValueError("at least one scenario file is required")
     traces: list[dict[str, Any]] = []
     excluded: list[dict[str, Any]] = []
-    for item in scenarios:
-        scenario_id = str(item.get("scenario_id", "scenario"))
-        reason = _prior_eval_exclusion_reason(item)
-        if reason is not None:
-            excluded.append({"scenario_id": scenario_id, "reason": reason})
-            continue
-        traces.append({"scenario_id": scenario_id, "techniques": _scenario_techniques(item)})
+    for file in files:
+        for item in load_scenarios(file):
+            scenario_id = str(item.get("scenario_id", "scenario"))
+            reason = _prior_eval_exclusion_reason(item)
+            if reason is not None:
+                excluded.append({"scenario_id": scenario_id, "scenario_file": str(file), "reason": reason})
+                continue
+            traces.append({"scenario_id": scenario_id, "scenario_file": str(file), "techniques": _scenario_techniques(item)})
     trace_report = evaluate_trace_recommendations(
         traces=traces,
         prior_path=prior_path,
@@ -79,7 +88,7 @@ def evaluate_prior_recommendations(
     return {
         "schema_version": "v1",
         "ok": trace_report["metrics"]["prefix_count"] > 0 and trace_report["metrics"]["degraded_reason"] is None,
-        "scenario_file": str(scenario_file),
+        "scenario_files": [str(file) for file in files],
         "prior": str(prior_path),
         "top_k": trace_report["top_k"],
         "support_threshold": trace_report["support_threshold"],
@@ -88,6 +97,7 @@ def evaluate_prior_recommendations(
         "trace_count": len(traces),
         "excluded_scenarios": excluded,
         "metrics": trace_report["metrics"],
+        "k_sweep": trace_report["k_sweep"],
     }
 
 
@@ -109,6 +119,18 @@ def evaluate_trace_recommendations(
         top_k=runtime_config.recommendation_top_k,
         support_threshold=runtime_config.recommendation_support_threshold,
     )
+    k_sweep = [
+        _sweep_metrics(
+            top_k=top_k,
+            metrics=_evaluate_trace_prefixes(
+                traces,
+                prior_path,
+                top_k=top_k,
+                support_threshold=runtime_config.recommendation_support_threshold,
+            ),
+        )
+        for top_k in DEFAULT_K_SWEEP
+    ]
     technique_universe = technique_family_set(_technique_universe_from_prior(prior_path))
     return {
         "top_k": runtime_config.recommendation_top_k,
@@ -117,6 +139,7 @@ def evaluate_trace_recommendations(
         "technique_family_universe_size": len(technique_universe),
         "trace_count": len(traces),
         "metrics": metrics,
+        "k_sweep": k_sweep,
     }
 
 
@@ -135,6 +158,8 @@ def _evaluate_trace_prefixes(
     true_negative_total = 0
     false_negative_total = 0
     prefix_hit_total = 0
+    reciprocal_rank_total = 0.0
+    recommendation_count_total = 0
     source_rows: list[dict[str, Any]] = []
 
     for trace in traces:
@@ -152,7 +177,12 @@ def _evaluate_trace_prefixes(
                 top_k=top_k,
                 support_threshold=support_threshold,
             )
-            recommended = technique_family_set(recommendations)
+            recommendation_families = dedupe_preserve(
+                family
+                for technique in recommendations
+                for family in technique_family_set([technique])
+            )
+            recommended = set(recommendation_families)
             evaluation_universe = technique_universe | observed | future | recommended
             relevant_universe = evaluation_universe - observed
             positives = future & relevant_universe
@@ -174,6 +204,10 @@ def _evaluate_trace_prefixes(
             scenario_fn += false_negatives
             if true_positives:
                 prefix_hit_total += 1
+            rank = _first_hit_rank(recommendation_families, positives)
+            if rank is not None:
+                reciprocal_rank_total += 1 / rank
+            recommendation_count_total += len(recommended)
 
         source_rows.append(
             {
@@ -208,6 +242,8 @@ def _evaluate_trace_prefixes(
         "hit_rate_at_k": _ratio(prefix_hit_total, prefix_count),
         "precision": _ratio(true_positive_total, true_positive_total + false_positive_total),
         "recall": _ratio(true_positive_total, true_positive_total + false_negative_total),
+        "mrr": round(reciprocal_rank_total / prefix_count, 6) if prefix_count else 0.0,
+        "recommendation_count_avg": round(recommendation_count_total / prefix_count, 6) if prefix_count else 0.0,
         "specificity": _ratio(true_negative_total, true_negative_total + false_positive_total),
         "accuracy": _ratio(
             true_positive_total + true_negative_total,
@@ -215,6 +251,27 @@ def _evaluate_trace_prefixes(
         ),
         "source_breakdown": source_rows,
     }
+
+
+def _sweep_metrics(*, top_k: int, metrics: dict[str, Any]) -> dict[str, Any]:
+    """Return compact metrics for one prior-neighbor K value."""
+    return {
+        "top_k": top_k,
+        "prefix_count": int(metrics.get("prefix_count", 0) or 0),
+        "hit_rate_at_k": float(metrics.get("hit_rate_at_k", 0.0) or 0.0),
+        "precision": float(metrics.get("precision", 0.0) or 0.0),
+        "recall": float(metrics.get("recall", 0.0) or 0.0),
+        "mrr": float(metrics.get("mrr", 0.0) or 0.0),
+        "recommendation_count_avg": float(metrics.get("recommendation_count_avg", 0.0) or 0.0),
+    }
+
+
+def _first_hit_rank(recommendation_families: list[str], positives: set[str]) -> int | None:
+    """Return the 1-based rank of the first recommended future technique family."""
+    for index, family in enumerate(recommendation_families, start=1):
+        if family in positives:
+            return index
+    return None
 
 
 def _technique_universe_from_prior(path: Path) -> set[str]:
@@ -246,12 +303,23 @@ def _scenario_techniques(scenario: dict[str, Any]) -> list[str]:
     if isinstance(profile, dict):
         return _dedupe_strings(profile.get("recent_techniques", []))
     events = scenario.get("evidence_sequence")
-    if not isinstance(events, list):
-        return []
+    if isinstance(events, list):
+        return _dedupe_strings(
+            event.get("technique") or event.get("tech_id")
+            for event in events
+            if isinstance(event, dict)
+        )
+    timeline = scenario.get("timeline")
+    if isinstance(timeline, list):
+        return _dedupe_strings(
+            event.get("technique") or event.get("tech_id")
+            for step in timeline
+            if isinstance(step, dict)
+            for event in step.get("new_evidence", [])
+            if isinstance(event, dict)
+        )
     return _dedupe_strings(
-        event.get("technique") or event.get("tech_id")
-        for event in events
-        if isinstance(event, dict)
+        []
     )
 
 

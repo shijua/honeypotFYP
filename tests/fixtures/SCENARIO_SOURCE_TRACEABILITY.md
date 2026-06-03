@@ -52,8 +52,8 @@ These are the richer scenarios used for headline policy results. They reuse the 
 
 | Step | Source behavior | Local evidence | Exactness | Anchor role |
 | --- | --- | --- | --- | --- |
-| `s1-repo-config-access` | Repository/config browsing. | Active `git-internal` access to `/config/application-prod.yml`. | `local-adaptation` | Active-path configuration anchor: `git-deployment-ci-config`. |
-| `s2-repo-file-discovery` | File/config discovery. | Active `git-internal` access to `/k8s/values-prod.yaml`. | `local-adaptation` | Active-path configuration anchor: `git-db-credential-clue`. |
+| `s1-repo-config-access` | Repository/config browsing. | Active `git-internal` access to `/config/application-prod.yml`. | `local-adaptation` | Active-path configuration anchor: `git-seeded-repository-backend`. |
+| `s2-repo-file-discovery` | File/config discovery. | Active `git-internal` access to `/k8s/values-prod.yaml`. | `local-adaptation` | Active-path configuration anchor: `git-seeded-repository-backend`. |
 | `s3-credential-clue-read` | Unsecured credentials in files. | Credential-like material on active Git path. | `local-adaptation` | Useful response evidence. |
 | `s4-privileged-runbook-followup` | Privilege escalation follow-up. | Synthetic T1548.003 evidence. | `technique-level` | State accumulation. |
 | `s5-final-config-check` | Local final-state check. | No new source event; checks Git configuration path reached. | `local-adaptation` | Final outcome anchor. |
@@ -141,13 +141,13 @@ These are the richer scenarios used for headline policy results. They reuse the 
 | `s1-t1552-001` | AA23-059A includes unsecured credential and password-store findings. | `/backup/passwords_internal.txt` is a local credential breadcrumb. | `local-adaptation` | Remote-access assets become plausible. |
 | `s2-t1021-004` | AA23-059A includes remote-service/lateral-movement behavior. | The password breadcrumb is mapped to SSH remote-service interest. | `local-adaptation` | `ssh-canary` is the expected reveal. |
 
-### `config-git-active-repo-db-clue`
+### `config-git-active-seeded-repo`
 
 | Step | Source behavior | Local evidence | Exactness | Expected reveal |
 | --- | --- | --- | --- | --- |
 | `s1-t1213` | AA23-059A supports collection of internal files and repositories. | Active `git-internal` access to `/config/application-prod.yml`. | `local-adaptation` | Configuration reveal is allowed only because the attacker is on the Git path. |
 | `s2-t1083` | File/config discovery is a supported technique. | Active `git-internal` access to `/k8s/values-prod.yaml`. | `local-adaptation` | The active path remains Git. |
-| `s3-t1552-001` | Unsecured credentials are report-backed at technique level. | Local repo config contains credential-like material. | `local-adaptation` | Add `git-db-credential-clue` or equivalent Git-local config. |
+| `s3-t1552-001` | Unsecured credentials are report-backed at technique level. | Local repo config contains credential-like material inside the seeded backend. | `local-adaptation` | Swap to `git-seeded-repository-backend` or an equivalent Git-local backend. |
 
 ### `config-finance-active-archive-index`
 

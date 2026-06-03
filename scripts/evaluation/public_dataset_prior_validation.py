@@ -7,12 +7,14 @@ future techniques from each prefix. It does not train a prior, start Docker, or
 affect runtime controller behavior.
 
 Example:
-    python scripts/evaluation/public_dataset_prior_validation.py vendor/datasets
+    python scripts/evaluation/public_dataset_prior_validation.py \
+      vendor/datasets/casinolimit
 """
 
 from __future__ import annotations
 
 import argparse
+from collections import Counter, defaultdict
 import csv
 import io
 import json
@@ -27,10 +29,13 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from libs.common.attack import attack_technique_ids_from_text
+from libs.common.attack import attack_technique_ids_from_text, technique_family_set
 from libs.common.config import RuntimeConfig
 from libs.common.iterables import dedupe_preserve
-from scripts.evaluation.attack_group_prior_recommendation import evaluate_trace_recommendations
+from scripts.evaluation.attack_group_prior_recommendation import (
+    _technique_universe_from_prior,
+    evaluate_trace_recommendations,
+)
 from scripts.evaluation.charts import write_prior_recommendation_chart
 
 
@@ -94,10 +99,19 @@ def evaluate_public_dataset_prior(
         config=config,
     )
     metrics = trace_report["metrics"]
+    dataset_diagnostics = _dataset_technique_diagnostics(
+        traces=extraction["traces"],
+        dataset_paths=dataset_paths,
+        prior_path=prior_path,
+    )
     return {
         "schema_version": "v1",
         "ok": bool(extraction["traces"]) and metrics["prefix_count"] > 0 and metrics["degraded_reason"] is None,
         "dataset_paths": [str(path) for path in dataset_paths],
+        "dataset_sources": _dataset_sources_from_traces(
+            extraction["traces"],
+            dataset_paths,
+        ),
         "prior": str(prior_path),
         "top_k": trace_report["top_k"],
         "support_threshold": trace_report["support_threshold"],
@@ -116,7 +130,125 @@ def evaluate_public_dataset_prior(
             for trace in extraction["traces"]
         ],
         "metrics": metrics,
+        "dataset_diagnostics": dataset_diagnostics,
+        "k_sweep": trace_report["k_sweep"],
     }
+
+
+def _dataset_technique_diagnostics(
+    *,
+    traces: list[dict[str, Any]],
+    dataset_paths: list[Path],
+    prior_path: Path,
+) -> dict[str, Any]:
+    """Summarise trace technique diversity and overlap with the prior universe.
+
+    This is a threat-to-validity aid for public datasets: a high Hit@K can be
+    caused by a low-diversity trace set, not only by a stronger prior.
+    """
+    prior_families = technique_family_set(_technique_universe_from_prior(prior_path))
+    all_families: list[str] = []
+    per_source: dict[str, list[str]] = defaultdict(list)
+    unique_count_total = 0
+
+    for trace in traces:
+        families = sorted(technique_family_set(trace.get("techniques", [])))
+        unique_count_total += len(families)
+        all_families.extend(families)
+        source = _dataset_source_from_id(str(trace.get("scenario_id", "")), dataset_paths)
+        per_source[source].extend(families)
+
+    unique_families = sorted(set(all_families))
+    overlap = sorted(set(unique_families) & prior_families)
+    dataset_only = sorted(set(unique_families) - prior_families)
+    return {
+        "trace_count": len(traces),
+        "technique_family_observation_count": len(all_families),
+        "unique_technique_family_count": len(unique_families),
+        "avg_unique_technique_families_per_trace": _rounded_ratio(unique_count_total, len(traces)),
+        "concentration": _concentration_summary(all_families),
+        "top_technique_families": _top_technique_families(all_families),
+        "prior_overlap": {
+            "prior_unique_technique_family_count": len(prior_families),
+            "overlap_count": len(overlap),
+            "dataset_family_covered_by_prior_rate": _rounded_ratio(len(overlap), len(unique_families)),
+            "dataset_only_technique_families": dataset_only[:25],
+        },
+        "source_breakdown": [
+            {
+                "source": source,
+                "technique_family_observation_count": len(families),
+                "unique_technique_family_count": len(set(families)),
+                "concentration": _concentration_summary(families),
+                "top_technique_families": _top_technique_families(families, limit=8),
+            }
+            for source, families in sorted(per_source.items())
+        ],
+    }
+
+
+def _concentration_summary(families: list[str]) -> dict[str, float]:
+    counter = Counter(families)
+    total = sum(counter.values())
+    most_common = counter.most_common()
+    return {
+        "top_1_share": _rounded_ratio(sum(count for _, count in most_common[:1]), total),
+        "top_3_share": _rounded_ratio(sum(count for _, count in most_common[:3]), total),
+        "top_5_share": _rounded_ratio(sum(count for _, count in most_common[:5]), total),
+    }
+
+
+def _top_technique_families(families: list[str], *, limit: int = 12) -> list[dict[str, Any]]:
+    counter = Counter(families)
+    total = sum(counter.values())
+    return [
+        {
+            "technique": technique,
+            "count": count,
+            "share": _rounded_ratio(count, total),
+        }
+        for technique, count in counter.most_common(limit)
+    ]
+
+
+def _rounded_ratio(numerator: int, denominator: int) -> float:
+    return round(numerator / denominator, 6) if denominator else 0.0
+
+
+def _dataset_sources_from_traces(
+    traces: list[dict[str, Any]],
+    dataset_paths: list[Path],
+) -> list[str]:
+    """Return dataset names that actually contributed extracted traces."""
+    sources = [
+        _dataset_source_from_id(str(trace["scenario_id"]), dataset_paths)
+        for trace in traces
+        if trace.get("scenario_id")
+    ]
+    return sorted(dedupe_preserve(source for source in sources if source))
+
+
+def _dataset_source_from_id(source_id: str, dataset_paths: list[Path]) -> str:
+    """Infer a human-readable dataset source from one extracted file path."""
+    file_part = source_id.split("!", 1)[0]
+    path = Path(file_part)
+    parts = path.parts
+    if "vendor" in parts:
+        vendor_index = parts.index("vendor")
+        if (
+            vendor_index + 2 < len(parts)
+            and parts[vendor_index + 1] == "datasets"
+        ):
+            return parts[vendor_index + 2]
+    for dataset_path in dataset_paths:
+        try:
+            relative = path.relative_to(dataset_path)
+        except ValueError:
+            continue
+        if dataset_path.name == "datasets" and len(relative.parts) > 1:
+            return relative.parts[0]
+        return dataset_path.name
+    return path.parent.name or path.stem
 
 
 def extract_dataset_traces(

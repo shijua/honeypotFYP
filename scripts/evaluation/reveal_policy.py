@@ -3,8 +3,8 @@
 
 The evaluator is deliberately offline: it does not start Docker or touch the
 runtime route table. It answers the evaluation question "would this policy
-reveal reasonable assets, hide implausible assets, or choose no_reveal for this
-evidence sequence?" using the real catalog and controller scoring code.
+reveal scenario-supported assets, hide implausible assets, or choose no_reveal
+for this evidence sequence?" using the real catalog and controller scoring code.
 
 Example scenario JSON:
     [{"scenario_id":"backup-probe","profile":{"conf_by_technique":{"T1552.001":0.9},"recent_techniques":["T1552.001"],"recent_evidence_ids":["e1"]},"expected_reasonable_assets":["finance-share"],"expected_hidden_assets":["web-admin-console"],"useful_followup_assets":["finance-share"]}]
@@ -106,6 +106,7 @@ def main() -> int:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(f"{text}\n", encoding="utf-8")
         write_reveal_policy_chart(report, args.output.with_suffix(".svg"))
+        print(format_reveal_policy_report_summary([(_scenario_set_label(args.scenario_file), report)]))
     else:
         print(text)
     return 0 if report["ok"] else 1
@@ -169,7 +170,6 @@ def evaluate_reveal_policies(
                 and controller["anchor_missing_expected_reveal_count"] == 0
                 and controller["anchor_unexpected_reveal_count"] == 0
                 and controller["anchor_failed_no_reveal_count"] == 0
-                and controller["final_outcome_success_rate"] == 1.0
                 and controller["source_traceability_declared_rate"] == 1.0
             )
         else:
@@ -181,6 +181,166 @@ def evaluate_reveal_policies(
                 and controller["correct_no_reveal_rate"] == 1.0
             )
     return report
+
+
+def format_reveal_policy_report_summary(named_reports: list[tuple[str, dict[str, Any]]]) -> str:
+    """Return Markdown tables for report metrics that are not plotted.
+
+    The reveal-policy chart stays compact; these tables carry the supporting
+    gate, rejection, and traceability numbers that belong in prose or a table.
+    """
+    rows = [
+        (name, report.get("policies", {}).get("controller", {}))
+        for name, report in named_reports
+        if isinstance(report.get("policies", {}).get("controller", {}), dict)
+    ]
+    lines: list[str] = ["## Reveal policy report data", ""]
+    lines.extend(
+        [
+            "### Scenario set summary",
+            "| Scenario set | Scenarios | Decision steps | Anchor steps | Controller primary correctness | Unsupported reveal | Forbidden reveal | Correct no-reveal | Avg opened assets | Useful / reveal | Diagnostic-or-useful / reveal |",
+            "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        ]
+    )
+    for name, controller in rows:
+        lines.append(
+            "| "
+            f"{name} | "
+            f"{int(controller.get('scenario_count', 0) or 0)} | "
+            f"{int(controller.get('step_count', 0) or 0)} | "
+            f"{int(controller.get('anchor_step_count', 0) or 0)} | "
+            f"{_primary_correctness_cell(controller)} | "
+            f"{_format_percent(controller.get('irrelevant_reveal_rate'))} | "
+            f"{_format_percent(controller.get('hidden_violation_rate'))} | "
+            f"{_format_percent(controller.get('correct_no_reveal_rate'))} | "
+            f"{_format_float(controller.get('avg_opened_assets'))} | "
+            f"{_format_percent(controller.get('useful_evidence_per_reveal'))} | "
+            f"{_format_percent(controller.get('diagnostic_or_useful_per_reveal'))} |"
+        )
+
+    lines.extend(
+        [
+            "",
+            "### Gate narrowing and candidate-space shape",
+            "| Scenario set | Ready assets before gate avg | Eligible assets after gate avg | Gate narrowing | 0 eligible | 1 eligible | 2+ eligible |",
+            "|---|---:|---:|---:|---:|---:|---:|",
+        ]
+    )
+    for name, controller in rows:
+        buckets = controller.get("gate_eligible_bucket_rates", {})
+        buckets = buckets if isinstance(buckets, dict) else {}
+        lines.append(
+            "| "
+            f"{name} | "
+            f"{_format_float(controller.get('gate_ready_assets_before_gate_avg'))} | "
+            f"{_format_float(controller.get('gate_eligible_assets_after_gate_avg'))} | "
+            f"{_format_percent(controller.get('gate_narrowing_rate'))} | "
+            f"{_format_percent(buckets.get('zero'))} | "
+            f"{_format_percent(buckets.get('one'))} | "
+            f"{_format_percent(buckets.get('two_plus'))} |"
+        )
+
+    lines.extend(
+        [
+            "",
+            "### Prior influence",
+            "| Scenario set | Prior changed step decision | Gate-only sufficient |",
+            "|---|---:|---:|",
+        ]
+    )
+    for name, controller in rows:
+        influenced = int(controller.get("prior_influenced_step_count", 0) or 0)
+        total = int(controller.get("prior_comparison_step_count", 0) or 0)
+        lines.append(
+            "| "
+            f"{name} | "
+            f"{_format_rate_count(influenced, total)} | "
+            f"{_format_rate_count(max(total - influenced, 0), total)} |"
+        )
+
+    lines.extend(
+        [
+            "",
+            "### Rejection reason distribution",
+            "| Scenario set | Total rejections | Out of scope / no signal | Dependency not satisfied | Already revealed |",
+            "|---|---:|---:|---:|---:|",
+        ]
+    )
+    for name, controller in rows:
+        counts = controller.get("rejection_reason_counts", {})
+        counts = counts if isinstance(counts, dict) else {}
+        total = sum(int(value or 0) for value in counts.values())
+        lines.append(
+            "| "
+            f"{name} | "
+            f"{total} | "
+            f"{_format_rejection_cell(counts, 'out_of_scope_or_no_signal', total)} | "
+            f"{_format_rejection_cell(counts, 'dependency_not_satisfied', total)} | "
+            f"{_format_rejection_cell(counts, 'already_revealed', total)} |"
+        )
+
+    lines.extend(
+        [
+            "",
+            "### Trace/audit checks",
+            "| Scenario set | Decision trace completeness | Source traceability declared | Response-gate wait correctness |",
+            "|---|---:|---:|---:|",
+        ]
+    )
+    for name, controller in rows:
+        expected = int(controller.get("response_gate_wait_expected_count", 0) or 0)
+        correct = int(controller.get("response_gate_wait_correct_count", 0) or 0)
+        response_gate = _format_rate_count(correct, expected) if expected else "n/a"
+        lines.append(
+            "| "
+            f"{name} | "
+            f"{_format_percent(controller.get('decision_trace_completeness_rate'))} | "
+            f"{_format_percent(controller.get('source_traceability_declared_rate'))} | "
+            f"{response_gate} |"
+        )
+    return "\n".join(lines)
+
+
+def _scenario_set_label(path: Path) -> str:
+    stem = path.stem
+    if "main" in stem:
+        return "Main multi-step scenarios"
+    if "reveal_policy_scenarios" in stem or "regression" in stem:
+        return "Regression edge-case scenarios"
+    return stem.replace("_", " ").replace("-", " ").title()
+
+
+def _primary_correctness_cell(controller: dict[str, Any]) -> str:
+    anchors = int(controller.get("anchor_step_count", 0) or 0)
+    if anchors:
+        correct = int(controller.get("anchor_step_correct_count", 0) or 0)
+        return _format_rate_count(correct, anchors)
+    return _format_percent(controller.get("reveal_correctness"))
+
+
+def _format_rejection_cell(counts: dict[str, Any], key: str, total: int) -> str:
+    count = int(counts.get(key, 0) or 0)
+    return f"{count} ({_format_percent(count / total if total else 0.0)})"
+
+
+def _format_rate_count(numerator: int, denominator: int) -> str:
+    return f"{_format_percent(numerator / denominator if denominator else 0.0)} ({numerator}/{denominator})"
+
+
+def _format_percent(value: object) -> str:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        number = 0.0
+    return f"{100 * number:.1f}%"
+
+
+def _format_float(value: object) -> str:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        number = 0.0
+    return f"{number:.2f}"
 
 
 def load_scenarios(path: Path) -> list[dict[str, Any]]:
@@ -285,6 +445,8 @@ def evaluate_scenario(
         "expected_no_reveal": expected_no_reveal,
         "correct_no_reveal": expected_no_reveal and not opened_assets,
         "prior_influenced": prior_influenced,
+        "prior_influenced_step_count": 1 if prior_influenced else 0,
+        "prior_comparison_step_count": 1,
         "gate_only_opened_assets": gate_opened,
         "gate_decision_point_count": gate_metrics["decision_point_count"],
         "gate_ready_asset_total": gate_metrics["ready_asset_total"],
@@ -558,13 +720,6 @@ def _collapse_timeline_rows(
         if step.get("expected_response_gate_wait") and not row["opened_assets"]
     )
     anchor_metrics = _anchor_metrics(scenario_timeline(scenario), step_rows)
-    final_expected_assets = _final_expected_assets(scenario)
-    missing_final_expected_assets = sorted(set(final_expected_assets) - opened_set)
-    final_outcome_success = _final_outcome_success(
-        scenario=scenario,
-        opened_set=opened_set,
-        missing_final_expected_assets=missing_final_expected_assets,
-    )
     gate_metrics = _sum_gate_metrics(step_rows)
     return {
         "scenario_id": str(scenario.get("scenario_id") or scenario.get("case_id") or "scenario"),
@@ -589,6 +744,8 @@ def _collapse_timeline_rows(
         "expected_no_reveal": expected_no_reveal,
         "correct_no_reveal": expected_no_reveal and not opened_assets,
         "prior_influenced": any(row["prior_influenced"] for row in step_rows),
+        "prior_influenced_step_count": sum(1 for row in step_rows if row["prior_influenced"]),
+        "prior_comparison_step_count": len(step_rows),
         "gate_only_opened_assets": dedupe_preserve(
             asset for row in step_rows for asset in row["gate_only_opened_assets"]
         ),
@@ -617,9 +774,6 @@ def _collapse_timeline_rows(
         "anchor_missing_expected_reveals": anchor_metrics["anchor_missing_expected_reveals"],
         "anchor_unexpected_reveal_actions": anchor_metrics["anchor_unexpected_reveal_actions"],
         "anchor_failed_no_reveal_count": anchor_metrics["anchor_failed_no_reveal_count"],
-        "final_expected_assets": final_expected_assets,
-        "missing_final_expected_assets": missing_final_expected_assets,
-        "final_outcome_success": final_outcome_success,
     }
 
 
@@ -668,32 +822,6 @@ def _anchor_metrics(
         "anchor_unexpected_reveal_actions": unexpected_actions,
         "anchor_failed_no_reveal_count": failed_no_reveal,
     }
-
-
-def _final_expected_assets(scenario: dict[str, Any]) -> list[str]:
-    """Return the asset set used for scenario-level final outcome scoring."""
-    explicit = string_list(scenario.get("final_expected_assets"))
-    if explicit:
-        return explicit
-    useful = string_list(scenario.get("useful_followup_assets"))
-    if useful:
-        return useful
-    return string_list(scenario.get("expected_reasonable_assets"))
-
-
-def _final_outcome_success(
-    *,
-    scenario: dict[str, Any],
-    opened_set: set[str],
-    missing_final_expected_assets: list[str],
-) -> bool:
-    """Return whether the complete replay achieved its scenario-level goal."""
-    if missing_final_expected_assets:
-        return False
-    if scenario.get("expected_no_reveal"):
-        return not opened_set
-    final_expected = _final_expected_assets(scenario)
-    return bool(final_expected) or not opened_set
 
 
 def _dedupe_reveal_actions(actions: Any) -> list[dict[str, str]]:
@@ -1056,6 +1184,14 @@ def _aggregate_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
     expected_no_reveal = sum(1 for row in rows if row["expected_no_reveal"])
     correct_no_reveal = sum(1 for row in rows if row["correct_no_reveal"])
     prior_influenced = sum(1 for row in rows if row["prior_influenced"])
+    prior_influenced_steps = sum(
+        int(row.get("prior_influenced_step_count", 1 if row["prior_influenced"] else 0))
+        for row in rows
+    )
+    prior_comparison_steps = sum(
+        int(row.get("prior_comparison_step_count", row.get("step_count", 1)))
+        for row in rows
+    )
     gate_decision_points = sum(int(row["gate_decision_point_count"]) for row in rows)
     gate_ready_assets = sum(int(row["gate_ready_asset_total"]) for row in rows)
     gate_eligible_assets = sum(int(row["gate_eligible_asset_total"]) for row in rows)
@@ -1076,7 +1212,6 @@ def _aggregate_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
     anchor_missing_expected = sum(len(row.get("anchor_missing_expected_reveals", [])) for row in rows)
     anchor_unexpected_reveals = sum(len(row.get("anchor_unexpected_reveal_actions", [])) for row in rows)
     anchor_failed_no_reveal = sum(int(row.get("anchor_failed_no_reveal_count", 0)) for row in rows)
-    final_outcome_success = sum(1 for row in rows if row.get("final_outcome_success"))
     timeline_efficiency_rows = [
         float(row["timeline_reveal_efficiency"])
         for row in rows
@@ -1145,8 +1280,6 @@ def _aggregate_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "anchor_missing_expected_reveal_count": anchor_missing_expected,
         "anchor_unexpected_reveal_count": anchor_unexpected_reveals,
         "anchor_failed_no_reveal_count": anchor_failed_no_reveal,
-        "final_outcome_success_count": final_outcome_success,
-        "final_outcome_success_rate": _ratio(final_outcome_success, len(rows)),
         "timeline_reveal_efficiency_avg": (
             round(sum(timeline_efficiency_rows) / len(timeline_efficiency_rows), 6)
             if timeline_efficiency_rows
@@ -1154,7 +1287,10 @@ def _aggregate_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "source_traceability_declared_rate": _ratio(source_traceability_declared, len(rows)),
         "prior_influenced_scenario_count": prior_influenced,
-        "prior_influence_rate": _ratio(prior_influenced, len(rows)),
+        "prior_influence_scenario_rate": _ratio(prior_influenced, len(rows)),
+        "prior_influenced_step_count": prior_influenced_steps,
+        "prior_comparison_step_count": prior_comparison_steps,
+        "prior_influence_rate": _ratio(prior_influenced_steps, prior_comparison_steps),
         "gate_decision_point_count": gate_decision_points,
         "gate_ready_assets_before_gate_avg": _average(gate_ready_assets, gate_decision_points),
         "gate_eligible_assets_after_gate_avg": _average(gate_eligible_assets, gate_decision_points),

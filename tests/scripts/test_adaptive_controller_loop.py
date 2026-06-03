@@ -221,7 +221,7 @@ def test_tick_once_applies_configuration_reveal(tmp_path, monkeypatch: pytest.Mo
                         "action_type": "configure",
                         "binding_id": "binding-2",
                         "asset_id": "git-internal",
-                        "configuration_id": "git-db-credential-clue",
+                        "configuration_id": "git-seeded-repository-backend",
                         "configuration": {"kind": "content"},
                         "reason": "configure git",
                     }
@@ -242,11 +242,11 @@ def test_tick_once_applies_configuration_reveal(tmp_path, monkeypatch: pytest.Mo
                 "binding_id": "binding-2",
                 "unlocked_assets": ["git-internal"],
                 "revealed_configurations": {
-                    "git-internal": ["git-db-credential-clue"]
+                    "git-internal": ["git-seeded-repository-backend"]
                 },
             },
             "route_updates": [
-                "binding binding-2 configures git-internal:git-db-credential-clue"
+                "binding binding-2 configures git-internal:git-seeded-repository-backend"
             ],
             "runtime_events": [],
         }
@@ -266,7 +266,7 @@ def test_tick_once_applies_configuration_reveal(tmp_path, monkeypatch: pytest.Mo
     assert controller_payloads[0]["revealed_configurations"] == {}
     trace = json.loads(trace_file.read_text(encoding="utf-8"))
     assert trace["records"][0]["revealed_configurations_after"] == {
-        "git-internal": ["git-db-credential-clue"]
+        "git-internal": ["git-seeded-repository-backend"]
     }
 
 

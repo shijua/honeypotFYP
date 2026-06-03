@@ -6,7 +6,12 @@ from pathlib import Path
 import pytest
 
 from scripts.evaluation.charts import write_reveal_policy_chart
-from scripts.evaluation.reveal_policy import evaluate_reveal_policies, load_scenarios, scenario_timeline
+from scripts.evaluation.reveal_policy import (
+    evaluate_reveal_policies,
+    format_reveal_policy_report_summary,
+    load_scenarios,
+    scenario_timeline,
+)
 
 
 pytestmark = pytest.mark.unit
@@ -178,6 +183,8 @@ def test_reveal_policy_evaluator_compares_baselines(tmp_path: Path) -> None:
     assert controller["unexpected_reveal_count"] == 0
     assert controller["strict_expected_reveal_match_rate"] == 1.0
     assert "prior_influence_rate" in controller
+    assert "prior_influenced_step_count" in controller
+    assert controller["prior_comparison_step_count"] == controller["step_count"]
     assert "diagnostic_or_useful_per_reveal" in controller
     assert controller["gate_decision_point_count"] > 0
     assert controller["gate_ready_assets_before_gate_avg"] >= controller["gate_eligible_assets_after_gate_avg"]
@@ -191,14 +198,18 @@ def test_reveal_policy_evaluator_compares_baselines(tmp_path: Path) -> None:
     assert report["policies"]["all-open"]["hidden_violation_rate"] > 0
     assert report["policies"]["all-open"]["irrelevant_reveal_rate"] > 0
     assert report["policies"]["all-open"]["unexpected_reveal_count"] > 0
+    summary = format_reveal_policy_report_summary([("Fixture scenarios", report)])
+    assert "Gate narrowing and candidate-space shape" in summary
+    assert "Prior influence" in summary
+    assert "Rejection reason distribution" in summary
+    assert "Trace/audit checks" in summary
+    assert "Fixture scenarios" in summary
 
     chart_path = tmp_path / "policy.svg"
     write_reveal_policy_chart(report, chart_path)
     chart = chart_path.read_text(encoding="utf-8")
     assert chart.startswith("<?xml") or chart.startswith("<svg")
     assert "Reveal Policy Comparison" in chart
-    assert "Gate narrowing" in chart
-    assert "gate rejections" in chart
     assert "CF changed" in chart
 
 
@@ -366,7 +377,7 @@ def test_reveal_policy_timeline_replays_cumulative_profile_and_unlocked_assets(t
     assert report["policies"]["all-open"]["source_traceability_declared_rate"] == 1.0
 
 
-def test_reveal_policy_sequence_scores_anchor_steps_and_final_outcome(tmp_path: Path) -> None:
+def test_reveal_policy_sequence_scores_anchor_steps(tmp_path: Path) -> None:
     catalog = tmp_path / "catalog.json"
     catalog.write_text(
         json.dumps(
@@ -415,7 +426,6 @@ def test_reveal_policy_sequence_scores_anchor_steps_and_final_outcome(tmp_path: 
                     "scenario_id": "anchor-ok",
                     "expected_reasonable_assets": ["entry", "followup"],
                     "expected_hidden_assets": [],
-                    "final_expected_assets": ["followup"],
                     "timeline": [
                         {
                             "step_id": "buildup",
@@ -435,7 +445,6 @@ def test_reveal_policy_sequence_scores_anchor_steps_and_final_outcome(tmp_path: 
                     "scenario_id": "anchor-missing",
                     "expected_reasonable_assets": ["entry"],
                     "expected_hidden_assets": [],
-                    "final_expected_assets": ["entry"],
                     "timeline": [
                         {
                             "step_id": "bad-anchor",
@@ -450,7 +459,6 @@ def test_reveal_policy_sequence_scores_anchor_steps_and_final_outcome(tmp_path: 
                     "scenario_id": "anchor-no-reveal-fail",
                     "expected_reasonable_assets": ["entry"],
                     "expected_hidden_assets": [],
-                    "final_expected_assets": ["entry"],
                     "timeline": [
                         {
                             "step_id": "should-wait",
@@ -465,7 +473,6 @@ def test_reveal_policy_sequence_scores_anchor_steps_and_final_outcome(tmp_path: 
                     "scenario_id": "hidden-opened",
                     "expected_reasonable_assets": ["entry"],
                     "expected_hidden_assets": ["hidden"],
-                    "final_expected_assets": ["entry"],
                     "timeline": [
                         {
                             "step_id": "hidden",
@@ -489,7 +496,6 @@ def test_reveal_policy_sequence_scores_anchor_steps_and_final_outcome(tmp_path: 
 
     rows = {row["scenario_id"]: row for row in report["policies"]["all-open"]["rows"]}
     assert rows["anchor-ok"]["anchor_step_correctness_rate"] == 1.0
-    assert rows["anchor-ok"]["final_outcome_success"] is True
     assert rows["anchor-missing"]["anchor_missing_expected_reveals"]
     assert rows["anchor-no-reveal-fail"]["anchor_failed_no_reveal_count"] == 1
     assert rows["hidden-opened"]["hidden_violations"] == ["hidden"]
@@ -497,7 +503,6 @@ def test_reveal_policy_sequence_scores_anchor_steps_and_final_outcome(tmp_path: 
     assert aggregate["anchor_step_count"] == 3
     assert aggregate["anchor_missing_expected_reveal_count"] == 1
     assert aggregate["anchor_failed_no_reveal_count"] == 1
-    assert aggregate["final_outcome_success_count"] == 4
 
 
 def test_reveal_policy_reports_trace_level_choice_signals(tmp_path: Path) -> None:

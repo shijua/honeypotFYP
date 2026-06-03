@@ -66,6 +66,8 @@ def test_attack_group_prior_recommendation_reports_default_paper_metrics(
     metrics = report["metrics"]
     assert report["ok"] is True
     assert report["top_k"] == 40
+    assert [row["top_k"] for row in report["k_sweep"]] == [5, 10, 20, 40]
+    assert "rank_sweep" not in report
     assert report["support_threshold"] == 0.15
     assert report["evaluation_match"] == "technique_family"
     assert report["technique_family_universe_size"] == 4
@@ -73,6 +75,7 @@ def test_attack_group_prior_recommendation_reports_default_paper_metrics(
     assert metrics["hit_rate_at_k"] == 1.0
     assert metrics["precision"] == 1.0
     assert metrics["recall"] == 1.0
+    assert metrics["mrr"] == 1.0
     assert metrics["specificity"] == 1.0
     assert metrics["accuracy"] == 1.0
     assert metrics["source_breakdown"][0]["precision"] == 1.0
@@ -82,6 +85,69 @@ def test_attack_group_prior_recommendation_reports_default_paper_metrics(
     write_prior_recommendation_chart(report, chart_path)
     # assert "ATT&amp;CK Group Prior Recommendation" in chart_path.read_text(encoding="utf-8")
     # assert "Precision" not in chart_path.read_text(encoding="utf-8")
+
+
+def test_attack_group_prior_recommendation_combines_files_and_timeline_steps(
+    tmp_path: Path,
+) -> None:
+    prior = tmp_path / "prior.json"
+    prior.write_text(
+        json.dumps(
+            {
+                "schema_version": "v1",
+                "method": "attack_group_technique_collaborative_filtering",
+                "groups": [
+                    {
+                        "group_id": f"G000{index}",
+                        "name": f"Fixture Group {index}",
+                        "techniques": ["T1190", "T1105", "T1213"],
+                    }
+                    for index in range(1, 4)
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    snapshot_scenarios = tmp_path / "snapshot.jsonl"
+    snapshot_scenarios.write_text(
+        json.dumps(
+            {
+                "scenario_id": "snapshot-chain",
+                "evidence_sequence": [
+                    {"technique": "T1190", "evidence_id": "e1"},
+                    {"technique": "T1105", "evidence_id": "e2"},
+                ],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    timeline_scenarios = tmp_path / "timeline.json"
+    timeline_scenarios.write_text(
+        json.dumps(
+            [
+                {
+                    "scenario_id": "timeline-chain",
+                    "timeline": [
+                        {"step_id": "s1", "new_evidence": [{"technique": "T1190", "evidence_id": "t1"}]},
+                        {"step_id": "s2", "new_evidence": [{"technique": "T1213", "evidence_id": "t2"}]},
+                    ],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    report = evaluate_prior_recommendations(
+        scenario_files=[timeline_scenarios, snapshot_scenarios],
+        prior_path=prior,
+        config=RuntimeConfig(),
+    )
+
+    assert report["ok"] is True
+    assert report["scenario_files"] == [str(timeline_scenarios), str(snapshot_scenarios)]
+    assert report["trace_count"] == 2
+    assert report["metrics"]["prefix_count"] == 2
 
 
 def test_attack_group_prior_recommendation_reports_degraded_missing_prior(
@@ -275,7 +341,7 @@ def test_attack_group_prior_recommendation_excludes_no_reveal_scenarios(
 
     metrics = report["metrics"]
     assert report["trace_count"] == 1
-    assert report["excluded_scenarios"] == [
-        {"scenario_id": "scanner-no-reveal", "reason": "no-reveal scenario"}
-    ]
+    assert report["excluded_scenarios"][0]["scenario_id"] == "scanner-no-reveal"
+    assert report["excluded_scenarios"][0]["scenario_file"] == str(scenarios)
+    assert report["excluded_scenarios"][0]["reason"] == "no-reveal scenario"
     assert metrics["prefix_count"] == 1

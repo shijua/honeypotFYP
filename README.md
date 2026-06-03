@@ -98,11 +98,9 @@ Optional ATT&CK-labelled public datasets can be fetched for offline validation w
 
 ```bash
 .venv/bin/python scripts/data/fetch_public_attack_datasets.py --dry-run
-.venv/bin/python scripts/data/fetch_public_attack_datasets.py --dataset uwf-zeekdata24
 .venv/bin/python scripts/data/fetch_public_attack_datasets.py --dataset casinolimit
 .venv/bin/python scripts/evaluation/public_dataset_prior_validation.py \
   vendor/datasets/casinolimit \
-  vendor/datasets/uwf-zeekdata24 \
   --output /tmp/public_dataset_prior_validation_report.json
 ```
 

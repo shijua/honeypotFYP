@@ -519,7 +519,7 @@ def test_tick_reveals_follow_on_configuration_for_open_asset() -> None:
                 },
                 "configuration_variants": [
                     {
-                        "configuration_id": "git-db-credential-clue",
+                        "configuration_id": "git-seeded-repository-backend",
                         "kind": "content",
                         "required_markers": ["any_techniques:T1213"],
                         "covered_techniques": ["T1213", "T1552.001"],
@@ -553,9 +553,9 @@ def test_tick_reveals_follow_on_configuration_for_open_asset() -> None:
 
     assert response.actions[0].action_type == "configure"
     assert response.actions[0].asset_id == "git-internal"
-    assert response.actions[0].configuration_id == "git-db-credential-clue"
+    assert response.actions[0].configuration_id == "git-seeded-repository-backend"
     details = response.decision_events[0].details
-    assert details["configuration_reveal"]["configuration_id"] == "git-db-credential-clue"
+    assert details["configuration_reveal"]["configuration_id"] == "git-seeded-repository-backend"
     assert details["candidate_type"] == "configuration"
 
 
@@ -576,7 +576,7 @@ def test_tick_does_not_configure_asset_when_attacker_left_active_path() -> None:
                 },
                 "configuration_variants": [
                     {
-                        "configuration_id": "git-db-credential-clue",
+                        "configuration_id": "git-seeded-repository-backend",
                         "kind": "content",
                         "required_markers": ["any_techniques:T1213"],
                         "covered_techniques": ["T1213", "T1552.001"],
@@ -628,7 +628,7 @@ def test_tick_records_same_port_upgrade_as_configuration_reveal() -> None:
                 "configuration_variants": [
                     {
                         "configuration_id": "malware-dionaea-same-port-upgrade",
-                        "kind": "same-port-high-interaction-upgrade",
+                        "kind": "target-runtime-same-port",
                         "target_asset_id": "dionaea-capture",
                         "public_port": 18085,
                         "required_markers": ["any_internal_http_paths:/downloads/agent-update.bin"],

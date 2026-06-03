@@ -10,7 +10,7 @@
 
 Each timeline step represents one controller decision point. The evaluator adds the step's `new_evidence` to the cumulative profile, runs the selected policy once, then updates simulated `unlocked_asset_ids` and `revealed_configurations` from the actions returned by that step. Later steps therefore see the assets and configuration variants opened earlier in the scenario.
 
-This is still an offline replay. It does not start Docker, open gateway routes, or generate live attacker traffic. It answers the decision-quality question: given this sequence of attacker evidence, did the policy reach the right final outcome without exposing hidden assets, and did it make the key anchor decisions correctly?
+This is still an offline replay. It does not start Docker, open gateway routes, or generate live attacker traffic. It answers the decision-quality question: given this sequence of attacker evidence, did the policy make the key anchor decisions correctly without exposing hidden assets?
 
 ## Step Fields
 
@@ -27,13 +27,13 @@ This is still an offline replay. It does not start Docker, open gateway routes, 
 | `touched_assets` | Assets the replay says the attacker actually touched after a reveal; this is used for choice/reveal-efficiency metrics. |
 | `source_refs` | Per-step source grounding. Each entry declares a reference id and an exactness level. |
 
-## Anchor And Final Metrics
+## Anchor Metrics
 
-The sequence report keeps the historical per-scenario fields and adds `timeline`, `step_count`, `anchor_step_correctness_rate`, `final_outcome_success`, `step_no_reveal_correctness_rate`, `response_gate_wait_correctness_rate`, `timeline_reveal_efficiency`, and `source_traceability_status`.
+The sequence report keeps the historical per-scenario fields and adds `timeline`, `step_count`, `anchor_step_correctness_rate`, `step_no_reveal_correctness_rate`, `response_gate_wait_correctness_rate`, `timeline_reveal_efficiency`, and `source_traceability_status`.
 
 Only steps with `anchor_check: true` are used for exact reveal/no-reveal correctness. Non-anchor steps still accumulate evidence, update unlocked assets, and can fail the scenario if they open a hidden asset, but they do not fail exact-step accuracy just because the controller chose another reasonable asset.
 
-The main report `ok` condition is based on no hidden violations, no missing or unexpected anchor actions, no failed anchor no-reveal checks, declared source traceability, and successful final outcomes. The broad regression fixture can still expose strict mismatch details, but those are not the headline accuracy number.
+The main report `ok` condition is based on no hidden violations, no missing or unexpected anchor actions, no failed anchor no-reveal checks, and declared source traceability. The broad regression fixture can still expose strict mismatch details, but those are not the headline accuracy number.
 
 `timeline_reveal_efficiency` is intentionally simple: revealed assets that the scenario later marks as touched divided by total revealed assets. It is not an information-gain or entropy metric.
 

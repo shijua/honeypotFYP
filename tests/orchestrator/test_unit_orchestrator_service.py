@@ -226,7 +226,7 @@ def test_apply_configure_records_configuration_and_unlocks_upgrade_target(
                     configuration_id="malware-dionaea-same-port-upgrade",
                     target_asset_id="dionaea-capture",
                     configuration={
-                        "kind": "same-port-high-interaction-upgrade",
+                        "kind": "target-runtime-same-port",
                         "materialized_artifacts": [
                             {
                                 "type": "route_note",

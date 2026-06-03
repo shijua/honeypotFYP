@@ -109,10 +109,19 @@ def test_public_dataset_prior_validation_reports_prior_metrics(
     assert report["trace_count"] == 1
     assert report["dataset_sources"] == ["datasets"]
     assert report["top_k"] == 40
+    assert [row["top_k"] for row in report["k_sweep"]] == [5, 10, 20, 40]
+    assert "rank_sweep" not in report
     assert report["support_threshold"] == 0.15
     assert report["metrics"]["prefix_count"] == 2
     assert report["metrics"]["precision"] == 1.0
     assert report["metrics"]["recall"] == 1.0
+    assert report["metrics"]["mrr"] == 1.0
+    diagnostics = report["dataset_diagnostics"]
+    assert diagnostics["unique_technique_family_count"] == 3
+    assert diagnostics["prior_overlap"]["dataset_family_covered_by_prior_rate"] == 1.0
+    assert diagnostics["concentration"]["top_3_share"] == 1.0
+    assert diagnostics["top_technique_families"][0]["technique"] == "T1105"
+    assert diagnostics["source_breakdown"][0]["source"] == "datasets"
 
 
 def test_public_dataset_prior_validation_reports_contributing_dataset_names(
@@ -122,14 +131,14 @@ def test_public_dataset_prior_validation_reports_contributing_dataset_names(
     _write_prior(prior)
     dataset_root = tmp_path / "vendor" / "datasets"
     casinolimit = dataset_root / "casinolimit"
-    zeekdata = dataset_root / "uwf-zeekdata24"
+    lab_traces = dataset_root / "lab-traces"
     casinolimit.mkdir(parents=True)
-    zeekdata.mkdir(parents=True)
+    lab_traces.mkdir(parents=True)
     (casinolimit / "trace.csv").write_text(
         "timestamp,technique_id\n1,T1190\n2,T1105\n",
         encoding="utf-8",
     )
-    (zeekdata / "trace.jsonl").write_text(
+    (lab_traces / "trace.jsonl").write_text(
         json.dumps({"timestamp": "1", "technique": "T1190"}) + "\n"
         + json.dumps({"timestamp": "2", "technique": "T1608"}) + "\n",
         encoding="utf-8",
@@ -142,7 +151,11 @@ def test_public_dataset_prior_validation_reports_contributing_dataset_names(
     )
 
     assert report["ok"] is True
-    assert report["dataset_sources"] == ["casinolimit", "uwf-zeekdata24"]
+    assert report["dataset_sources"] == ["casinolimit", "lab-traces"]
+    assert [row["source"] for row in report["dataset_diagnostics"]["source_breakdown"]] == [
+        "casinolimit",
+        "lab-traces",
+    ]
 
 
 def test_public_dataset_prior_validation_fails_without_traces(

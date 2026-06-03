@@ -8,7 +8,7 @@ from typing import Any
 
 
 def write_reveal_policy_chart(report: dict[str, Any], path: Path) -> None:
-    """Write a 2×2 policy-comparison chart from `reveal_policy.py` output.
+    """Write a compact policy-comparison chart from `reveal_policy.py` output.
 
     Example:
         write_reveal_policy_chart(report, Path("/tmp/reveal_policy_report.svg")).
@@ -20,22 +20,30 @@ def write_reveal_policy_chart(report: dict[str, Any], path: Path) -> None:
     n_policies = max(len(policies), 1)
 
     fig, axes = plt.subplots(
-        2, 2,
-        figsize=(14, max(8.0, 0.5 * n_policies + 4.5)),
+        1, 2,
+        figsize=(13, max(4.2, 0.48 * n_policies + 2.6)),
     )
-    ax_quality = axes[0][0]
-    ax_gate = axes[0][1]
-    ax_reject = axes[1][0]
-    ax_prior = axes[1][1]
+    ax_quality = axes[0]
+    ax_prior = axes[1]
 
-    # --- Panel 1: Policy quality (reasonable reveal vs unexpected action) ---
+    # --- Panel 1: main scenarios use anchor correctness; broad regression
+    # fixtures without anchors fall back to scenario-supported reveal rate.
+    has_anchor_steps = any(
+        int(report.get("policies", {}).get(policy, {}).get("anchor_step_count", 0) or 0) > 0
+        for policy in policies
+    )
+    primary_metric = "anchor_step_correctness_rate" if has_anchor_steps else "reveal_correctness"
+    primary_label = "Anchor correctness" if has_anchor_steps else "Supported reveal"
+    primary_title = "Anchor decision correctness" if has_anchor_steps else "Scenario-supported reveal rate"
     quality_metrics = [
-        ("reveal_correctness", "Reasonable reveal", "#14853d"),
-        ("unexpected_reveal_action_rate", "Unexpected action", "#f59e0b"),
+        (primary_metric, primary_label, "#14853d"),
+        ("useful_evidence_per_reveal", "Useful response", "#2563eb"),
+        ("irrelevant_reveal_rate", "Unsupported reveal", "#f59e0b"),
+        ("hidden_violation_rate", "Forbidden reveal", "#dc2626"),
     ]
     y_positions = range(n_policies)
-    bar_height = 0.26
-    offsets = [-0.15, 0.15]
+    bar_height = 0.18
+    offsets = [-0.3, -0.1, 0.1, 0.3]
     for (key, label, color), offset in zip(quality_metrics, offsets):
         values = [float(report["policies"][p].get(key, 0.0) or 0.0) for p in policies]
         ax_quality.barh(
@@ -45,80 +53,15 @@ def write_reveal_policy_chart(report: dict[str, Any], path: Path) -> None:
     _format_policy_axis(ax_quality, y_positions, labels)
     ax_quality.set_xlim(0, 1)
     ax_quality.set_xlabel("Rate")
-    ax_quality.set_title("Policy quality")
+    ax_quality.set_title(primary_title)
     ax_quality.grid(axis="x", color="#e5e7eb")
-    ax_quality.legend(loc="lower right", fontsize=8)
+    ax_quality.legend(loc="upper right", fontsize=8)
 
-    # --- Panel 2: Gate narrowing — how many eligible assets survive the hard gate ---
-    # Shows what fraction of decision points leave 0 / 1 / 2+ assets for CF to rank.
-    # "1 eligible" means the gate decided the outcome; CF had no room to act.
-    bucket_rates = controller.get("gate_eligible_bucket_rates", {})
-    zero_r = float(bucket_rates.get("zero", 0.0) or 0.0)
-    one_r = float(bucket_rates.get("one", 0.0) or 0.0)
-    two_r = float(bucket_rates.get("two_plus", 0.0) or 0.0)
-    narrows = float(controller.get("gate_narrowing_rate", 0.0) or 0.0)
-    ready_avg = float(controller.get("gate_ready_assets_before_gate_avg", 0.0) or 0.0)
-    eligible_avg = float(controller.get("gate_eligible_assets_after_gate_avg", 0.0) or 0.0)
-    dp_count = int(controller.get("gate_decision_point_count", 0) or 0)
-
-    segments = [
-        (zero_r, "#dc2626", "0 eligible — gate blocks all"),
-        (one_r, "#f59e0b", "1 eligible — no CF room"),
-        (two_r, "#14853d", "2+ eligible — CF active"),
-    ]
-    left = 0.0
-    for val, color, seg_label in segments:
-        ax_gate.barh([0], [val], left=[left], color=color, label=seg_label, height=0.4)
-        if val > 0.04:
-            ax_gate.text(
-                left + val / 2, 0, f"{val:.0%}",
-                ha="center", va="center", fontsize=9,
-                color="white" if val > 0.12 else "black", fontweight="bold",
-            )
-        left += val
-    ax_gate.set_yticks([0])
-    ax_gate.set_yticklabels(["controller"])
-    ax_gate.set_xlim(0, 1)
-    ax_gate.set_xlabel("Fraction of decision points")
-    ax_gate.set_title(
-        f"Gate narrowing — {dp_count} decision points\n"
-        f"avg: {ready_avg:.1f} ready → {eligible_avg:.1f} eligible  ({narrows:.0%} narrowed)"
-    )
-    ax_gate.grid(axis="x", color="#e5e7eb")
-    ax_gate.legend(loc="lower right", fontsize=8)
-
-    # --- Panel 3: Rejection reasons — why assets were filtered before CF scoring ---
-    reason_rates = controller.get("rejection_reason_rates", {})
-    if reason_rates:
-        reasons = list(reason_rates.keys())
-        r_values = [float(reason_rates[r] or 0.0) for r in reasons]
-        short_labels = [_short_rejection_label(r) for r in reasons]
-        y_pos = list(range(len(reasons)))
-        ax_reject.barh(y_pos, r_values, color="#2563eb")
-        ax_reject.set_yticks(y_pos)
-        ax_reject.set_yticklabels(short_labels)
-        ax_reject.invert_yaxis()
-        x_max = max(r_values) * 1.3 if r_values else 1.0
-        ax_reject.set_xlim(0, x_max)
-        ax_reject.set_xlabel("Share of all gate rejections")
-        ax_reject.set_title("Why assets were rejected before scoring (controller)")
-        ax_reject.grid(axis="x", color="#e5e7eb")
-        for i, v in enumerate(r_values):
-            ax_reject.text(v, i, f" {v:.0%}", va="center", fontsize=8)
-    else:
-        ax_reject.text(
-            0.5, 0.5, "No rejection data",
-            ha="center", va="center", transform=ax_reject.transAxes,
-        )
-        ax_reject.set_title("Why assets were rejected before scoring (controller)")
-        ax_reject.set_xticks([])
-        ax_reject.set_yticks([])
-
-    # --- Panel 4: Prior (CF) influence rate ---
-    # Fraction of scenarios where the CF prior changed the reveal vs gate-only baseline.
+    # --- Panel 2: Prior (CF) influence rate ---
+    # Fraction of decision steps where the CF prior changed the reveal vs gate-only.
     prior_rate = float(controller.get("prior_influence_rate", 0.0) or 0.0)
-    influenced_count = int(controller.get("prior_influenced_scenario_count", 0) or 0)
-    scenario_count = int(controller.get("scenario_count", 0) or 0)
+    influenced_count = int(controller.get("prior_influenced_step_count", 0) or 0)
+    comparison_count = int(controller.get("prior_comparison_step_count", 0) or 0)
     bar_vals = [prior_rate, 1.0 - prior_rate]
     bars = ax_prior.bar(
         ["CF changed\nresult", "Gate-only\nsufficient"],
@@ -126,10 +69,10 @@ def write_reveal_policy_chart(report: dict[str, Any], path: Path) -> None:
         color=["#7c3aed", "#d1d5db"],
     )
     ax_prior.set_ylim(0, 1.2)
-    ax_prior.set_ylabel("Fraction of scenarios")
+    ax_prior.set_ylabel("Fraction of decision steps")
     ax_prior.set_title(
         f"Prior (CF) influence rate\n"
-        f"{influenced_count}/{scenario_count} scenarios where prior changed the reveal"
+        f"{influenced_count}/{comparison_count} steps where prior changed the reveal"
     )
     ax_prior.grid(axis="y", color="#e5e7eb")
     for bar, val in zip(bars, bar_vals):
@@ -146,80 +89,178 @@ def write_prior_recommendation_chart(report: dict[str, Any], path: Path) -> None
     """Write a prior-quality chart from `attack_group_prior_recommendation.py` output."""
     plt = _pyplot()
     metrics = report.get("metrics", {})
+    k_sweep = [row for row in report.get("k_sweep", []) if isinstance(row, dict)]
     top_k = int(report.get("top_k", 0) or 0)
     support_threshold = float(report.get("support_threshold", 0.0) or 0.0)
     prefix_count = int(metrics.get("prefix_count", 0) or 0)
     trace_count = int(report.get("trace_count", 0) or 0)
 
-    summary_keys = [
-        ("hit_rate_at_k", f"Hit@k={top_k}"),
-        ("recall", "Recall"),
-        ("precision", "Precision"),
-        ("specificity", "Specificity"),
-        ("accuracy", "Accuracy"),
-    ]
-    summary_values = [float(metrics.get(key, 0.0) or 0.0) for key, _ in summary_keys]
-    summary_labels = [label for _, label in summary_keys]
-    summary_colors = ["#7c3aed", "#14853d", "#2563eb", "#0891b2", "#64748b"]
-
-    fig, axis = plt.subplots(1, 1, figsize=(7, 4.5))
-    bars = axis.bar(summary_labels, summary_values, color=summary_colors)
+    fig, axis = plt.subplots(1, 1, figsize=(8.6, 4.8))
+    if k_sweep:
+        x_values = [int(row.get("top_k", 0) or 0) for row in k_sweep]
+        series = [
+            ("hit_rate_at_k", "Hit", "#7c3aed", "o"),
+            ("recall", "Recall", "#14853d", "s"),
+            ("precision", "Precision", "#2563eb", "^"),
+            ("mrr", "MRR", "#f59e0b", "D"),
+        ]
+        for key, label, color, marker in series:
+            y_values = [float(row.get(key, 0.0) or 0.0) for row in k_sweep]
+            axis.plot(x_values, y_values, marker=marker, linewidth=2, color=color, label=label)
+            for x_val, y_val in zip(x_values, y_values):
+                axis.text(x_val, y_val + 0.025, f"{y_val:.2f}", ha="center", fontsize=8)
+        axis.set_xticks(x_values)
+        axis.legend(loc="upper left", bbox_to_anchor=(1.01, 1.0), fontsize=8, borderaxespad=0.0)
+    else:
+        summary_keys = [
+            ("hit_rate_at_k", f"Hit@K={top_k}"),
+            ("recall", "Recall"),
+            ("precision", "Precision"),
+            ("mrr", "MRR"),
+        ]
+        summary_values = [float(metrics.get(key, 0.0) or 0.0) for key, _ in summary_keys]
+        summary_labels = [label for _, label in summary_keys]
+        bars = axis.bar(summary_labels, summary_values, color=["#7c3aed", "#14853d", "#2563eb", "#f59e0b"])
+        for bar, value in zip(bars, summary_values):
+            axis.text(bar.get_x() + bar.get_width() / 2, value + 0.02, f"{value:.2f}", ha="center", va="bottom", fontsize=9)
+        axis.tick_params(axis="x", rotation=20)
     axis.set_ylim(0, 1.2)
-    axis.set_title("Aggregate prediction quality\n(T1548.003 ≡ T1548 — technique-family level)")
+    axis.set_title(_prior_chart_title(report))
+    axis.set_xlabel("Similar ATT&CK groups used by prior (K)")
     axis.set_ylabel("Rate")
-    axis.tick_params(axis="x", rotation=20)
     axis.grid(axis="y", color="#e5e7eb")
-    for bar, value in zip(bars, summary_values):
+    diagnostics = report.get("dataset_diagnostics", {})
+    if isinstance(diagnostics, dict) and diagnostics:
+        concentration = diagnostics.get("concentration", {})
+        overlap = diagnostics.get("prior_overlap", {})
+        unique_count = int(diagnostics.get("unique_technique_family_count", 0) or 0)
+        top3_share = float(concentration.get("top_3_share", 0.0) or 0.0) if isinstance(concentration, dict) else 0.0
+        overlap_rate = (
+            float(overlap.get("dataset_family_covered_by_prior_rate", 0.0) or 0.0)
+            if isinstance(overlap, dict)
+            else 0.0
+        )
         axis.text(
-            bar.get_x() + bar.get_width() / 2, value + 0.02,
-            f"{value:.2f}", ha="center", va="bottom", fontsize=9,
+            0.5,
+            -0.23,
+            f"{trace_count} traces / {prefix_count} prefixes · "
+            f"{unique_count} unique technique families · "
+            f"top-3 share {top3_share:.2f} · prior overlap {overlap_rate:.2f}",
+            transform=axis.transAxes,
+            ha="center",
+            va="top",
+            fontsize=8,
+            color="#475569",
         )
 
-    fig.suptitle(
-        f"ATT&CK Group CF Prior  ·  top_k={top_k}  support≥{support_threshold:.2f}"
-        f"  ·  {trace_count} traces  {prefix_count} prefixes"
-    )
+    # fig.suptitle(
+    #     f"ATT&CK Group CF Prior  ·  neighbor K={top_k}  support≥{support_threshold:.2f}"
+    #     f"  ·  {trace_count} traces  {prefix_count} prefixes"
+    # )
+    fig.subplots_adjust(right=0.82)
     _save_chart(fig, path)
 
 
 def write_runtime_latency_chart(report: dict[str, Any], path: Path) -> None:
     """Write a live latency chart from `runtime_latency.py` output."""
+    rows = [row for row in report.get("asset_summary", []) if isinstance(row, dict)]
+    if not rows:
+        rows = [row for row in report.get("assets", []) if isinstance(row, dict)]
+    class_summary = report.get("class_summary", {})
+    mode_summary = report.get("mode_summary", {})
+    warm_count = int(class_summary.get("warm", {}).get("ok_samples", class_summary.get("warm", {}).get("ok_assets", 0)) or 0)
+    cold_count = int(class_summary.get("cold", {}).get("ok_samples", class_summary.get("cold", {}).get("ok_assets", 0)) or 0)
+    prewarmed_count = int(mode_summary.get("prewarmed", {}).get("ok_samples", 0) or 0)
+    _write_runtime_latency_rows_chart(
+        report,
+        rows,
+        path,
+        title="Runtime Reveal Apply Latency",
+        extra_title=f"  ·  warm {warm_count}  cold {cold_count}  prewarmed {prewarmed_count}",
+    )
+
+
+def _write_runtime_latency_rows_chart(
+    report: dict[str, Any],
+    rows: list[dict[str, Any]],
+    path: Path,
+    *,
+    title: str,
+    extra_title: str = "",
+) -> None:
+    """Write one latency bar chart for already summarized rows."""
     plt = _pyplot()
-    assets = [row for row in report.get("assets", []) if isinstance(row, dict)]
-    labels = [str(row.get("asset_id", "asset")) for row in assets]
-    apply_ms = [float(row.get("orchestrator_apply_ms", 0.0) or 0.0) for row in assets]
-    route_ms = [float(row.get("route_visible_ms", 0.0) or 0.0) if row.get("route_visible_ms") is not None else 0.0 for row in assets]
-    colors = ["#14853d" if row.get("ok") else "#dc2626" for row in assets]
+    rows = sorted(
+        rows,
+        key=lambda row: (
+            row.get("latency_class") == "cold",
+            str(row.get("asset_id", "asset")),
+            row.get("reveal_mode") != "direct",
+        ),
+    )
+    labels = [
+        str(row.get("asset_id", "asset"))
+        if str(row.get("reveal_mode", "direct")) == "direct"
+        else f"{row.get('asset_id', 'asset')} ({row.get('reveal_mode')})"
+        for row in rows
+    ]
+    apply_p50_ms = [
+        float(row.get("apply_p50_ms", row.get("orchestrator_apply_ms", 0.0)) or 0.0)
+        for row in rows
+    ]
+    apply_p95_ms = [
+        float(row.get("apply_p95_ms", row.get("orchestrator_apply_ms", 0.0)) or 0.0)
+        for row in rows
+    ]
+    failed_rows = [not row.get("ok", int(row.get("failed_samples", 0) or 0) == 0) for row in rows]
 
-    fig, (apply_axis, route_axis) = plt.subplots(
+    fig, axis = plt.subplots(
         1,
-        2,
-        figsize=(13, max(4.0, 0.42 * max(len(assets), 1) + 1.5)),
-        gridspec_kw={"width_ratios": [1, 1]},
+        1,
+        figsize=(10.8, max(4.2, 0.54 * max(len(rows), 1) + 1.5)),
     )
-    y_positions = range(len(assets))
-    apply_axis.barh(list(y_positions), apply_ms, color=colors)
-    apply_axis.set_yticks(list(y_positions))
-    apply_axis.set_yticklabels(labels)
-    apply_axis.invert_yaxis()
-    apply_axis.set_xlabel("ms")
-    apply_axis.set_title("Orchestrator apply")
-    apply_axis.grid(axis="x", color="#e5e7eb")
+    y_positions = list(range(len(rows)))
+    p50_colors = ["#dc2626" if failed else "#2563eb" for failed in failed_rows]
+    p95_colors = ["#991b1b" if failed else "#f59e0b" for failed in failed_rows]
+    p50_bars = axis.barh([position - 0.18 for position in y_positions], apply_p50_ms, height=0.34, color=p50_colors, label="p50")
+    p95_bars = axis.barh([position + 0.18 for position in y_positions], apply_p95_ms, height=0.34, color=p95_colors, label="p95")
+    for bars, values in ((p50_bars, apply_p50_ms), (p95_bars, apply_p95_ms)):
+        for bar, value in zip(bars, values):
+            axis.text(
+                bar.get_width(),
+                bar.get_y() + bar.get_height() / 2,
+                f"  {value:.0f}",
+                va="center",
+                fontsize=8,
+            )
+    axis.set_yticks(y_positions)
+    axis.set_yticklabels(labels)
+    axis.invert_yaxis()
+    axis.set_xlabel("orchestrator apply latency (ms)")
+    axis.set_title("Runtime Reveal Apply Latency by Asset")
+    axis.legend(loc="upper right")
+    axis.grid(axis="x", color="#e5e7eb")
 
-    route_axis.barh(list(y_positions), route_ms, color=colors)
-    route_axis.set_yticks(list(y_positions))
-    route_axis.set_yticklabels([])
-    route_axis.invert_yaxis()
-    route_axis.set_xlabel("ms")
-    route_axis.set_title("Route visible")
-    route_axis.grid(axis="x", color="#e5e7eb")
-
-    summary = report.get("summary", {})
-    fig.suptitle(
-        "Runtime Reveal Latency - "
-        f"{int(summary.get('ok_assets', 0) or 0)} ok / {int(report.get('asset_count', 0) or 0)} assets"
-    )
+    ok_count = sum(int(row.get("ok_samples", 1 if row.get("ok") else 0) or 0) for row in rows)
+    sample_count = sum(int(row.get("sample_count", 1) or 0) for row in rows)
+    # fig.suptitle(
+    #     f"{title} - "
+    #     f"{ok_count} ok / {sample_count} samples"
+    #     f"{extra_title}"
+    #     f"  ·  runs {int(report.get('run_count', 1) or 1)}"
+    # )
     _save_chart(fig, path)
+
+
+def _runtime_latency_color(row: dict[str, Any]) -> str:
+    """Color latency bars by warm/cold path, with failed assets highlighted."""
+    if not row.get("ok"):
+        return "#dc2626"
+    if row.get("reveal_mode") == "prewarmed":
+        return "#2563eb"
+    if row.get("latency_class") == "cold":
+        return "#f59e0b"
+    return "#14853d"
 
 
 def _pyplot():
@@ -250,13 +291,11 @@ def _policy_label(policy: str) -> str:
     return policy.replace("-", " ").title()
 
 
-def _short_rejection_label(reason: str) -> str:
-    return {
-        "dependency_not_satisfied": "Dep. not met",
-        "already_revealed": "Already revealed",
-        "not_ready_or_unavailable": "Not ready",
-        "exposure_budget_reached": "Budget cap",
-        "redundant_or_low_gain": "Low gain",
-        "out_of_scope_or_no_signal": "No signal",
-        "other": "Other",
-    }.get(reason, reason.replace("_", " ").title())
+def _prior_chart_title(report: dict[str, Any]) -> str:
+    if isinstance(report.get("dataset_diagnostics"), dict):
+        sources = report.get("dataset_sources")
+        if isinstance(sources, list) and len(sources) == 1 and isinstance(sources[0], str):
+            source_label = "CasinoLimit" if sources[0] == "casinolimit" else sources[0].replace("_", " ").replace("-", " ").title()
+            return f"{source_label} prior candidate quality by similar-group K"
+        return "Public dataset prior candidate quality by similar-group K"
+    return "Scenario prior candidate quality by similar-group K"

@@ -27,9 +27,6 @@
       "honeytrap-generic",
       "dionaea-capture"
     ],
-    "final_expected_assets": [
-      "malware-sink"
-    ],
     "timeline": [
       {
         "step_id": "s1-public-exploit",
@@ -111,6 +108,7 @@
       {
         "step_id": "s4-malware-sink-touch",
         "phase": "revealed asset response",
+        "anchor_check": true,
         "new_evidence": [
           {
             "evidence_id": "main-payload-e4",
@@ -124,6 +122,13 @@
         ],
         "touched_assets": [
           "malware-sink"
+        ],
+        "expected_reveals": [
+          {
+            "action_type": "configure",
+            "asset_id": "malware-sink",
+            "configuration_id": "malware-downloader-staging-directory"
+          }
         ],
         "source_refs": [
           {
@@ -148,10 +153,10 @@
         ],
         "allowed_reveals": [
           {
-            "action_type": "configure",
-            "asset_id": "dionaea-capture",
-            "configuration_id": "dionaea-payload-capture-backend"
-          },
+          "action_type": "configure",
+          "asset_id": "dionaea-capture",
+          "configuration_id": "dionaea-to-glutton-http-capture"
+        },
           {
             "action_type": "unlock",
             "asset_id": "honeytrap-generic"
@@ -203,10 +208,6 @@
       "dionaea-capture",
       "honeytrap-generic"
     ],
-    "final_expected_assets": [
-      "git-internal",
-      "malware-sink"
-    ],
     "touched_assets": [
       "malware-sink"
     ],
@@ -214,6 +215,7 @@
       {
         "step_id": "s1-source-map",
         "phase": "public discovery",
+        "anchor_check": true,
         "new_evidence": [
           {
             "evidence_id": "main-choice-e1",
@@ -222,6 +224,12 @@
             "tactic": "Discovery",
             "technique": "T1083",
             "weight": 0.9
+          }
+        ],
+        "expected_reveals": [
+          {
+            "action_type": "unlock",
+            "asset_id": "git-internal"
           }
         ],
         "source_refs": [
@@ -358,13 +366,12 @@
       "finance-share",
       "ftp-archive"
     ],
-    "final_expected_assets": [
-      "finance-share"
-    ],
     "timeline": [
       {
         "step_id": "s1-backup-path",
         "phase": "collection breadcrumb",
+        "anchor_check": true,
+        "expected_no_reveal": true,
         "new_evidence": [
           {
             "evidence_id": "main-finance-e1",
@@ -420,6 +427,7 @@
       {
         "step_id": "s3-finance-share-touch",
         "phase": "revealed asset response",
+        "anchor_check": true,
         "new_evidence": [
           {
             "evidence_id": "main-finance-e3",
@@ -433,6 +441,13 @@
         ],
         "touched_assets": [
           "finance-share"
+        ],
+        "expected_reveals": [
+          {
+            "action_type": "configure",
+            "asset_id": "finance-share",
+            "configuration_id": "finance-backup-archive-index"
+          }
         ],
         "source_refs": [
           {
@@ -468,7 +483,6 @@
       {
         "step_id": "s5-final-finance-check",
         "phase": "final useful follow-up",
-        "anchor_check": true,
         "new_evidence": [],
         "source_refs": [
           {
@@ -506,9 +520,6 @@
       "admin-jumpbox",
       "internal-portal"
     ],
-    "final_expected_assets": [
-      "git-internal"
-    ],
     "timeline": [
       {
         "step_id": "s1-repo-config-access",
@@ -529,7 +540,7 @@
           {
             "action_type": "configure",
             "asset_id": "git-internal",
-            "configuration_id": "git-deployment-ci-config"
+            "configuration_id": "git-seeded-repository-backend"
           }
         ],
         "source_refs": [
@@ -543,7 +554,6 @@
       {
         "step_id": "s2-repo-file-discovery",
         "phase": "active-path discovery",
-        "anchor_check": true,
         "new_evidence": [
           {
             "evidence_id": "main-git-e2",
@@ -555,11 +565,10 @@
             "weight": 0.85
           }
         ],
-        "expected_reveals": [
+        "allowed_reveals": [
           {
-            "action_type": "configure",
-            "asset_id": "git-internal",
-            "configuration_id": "git-db-credential-clue"
+            "action_type": "unlock",
+            "asset_id": "admin-jumpbox"
           }
         ],
         "source_refs": [
@@ -654,7 +663,6 @@
     ],
     "useful_followup_assets": [],
     "diagnostic_followup_assets": [],
-    "final_expected_assets": [],
     "boundary": true,
     "timeline": [
       {
@@ -679,6 +687,8 @@
       {
         "step_id": "s2-smb-lateral",
         "phase": "boundary technique",
+        "anchor_check": true,
+        "expected_no_reveal": true,
         "new_evidence": [
           {
             "evidence_id": "main-boundary-e2",
@@ -717,6 +727,8 @@
       {
         "step_id": "s4-kerberos-abuse",
         "phase": "boundary technique",
+        "anchor_check": true,
+        "expected_no_reveal": true,
         "new_evidence": [
           {
             "evidence_id": "main-boundary-e4",

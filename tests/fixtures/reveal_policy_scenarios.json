@@ -1006,11 +1006,11 @@
     ]
   },
   {
-    "scenario_id": "config-git-active-repo-db-clue",
-    "title": "Configuration case: active repo browsing exposes DB credential clue",
+    "scenario_id": "config-git-active-seeded-repo",
+    "title": "Configuration case: active repo browsing swaps to seeded Git backend",
     "scenario_type": "configuration",
     "reference_id": "cisa-red-team-aa23-059a",
-    "expected_behavior": "When the attacker is actively browsing git-internal, the controller may add a repository-local DB credential clue instead of opening a new unrelated port.",
+    "expected_behavior": "When the attacker is actively browsing git-internal, the controller may swap to a seeded repository backend instead of opening a new unrelated port.",
     "initial_unlocked_assets": [
       "git-internal"
     ],
@@ -1031,14 +1031,14 @@
       {
         "action_type": "configure",
         "asset_id": "git-internal",
-        "configuration_id": "git-db-credential-clue"
+        "configuration_id": "git-seeded-repository-backend"
       }
     ],
     "allowed_reveals": [
       {
         "action_type": "configure",
         "asset_id": "git-internal",
-        "configuration_id": "git-deployment-ci-config"
+        "configuration_id": "git-seeded-repository-backend"
       }
     ],
     "evidence_sequence": [
@@ -1092,7 +1092,7 @@
             "source_behavior": "Collection"
           }
         ],
-        "expected_reason": "When the attacker is actively browsing git-internal, the controller may add a repository-local DB credential clue instead of opening a new unrelated port."
+        "expected_reason": "When the attacker is actively browsing git-internal, the controller may swap to a seeded repository backend instead of opening a new unrelated port."
       },
       {
         "step_id": "s2-t1083",
@@ -1115,7 +1115,7 @@
             "source_behavior": "Discovery"
           }
         ],
-        "expected_reason": "When the attacker is actively browsing git-internal, the controller may add a repository-local DB credential clue instead of opening a new unrelated port."
+        "expected_reason": "When the attacker is actively browsing git-internal, the controller may swap to a seeded repository backend instead of opening a new unrelated port."
       },
       {
         "step_id": "s3-t1552-001",
@@ -1138,19 +1138,19 @@
             "source_behavior": "Credential Access"
           }
         ],
-        "expected_reason": "When the attacker is actively browsing git-internal, the controller may add a repository-local DB credential clue instead of opening a new unrelated port.",
+        "expected_reason": "When the attacker is actively browsing git-internal, the controller may swap to a seeded repository backend instead of opening a new unrelated port.",
         "expected_reveals": [
           {
             "action_type": "configure",
             "asset_id": "git-internal",
-            "configuration_id": "git-db-credential-clue"
+            "configuration_id": "git-seeded-repository-backend"
           }
         ],
         "allowed_reveals": [
           {
             "action_type": "configure",
             "asset_id": "git-internal",
-            "configuration_id": "git-deployment-ci-config"
+            "configuration_id": "git-seeded-repository-backend"
           }
         ]
       }

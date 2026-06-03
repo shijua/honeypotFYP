@@ -4,7 +4,7 @@ These fixtures are intentionally split by evaluation question.
 
 ## `reveal_policy_main_scenarios.json`
 
-Main offline policy replay. This is the headline decision-quality fixture: it uses fewer, richer full-process timelines, exact checks only at `anchor_check` steps, and final scenario outcomes instead of treating every tiny evidence step as a full accuracy point. It checks whether each policy reaches useful/reasonable assets, avoids hidden assets, chooses `no_reveal` for boundary cases, and distinguishes asset unlocks from configuration reveals. The semantics are documented in `FULL_REPLAY_SCENARIO_DESIGN.md`, and detailed source mapping lives in `SCENARIO_SOURCE_TRACEABILITY.md`.
+Main offline policy replay. This is the headline decision-quality fixture: it uses fewer, richer full-process timelines, exact checks only at `anchor_check` steps, and final scenario outcomes instead of treating every tiny evidence step as a full accuracy point. It checks whether each policy reaches useful or scenario-supported assets, avoids hidden assets, chooses `no_reveal` for boundary cases, and distinguishes asset unlocks from configuration reveals. The semantics are documented in `FULL_REPLAY_SCENARIO_DESIGN.md`, and detailed source mapping lives in `SCENARIO_SOURCE_TRACEABILITY.md`.
 
 | Scenario | Type | Reference id | Source basis | Expected behavior |
 | --- | --- | --- | --- | --- |
@@ -29,7 +29,7 @@ Broad offline policy regression. This fixture keeps the smaller fit, boundary, s
 | `normal-backup-finance-share` | normal | `cisa-red-team-aa23-059a` | CISA red-team credential/data discovery in backups, scripts, and databases | Backup evidence should reveal `finance-share`. |
 | `normal-admin-console-probe` | normal | `mitre-admin-web-discovery` | ATT&CK web/admin discovery and login probing patterns | Admin path probing should reveal `web-admin-console`. |
 | `normal-password-ssh-canary` | normal | `cisa-red-team-aa23-059a` | CISA red-team SSH password discovery and remote-service attempt | Password and remote-access evidence should reveal `ssh-canary`. |
-| `config-git-active-repo-db-clue` | configuration | `cisa-red-team-aa23-059a` | CISA red-team file/script/database credential discovery, adapted to active repo browsing | While the attacker is on `git-internal`, add a repository-local DB credential clue. |
+| `config-git-active-seeded-repo` | configuration | `cisa-red-team-aa23-059a` | CISA red-team file/script/database discovery, adapted to active repo browsing | While the attacker is on `git-internal`, swap to a seeded repository backend. |
 | `config-finance-active-archive-index` | configuration | `cisa-red-team-aa23-059a` | CISA red-team data discovery, adapted to active share browsing | While the attacker is on `finance-share`, add a sensitive archive index. |
 | `config-malware-active-dionaea-upgrade` | configuration | `cisa-lockbit-tool-transfer` | CISA LockBit tool-transfer behaviour adapted to same-path payload capture | While the attacker is on `malware-sink`, configure the higher-interaction `dionaea-capture` backend. |
 | `config-stale-git-not-active-no-reveal` | configuration-negative | `active-path-negative-control` | Controlled negative for configuration reveal semantics | Do not change `git-internal` after the attacker has left that asset path. |

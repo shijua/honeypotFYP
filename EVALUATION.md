@@ -23,6 +23,7 @@ This checks whether the ATT&CK group prior recommends useful next techniques for
 
 ```bash
 .venv/bin/python scripts/evaluation/attack_group_prior_recommendation.py \
+  tests/fixtures/reveal_policy_main_scenarios.json \
   tests/fixtures/reveal_policy_scenarios.json \
   --prior data/technique_prior/attack_group_technique_prior.json \
   --output results/attack_group_prior_report.json
@@ -31,16 +32,17 @@ This checks whether the ATT&CK group prior recommends useful next techniques for
 Read these fields first:
 
 - `ok`: overall prior-evaluation status.
-- `hit_rate_at_k`: share of evaluated prefixes where at least one future scenario technique appears in the top-K recommendations.
+- `hit_rate_at_k`: share of evaluated prefixes where at least one future scenario technique appears in the prior recommendations.
+- `k_sweep`: `hit_rate_at_k`, `precision`, `recall`, `mrr`, and average emitted recommendation count when varying the number of similar ATT&CK groups used by the prior.
 - `precision`: percentage of recommended technique families that later appeared in the trace. This is included in JSON reports but not shown in the summary chart.
 - `recall`: percentage of later scenario technique families that were recommended.
-- `specificity`: percentage of not-used ATT&CK technique families that were not recommended.
-- `accuracy`: percentage of ATT&CK technique families classified correctly as recommended/not recommended.
+- `mrr`: mean reciprocal rank of the first future technique family that appeared in the ordered recommendations.
+- `specificity` / `accuracy`: retained in JSON for completeness, but not used as headline metrics because the ATT&CK family universe is dominated by true negatives.
 <!-- - `true_positive`, `false_positive`, `true_negative`, `false_negative`: the aggregated confusion matrix behind those metrics. -->
 - `source_breakdown`: per-scenario confusion matrix and recall/specificity/accuracy.
 - `degraded_reason`: why the prior could not be loaded, if any.
 
-No-reveal and boundary scenarios are excluded from prior quality scoring because they test controller restraint, not next-technique recommendation. This evaluator matches sub-techniques by parent ATT&CK technique family by default, for example `T1548.003` counts as a hit when `T1548` is recommended. It uses `RuntimeConfig.recommendation_top_k` and `RuntimeConfig.recommendation_support_threshold`, whose defaults are the fixed paper parameters `K=40` and `support_threshold=0.15`; it is not a tuning sweep.
+No-reveal and boundary scenarios are excluded from prior quality scoring because they test controller restraint, not next-technique recommendation. The command loads both the main full-process fixture and the broader regression fixture, so the report's `scenario_files` field states the in-domain scenario sources used. This evaluator matches sub-techniques by parent ATT&CK technique family by default, for example `T1548.003` counts as a hit when `T1548` is recommended. `RuntimeConfig.recommendation_top_k` is the number of similar ATT&CK groups used by the collaborative-filtering prior, not a cap on emitted techniques. The runtime default remains neighbor `K=40` and `support_threshold=0.15`; the `k_sweep` field is a sensitivity check over that neighbor count.
 
 This also writes `results/attack_group_prior_report.svg`, a matplotlib summary of overall prior quality and per-scenario recall.
 
@@ -57,7 +59,7 @@ This is the main correctness evaluation. It replays the scenario file against mu
 ```
 
 This also writes `results/reveal_policy_main_report.svg`, a compact visual comparison of policy metrics. The SVG path is always the JSON output path with a `.svg` suffix.
-The sequence mode runs each rich scenario timeline step-by-step with cumulative profile and exposure state. The main fixture uses anchor steps for exact checks and final scenario outcome for the headline result; non-anchor steps still accumulate evidence and state but do not fail exact-step accuracy unless they open hidden/forbidden assets. Source grounding and replay semantics are documented in `tests/fixtures/SCENARIO_SOURCE_TRACEABILITY.md` and `tests/fixtures/FULL_REPLAY_SCENARIO_DESIGN.md`.
+The sequence mode runs each rich scenario timeline step-by-step with cumulative profile and exposure state. The main fixture uses anchor steps for exact checks and uses `anchor_step_correctness_rate` as the headline result; non-anchor steps still accumulate evidence and state but do not fail exact-step accuracy unless they open hidden/forbidden assets. Source grounding and replay semantics are documented in `tests/fixtures/SCENARIO_SOURCE_TRACEABILITY.md` and `tests/fixtures/FULL_REPLAY_SCENARIO_DESIGN.md`.
 
 The broader regression fixture is still useful for debugging edge cases. It may exit non-zero when it finds controller/scenario alignment issues; inspect the JSON rather than treating it as the headline acceptance check.
 
@@ -79,9 +81,11 @@ Policies compared:
 - `top-recommendation`: strongest prior recommendation only.
 - `controller`: current controller policy.
 
+The main fixture is the headline replay result and uses `anchor_step_correctness_rate` for the quality panel. The broad regression fixture is a supporting/debugging fixture; because it does not declare anchor steps, its chart quality panel falls back to `reveal_correctness` plus `hidden_violation_rate`. Do not average these two charts into one headline score: they answer different questions.
+
 For the controller row, check:
 
-- `reveal_correctness`: expected reasonable assets were opened.
+- `reveal_correctness`: scenario-supported assets were opened.
 - `irrelevant_reveal_rate`: opened assets outside the scenario expectation.
 - `hidden_violation_rate`: opened assets that should stay hidden.
 - `expected_reveal_match_rate`: expected `unlock` vs `configure` action types matched.
@@ -90,7 +94,6 @@ For the controller row, check:
 - `configuration_reveal_count`: per-row count showing when the controller changed a configuration instead of opening a new asset.
 - `correct_no_reveal_rate`: scanner/boundary no-reveal cases stayed closed.
 - `anchor_step_correctness_rate`: exact reveal/no-reveal correctness on the declared key decision points only.
-- `final_outcome_success_rate`: full scenario replay reached the declared final useful/reasonable outcome.
 - `useful_evidence_per_reveal`: opened assets that the scenario marks as producing concrete useful follow-up evidence, divided by opened assets.
 - `diagnostic_or_useful_per_reveal`: opened assets that the scenario marks as either useful or diagnostically informative, divided by opened assets.
 - `choice_signal_count` / `resolved_choice_rate`: among controller rows with both main and explore reveals plus fixture `touched_assets`, how often follow-up behavior identified a local choice signal.
@@ -102,26 +105,33 @@ For the controller row, check:
 - `gate_ready_assets_before_gate_avg` / `gate_eligible_assets_after_gate_avg`: average candidate count before and after the gate.
 - `gate_eligible_bucket_counts`: decision-point count where the gate left `zero`, `one`, or `two_plus` eligible candidates.
 - `rejection_reason_counts`: why assets were rejected before ranking, grouped into stable categories such as missing dependency, already revealed, unavailable, or no matching signal.
-- `prior_influence_rate`: how often the controller selection differs from the gate-only baseline, showing when the group prior changes the reveal decision.
+- `prior_influence_rate`: how often the controller selection differs from the gate-only baseline at decision-step level, showing when the group prior changes an individual reveal decision.
 - `decision_trace_completeness`: decision details include the required audit fields.
 
 Quick summary:
 
 ```bash
-jq '{ok: .ok, controller: (.policies.controller | {scenario_count, step_count, anchor_step_count, anchor_step_correctness_rate, anchor_missing_expected_reveal_count, anchor_failed_no_reveal_count, final_outcome_success_rate, reveal_correctness, irrelevant_reveal_rate, hidden_violation_rate, correct_no_reveal_rate, step_no_reveal_correctness_rate, avg_opened_assets, useful_evidence_per_reveal, timeline_reveal_efficiency_avg, diagnostic_or_useful_per_reveal, gate_narrowing_rate, gate_ready_assets_before_gate_avg, gate_eligible_assets_after_gate_avg, gate_eligible_bucket_counts, rejection_reason_counts, prior_influence_rate, decision_trace_completeness_rate, source_traceability_declared_rate, choice_signal_count, resolved_choice_rate, choice_signal_counts})}' results/reveal_policy_main_report.json
+jq '{ok: .ok, controller: (.policies.controller | {scenario_count, step_count, anchor_step_count, anchor_step_correctness_rate, anchor_missing_expected_reveal_count, anchor_failed_no_reveal_count, reveal_correctness, irrelevant_reveal_rate, hidden_violation_rate, correct_no_reveal_rate, step_no_reveal_correctness_rate, avg_opened_assets, useful_evidence_per_reveal, timeline_reveal_efficiency_avg, diagnostic_or_useful_per_reveal, gate_narrowing_rate, gate_ready_assets_before_gate_avg, gate_eligible_assets_after_gate_avg, gate_eligible_bucket_counts, rejection_reason_counts, prior_influenced_step_count, prior_comparison_step_count, prior_influence_rate, decision_trace_completeness_rate, source_traceability_declared_rate, choice_signal_count, resolved_choice_rate, choice_signal_counts})}' results/reveal_policy_main_report.json
 ```
 
-Expected for an accepted main controller/scenario set: no hidden violations, no missing or unexpected actions on anchor steps, no failed anchor no-reveal checks, declared source traceability for every step, and successful final useful/reasonable outcomes. The broad regression fixture may report unexpected actions when the controller reasonably opens more than a small scenario listed; that is useful for debugging but is not the headline accuracy number.
+To print the Markdown tables used for report prose, including the gate-narrowing, rejection-reason, prior-influence, and audit checks that are not plotted as separate figures:
+
+```bash
+.venv/bin/python scripts/evaluation/reveal_policy_report_summary.py \
+  results/reveal_policy_main_report.json \
+  results/reveal_policy_regression_report.json
+```
+
+Expected for an accepted main controller/scenario set: no hidden violations, no missing or unexpected actions on anchor steps, no failed anchor no-reveal checks, and declared source traceability for every step. The broad regression fixture may report unexpected actions when the controller opens scenario-supported assets beyond the small exact list; that is useful for debugging but is not the headline accuracy number.
 
 ## 3. Optional Public Dataset Prior Validation
 
-This checks whether the active ATT&CK group prior can recommend future technique families from locally downloaded ATT&CK-labelled public dataset traces. It does not train a new prior and does not affect runtime controller behavior. The reported command is scoped to CasinoLimit and UWF-ZeekData24 paths, and the report's `dataset_sources` field states which of those datasets actually contributed ordered multi-technique traces. These datasets provide labelled event traces, not Enterprise ATT&CK intrusion-set-to-technique relationships.
+This checks whether the active ATT&CK group prior can recommend future technique families from locally downloaded ATT&CK-labelled public dataset traces. It does not train a new prior and does not affect runtime controller behavior. The reported command is scoped to CasinoLimit, and the report's `dataset_sources` field states which dataset actually contributed ordered multi-technique traces. CasinoLimit provides labelled event traces, not Enterprise ATT&CK intrusion-set-to-technique relationships.
 
 Fetch optional validation material only when needed:
 
 ```bash
 .venv/bin/python scripts/data/fetch_public_attack_datasets.py --dry-run
-.venv/bin/python scripts/data/fetch_public_attack_datasets.py --dataset uwf-zeekdata24
 .venv/bin/python scripts/data/fetch_public_attack_datasets.py --dataset casinolimit
 ```
 
@@ -130,12 +140,11 @@ Run the offline dataset validation:
 ```bash
 .venv/bin/python scripts/evaluation/public_dataset_prior_validation.py \
   vendor/datasets/casinolimit \
-  vendor/datasets/uwf-zeekdata24 \
   --prior data/technique_prior/attack_group_technique_prior.json \
   --output results/public_dataset_prior_validation_report.json
 ```
 
-Expected: `trace_count > 0` when labelled local datasets exist. The report includes `dataset_sources` so the run states which datasets actually contributed traces. The script scans CSV, JSON, JSONL, YAML, and ZIP files for ordered ATT&CK technique traces, then reports the same family-aware precision, recall, specificity, and accuracy metrics used by scenario prior evaluation. It skips raw files larger than 2 MB by default; raise `--max-file-bytes` only when you specifically want to scan larger logs. A low score means the active group prior does not explain those public traces well; it does not mean the live honeynet route path is broken.
+Expected: `trace_count > 0` when labelled local datasets exist. The report includes `dataset_sources` so the run states which datasets actually contributed traces. The script scans CSV, JSON, JSONL, YAML, and ZIP files for ordered ATT&CK technique traces, then reports the same family-aware Hit/Precision/Recall/MRR rank sweep used by scenario prior evaluation. It also reports `dataset_diagnostics`, including unique technique-family count, top-family concentration, and overlap with the prior's technique universe, so high prior scores can be interpreted against dataset diversity rather than treated as standalone generalisation evidence. It skips raw files larger than 2 MB by default; raise `--max-file-bytes` only when you specifically want to scan larger logs. A low score means the active group prior does not explain those public traces well; it does not mean the live honeynet route path is broken.
 
 ## 4. Optional Controller-Only Route Check
 
@@ -191,11 +200,12 @@ Expected: each scenario has the expected `attacker_key + asset_id + public_port`
 
 ## 6. Live Runtime Latency
 
-This measures control-plane overhead after the compose stack is running.
+This measures reveal-application overhead after the compose stack is running. It is a feasibility and believability check, not a reveal-correctness metric. The report separates direct unlocks, prewarmed unlocks, and cold-start unlocks because averaging hidden prewarm, route refresh, and container startup hides the main fingerprinting risk.
 
 ```bash
 .venv/bin/python scripts/evaluation/runtime_latency.py \
-  --assets internal-portal,finance-share,web-admin-console,vpn-appliance,malware-sink \
+  --assets internal-portal,finance-share,web-admin-console,vpn-appliance,malware-sink,admin-jumpbox,dionaea-capture,honeytrap-generic \
+  --runs 5 \
   --output results/runtime_latency_report.json
 ```
 
@@ -214,17 +224,19 @@ Warm-standby is catalog-owned. The assets currently marked as warm-standby eligi
 | `vpn-appliance` | `18443` |
 | `malware-sink` | `18085` |
 
-These are fixed-port Docker-backed internal surfaces that can be started hidden and later exposed by writing an asset-gateway route. They are not hot routes: warm-standby does not make the port attacker-visible until a reveal action occurs. Protocol or capture-heavy assets such as `admin-jumpbox`, `legacy-telnet`, `mail-relay`, `dionaea-capture`, and `honeytrap-generic` are not warmed by default.
+These are fixed-port Docker-backed internal surfaces that can be started hidden and later exposed by writing an asset-gateway route. They are not hot routes: warm-standby does not make the port attacker-visible until a reveal action occurs. For warm-eligible assets, the latency script records both `direct` samples, where unlock starts or refreshes the runtime, and `prewarmed` samples, where `/v1/orchestration/prewarm` starts the hidden backend before the measured reveal. Multi-run latency samples use generated attacker keys and, by default, remove the previous generated binding/runtime containers before the next sample so Docker startup variance from stale latency containers does not accumulate. Protocol or capture-heavy assets such as `admin-jumpbox`, `dionaea-capture`, and `honeytrap-generic` are not warmed by default. They should be read as the cold-start path: a reveal may include container startup or a heavier target-runtime switch, so p50/p95 latency is more important than a single best-case number.
 
 Reported timings:
 
 - binding resolve latency
 - orchestrator apply latency
 - runtime startup as observed by the orchestrator response
-- route visible latency in `data/runtime/asset_gateway_routes.json`
-- per-asset pass/fail plus min/p50/max
+- hidden prewarm setup time in `binding_samples[].prewarm_apply_ms`
+- route-state readiness as a pass/fail guard, not as a latency metric
+- per-asset pass/fail plus apply min/p50/p95/max
+- warm/cold summaries in `class_summary`, direct/prewarmed summaries in `mode_summary`, and the main comparison paths in `path_summary`
 
-This also writes `results/runtime_latency_report.svg`, showing orchestrator apply time and route-visible time by asset.
+This also writes `results/runtime_latency_report.svg`, showing orchestrator apply p50/p95 by asset and reveal mode in one chart. In the report, use the JSON `path_summary` for the headline warm-direct, warm-prewarmed, and cold-direct comparison; use `asset_summary` only when per-asset detail is useful. The route table check is deliberately not plotted: it confirms that the gateway state was written, but it is not the same as measuring an attacker request reaching a backend. Startup verification is part of the orchestrator apply window: after `docker run`, the runtime checks that the container is still `Up` and, when configured, healthcheck-ready before recording it as running. If cold-start latency is visibly higher, discuss it as a known content/routing observability window rather than folding it into the reveal-policy accuracy result.
 
 ## 7. Manual Smoke
 
@@ -244,9 +256,11 @@ For a normal development check, run this sequence:
 
 ```bash
 .venv/bin/python scripts/validation/attack_group_prior.py --path data/technique_prior/attack_group_technique_prior.json
-.venv/bin/python scripts/evaluation/attack_group_prior_recommendation.py tests/fixtures/reveal_policy_scenarios.json --prior data/technique_prior/attack_group_technique_prior.json --output results/attack_group_prior_report.json
+.venv/bin/python scripts/evaluation/attack_group_prior_recommendation.py tests/fixtures/reveal_policy_main_scenarios.json tests/fixtures/reveal_policy_scenarios.json --prior data/technique_prior/attack_group_technique_prior.json --output results/attack_group_prior_report.json
+.venv/bin/python scripts/evaluation/public_dataset_prior_validation.py vendor/datasets/casinolimit --prior data/technique_prior/attack_group_technique_prior.json --output results/public_dataset_prior_validation_report.json
 .venv/bin/python scripts/evaluation/reveal_policy.py tests/fixtures/reveal_policy_main_scenarios.json --policy all --replay-mode sequence --output results/reveal_policy_main_report.json
-.venv/bin/python scripts/evaluation/reveal_policy.py tests/fixtures/reveal_policy_scenarios.json --policy all --replay-mode sequence --output results/reveal_policy_regression_report.json || true
+.venv/bin/python scripts/evaluation/reveal_policy.py tests/fixtures/reveal_policy_scenarios.json --policy all --replay-mode sequence --output results/reveal_policy_regression_report.json
+.venv/bin/python scripts/evaluation/runtime_latency.py --assets internal-portal,finance-share,web-admin-console,vpn-appliance,malware-sink,admin-jumpbox,dionaea-capture,honeytrap-generic --runs 5 --output results/runtime_latency_report.json
 # Optional route-selection sanity check, not attacker-behaviour evaluation.
 .venv/bin/python scripts/evaluation/reveal_port_simulation.py --mode controller-only --scenario-file tests/fixtures/reveal_port_scenarios.json --output results/reveal_port_controller_report.json
 docker-compose -p honeynet -f docker-compose.control.yml -f docker-compose.enterprise.yml config
