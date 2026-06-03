@@ -7,6 +7,7 @@ import pytest
 from libs.common.config import RuntimeConfig
 from libs.contracts.models import AssetDefinition, ControllerTickRequest, ProfileSnapshot
 from services.controller.domain import ControllerService, _technique_gain
+from services.controller.repository import FileAssetRepository
 from tests.support.inmemory_repositories import (
     InMemoryAssetRepository,
     InMemoryTechniquePriorRepository,
@@ -14,6 +15,8 @@ from tests.support.inmemory_repositories import (
 
 
 pytestmark = pytest.mark.unit
+
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_technique_gain_requires_prior_support() -> None:
@@ -184,6 +187,69 @@ def test_explore_reuses_multitech_asset_when_distinct_family_remains() -> None:
     ]
 
 
+def test_capture_asset_does_not_explore_from_technique_only_signal() -> None:
+    assets = [
+        AssetDefinition(
+            asset_id="main-credential",
+            asset_name="Credential Cache",
+            exposure_type="internal",
+            interaction_level="medium",
+            covers_tactics=["Credential Access"],
+            dependencies=[],
+            default_settings={
+                "selection_profile": {
+                    "asset_group": "credential-store",
+                    "covered_techniques": ["T1552.001"],
+                    "optional_dependency_signals": {
+                        "any_http_indicators": ["path:/credential"],
+                        "any_techniques": ["T1552.001"],
+                    },
+                    "telemetry_value": 1.0,
+                }
+            },
+        ),
+        AssetDefinition(
+            asset_id="capture-backend",
+            asset_name="Generic Capture",
+            exposure_type="internal",
+            interaction_level="medium",
+            covers_tactics=["Initial Access"],
+            dependencies=["main-credential"],
+            default_settings={
+                "unlock_signals": {"any_techniques": ["T1190"]},
+                "selection_profile": {
+                    "asset_group": "generic-capture",
+                    "covered_techniques": ["T1190"],
+                    "optional_dependency_signals": {"any_techniques": ["T1190"]},
+                    "telemetry_value": 0.9,
+                },
+            },
+        ),
+    ]
+    service = ControllerService(
+        InMemoryAssetRepository(assets),
+        InMemoryTechniquePriorRepository(),
+        config=RuntimeConfig(),
+    )
+
+    response = service.tick(
+        ControllerTickRequest(
+            attacker_key="198.51.100.54",
+            binding_id="binding-capture-technique-only",
+            profile=ProfileSnapshot(
+                attacker_key="198.51.100.54",
+                conf_by_technique={"T1552.001": 0.9, "T1190": 0.8},
+                recent_techniques=["T1552.001", "T1190"],
+                recent_public_http_indicators=["path:/credential"],
+                recent_evidence_ids=["e-capture-technique-only"],
+            ),
+        )
+    )
+
+    assert [action.asset_id for action in response.actions] == ["main-credential"]
+    assert response.decision_events[0].details["selected_strategy"] == "exploit"
+
+
 def test_tick_returns_noop_when_everything_is_already_unlocked() -> None:
     service = ControllerService(
         InMemoryAssetRepository(_assets()),
@@ -226,6 +292,78 @@ def test_tick_keeps_scanner_only_profile_closed() -> None:
 
     assert response.actions[0].action_type == "noop"
     assert response.decision_events[0].details["reveal_action"] == "no_reveal"
+
+
+def _catalog_controller() -> ControllerService:
+    return ControllerService(
+        FileAssetRepository(ROOT / "data/assets/catalog.json"),
+        InMemoryTechniquePriorRepository(),
+        config=RuntimeConfig(),
+    )
+
+
+def test_catalog_source_map_prefers_git_over_vpn() -> None:
+    response = _catalog_controller().tick(
+        ControllerTickRequest(
+            attacker_key="198.51.100.51",
+            binding_id="binding-source-map",
+            unlocked_asset_ids=["internal-portal"],
+            profile=ProfileSnapshot(
+                attacker_key="198.51.100.51",
+                conf_by_technique={"T1083": 0.8, "T1213": 0.6},
+                recent_techniques=["T1083", "T1213"],
+                recent_public_http_paths=["/assets/app.js.map"],
+                recent_public_http_indicators=["path:.map"],
+                recent_evidence_ids=["e-source-map"],
+            ),
+        )
+    )
+
+    assert response.actions[0].asset_id == "git-internal"
+    assert "vpn-appliance" not in response.candidate_asset_ids
+
+
+def test_catalog_admin_probe_prefers_web_admin_over_vpn() -> None:
+    response = _catalog_controller().tick(
+        ControllerTickRequest(
+            attacker_key="198.51.100.52",
+            binding_id="binding-admin",
+            unlocked_asset_ids=["internal-portal"],
+            profile=ProfileSnapshot(
+                attacker_key="198.51.100.52",
+                conf_by_technique={"T1078": 0.7, "T1110": 0.7},
+                recent_techniques=["T1078", "T1110"],
+                recent_public_http_paths=["/admin"],
+                recent_public_http_indicators=["path:/admin"],
+                recent_evidence_ids=["e-admin"],
+            ),
+        )
+    )
+
+    assert response.actions[0].asset_id == "web-admin-console"
+    assert "vpn-appliance" not in response.candidate_asset_ids
+
+
+def test_catalog_password_probe_prefers_ssh_canary_over_other_protocol_lures() -> None:
+    response = _catalog_controller().tick(
+        ControllerTickRequest(
+            attacker_key="198.51.100.53",
+            binding_id="binding-password",
+            unlocked_asset_ids=["internal-portal"],
+            profile=ProfileSnapshot(
+                attacker_key="198.51.100.53",
+                conf_by_technique={"T1110": 0.8, "T1021.004": 0.6},
+                recent_techniques=["T1110", "T1021.004"],
+                recent_public_http_paths=["/backup/passwords_internal.txt"],
+                recent_public_http_indicators=["combined:password"],
+                recent_evidence_ids=["e-password"],
+            ),
+        )
+    )
+
+    assert response.actions[0].asset_id == "ssh-canary"
+    assert "legacy-telnet" not in response.candidate_asset_ids
+    assert "mail-relay" not in response.candidate_asset_ids
 
 
 def test_tick_uses_weak_evidence_fallback_with_concrete_marker() -> None:

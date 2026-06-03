@@ -158,8 +158,8 @@ def test_internal_assets_declare_public_http_unlock_signals() -> None:
         "git-internal": "/assets/app.js.map",
         "redis-cache": "/.env.old",
         "web-admin-console": "/admin",
-        "ftp-archive": "/backup/passwords_internal.txt",
-        "vpn-appliance": "/admin",
+        "ftp-archive": "/backup/db_backup_2024.sql.bak",
+        "vpn-appliance": "/download/contractor-profile.ovpn",
         "malware-sink": "public_http_exploit_probe",
     }
 

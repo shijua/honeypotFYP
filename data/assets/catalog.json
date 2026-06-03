@@ -238,12 +238,10 @@
       ],
       "unlock_signals": {
         "any_http_paths": [
-          "/backup/db_backup_2024.sql.bak",
-          "/backup/passwords_internal.txt"
+          "/backup/db_backup_2024.sql.bak"
         ],
         "any_http_indicators": [
           "combined:backup",
-          "combined:password",
           "path:.bak"
         ]
       },
@@ -258,7 +256,7 @@
           "archive filenames",
           "staged collection folders"
         ],
-        "selection_notes": "Use after backup, finance, password, or data-collection breadcrumbs.",
+        "selection_notes": "Use after backup, finance, archive, or data-collection breadcrumbs.",
         "asset_group": "data-share",
         "covered_techniques": [
           "T1005",
@@ -266,12 +264,10 @@
         ],
         "optional_dependency_signals": {
           "any_http_paths": [
-            "/backup/db_backup_2024.sql.bak",
-            "/backup/passwords_internal.txt"
+            "/backup/db_backup_2024.sql.bak"
           ],
           "any_http_indicators": [
             "combined:backup",
-            "combined:password",
             "path:.bak"
           ],
           "any_techniques": [
@@ -781,6 +777,12 @@
       "image_references": [
         "ghcr.io/telekom-security/cowrie:24.04.1"
       ],
+      "unlock_signals": {
+        "any_asset_ids": [
+          "git-internal",
+          "ssh-canary"
+        ]
+      },
       "selection_profile": {
         "tactic_difficulties": {
           "Collection": 4,
@@ -809,6 +811,10 @@
           "T1082"
         ],
         "optional_dependency_signals": {
+          "any_asset_ids": [
+            "git-internal",
+            "ssh-canary"
+          ],
           "any_techniques": [
             "T1021",
             "T1021.004",
@@ -1146,13 +1152,11 @@
       "unlock_signals": {
         "any_http_paths": [
           "/admin",
-          "/api/search",
-          "/assets/app.js.map"
+          "/api/search"
         ],
         "any_http_indicators": [
           "path:/admin",
           "path:/api",
-          "path:.map",
           "user_agent:sqlmap"
         ]
       },
@@ -1176,7 +1180,7 @@
           "container resource summaries",
           "account lifecycle and role-change records"
         ],
-        "selection_notes": "Use after /admin, admin source-map references, API probing, or scanner user agents.",
+        "selection_notes": "Use after /admin, API probing, or scanner user agents.",
         "asset_group": "admin-web",
         "covered_techniques": [
           "T1078",
@@ -1185,13 +1189,11 @@
         "optional_dependency_signals": {
           "any_http_paths": [
             "/admin",
-            "/api/search",
-            "/assets/app.js.map"
+            "/api/search"
           ],
           "any_http_indicators": [
             "path:/admin",
             "path:/api",
-            "path:.map",
             "user_agent:sqlmap"
           ],
           "any_techniques": [
@@ -1370,12 +1372,10 @@
       ],
       "unlock_signals": {
         "any_http_paths": [
-          "/backup/db_backup_2024.sql.bak",
-          "/backup/passwords_internal.txt"
+          "/backup/db_backup_2024.sql.bak"
         ],
         "any_http_indicators": [
           "combined:backup",
-          "combined:password",
           "path:.bak"
         ]
       },
@@ -1390,7 +1390,7 @@
           "backup bundle references",
           "older config filenames"
         ],
-        "selection_notes": "Use after backup path discovery, password files, or archive-oriented behaviour.",
+        "selection_notes": "Use after backup path discovery or archive-oriented behaviour.",
         "asset_group": "archive",
         "covered_techniques": [
           "T1005",
@@ -1398,18 +1398,15 @@
         ],
         "optional_dependency_signals": {
           "any_http_paths": [
-            "/backup/db_backup_2024.sql.bak",
-            "/backup/passwords_internal.txt"
+            "/backup/db_backup_2024.sql.bak"
           ],
           "any_http_indicators": [
             "combined:backup",
-            "combined:password",
             "path:.bak"
           ],
           "any_techniques": [
             "T1005",
-            "T1110",
-            "T1552.001"
+            "T1039"
           ]
         },
         "telemetry_value": 0.75
@@ -1706,10 +1703,13 @@
       ],
       "unlock_signals": {
         "any_http_paths": [
-          "/backup/passwords_internal.txt"
+          "/legacy",
+          "/telnet"
         ],
         "any_http_indicators": [
-          "combined:password"
+          "combined:legacy",
+          "combined:telnet",
+          "path:/telnet"
         ]
       },
       "selection_profile": {
@@ -1731,13 +1731,15 @@
         ],
         "optional_dependency_signals": {
           "any_http_paths": [
-            "/backup/passwords_internal.txt"
+            "/legacy",
+            "/telnet"
           ],
           "any_http_indicators": [
-            "combined:password"
+            "combined:legacy",
+            "combined:telnet",
+            "path:/telnet"
           ],
           "any_techniques": [
-            "T1110",
             "T1021"
           ]
         },
@@ -1865,12 +1867,16 @@
       ],
       "unlock_signals": {
         "any_http_paths": [
-          "/.env.old",
-          "/backup/passwords_internal.txt"
+          "/mail",
+          "/smtp",
+          "/relay"
         ],
         "any_http_indicators": [
-          "combined:.env",
-          "combined:password"
+          "combined:mail",
+          "combined:smtp",
+          "combined:relay",
+          "combined:recipient",
+          "combined:corp.example"
         ]
       },
       "selection_profile": {
@@ -1892,16 +1898,19 @@
         ],
         "optional_dependency_signals": {
           "any_http_paths": [
-            "/.env.old",
-            "/backup/passwords_internal.txt"
+            "/mail",
+            "/smtp",
+            "/relay"
           ],
           "any_http_indicators": [
-            "combined:.env",
-            "combined:password"
+            "combined:mail",
+            "combined:smtp",
+            "combined:relay",
+            "combined:recipient",
+            "combined:corp.example"
           ],
           "any_techniques": [
-            "T1087.003",
-            "T1110"
+            "T1087.003"
           ]
         },
         "telemetry_value": 0.75
@@ -2027,14 +2036,16 @@
       ],
       "unlock_signals": {
         "any_http_paths": [
-          "/admin",
-          "/.env.old",
-          "/assets/app.js.map"
+          "/download/contractor-profile.ovpn",
+          "/vpn",
+          "/remote-access"
         ],
         "any_http_indicators": [
-          "path:/admin",
-          "combined:.env",
-          "path:.map"
+          "path:.ovpn",
+          "path:/vpn",
+          "combined:vpn",
+          "combined:openvpn",
+          "combined:wireguard"
         ]
       },
       "selection_profile": {
@@ -2063,22 +2074,21 @@
         ],
         "optional_dependency_signals": {
           "any_http_paths": [
-            "/admin",
-            "/.env.old",
-            "/assets/app.js.map"
+            "/download/contractor-profile.ovpn",
+            "/vpn",
+            "/remote-access"
           ],
           "any_http_indicators": [
-            "path:/admin",
-            "combined:.env",
-            "path:.map"
+            "path:.ovpn",
+            "path:/vpn",
+            "combined:vpn",
+            "combined:openvpn",
+            "combined:wireguard"
           ],
           "any_techniques": [
             "T1078",
             "T1552",
             "T1552.001",
-            "T1033",
-            "T1082",
-            "T1016",
             "T1550",
             "T1572",
             "T1011",

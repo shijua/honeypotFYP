@@ -452,6 +452,8 @@ class ControllerService:
                 return None
             if not (_has_concrete_dependency_marker(matched_markers) or option.upgrade_context):
                 return None
+            if _requires_upgrade_context_for_explore(option) and not option.upgrade_context:
+                return None
             technique_scores = _explore_technique_scores(
                 technique_scores,
                 exploit_context,
@@ -952,6 +954,16 @@ def _has_concrete_dependency_marker(markers: list[str]) -> bool:
     path, rule, or indicator so they do not branch from prior noise alone.
     """
     return any(not marker.startswith(("any_techniques:", "any_tactics:")) for marker in markers)
+
+
+def _requires_upgrade_context_for_explore(option: RevealOption) -> bool:
+    """Return whether explore must be an explicit catalog upgrade."""
+    if option.action_type == ActionType.configure:
+        return False
+    return option.asset_group in {
+        "generic-capture",
+        "payload-transfer-high",
+    }
 
 
 def _configuration_variants(asset: AssetDefinition) -> list[dict[str, Any]]:
