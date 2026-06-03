@@ -352,6 +352,7 @@ def _runtime_summary(
     return {
         "asset_id": record.get("asset_id"),
         "asset_name": record.get("asset_name"),
+        "started_at": record.get("started_at"),
         "status": record.get("status"),
         "template_family": record.get("template_family"),
         "runtime_backend": runtime_backend,

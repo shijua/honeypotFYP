@@ -115,7 +115,7 @@ Expected for an accepted main controller/scenario set: no hidden violations, no 
 
 ## 3. Optional Public Dataset Prior Validation
 
-This checks whether the active ATT&CK group prior can recommend future technique families from locally downloaded ATT&CK-labelled public dataset traces. It does not train a new prior and does not affect runtime controller behavior.
+This checks whether the active ATT&CK group prior can recommend future technique families from locally downloaded ATT&CK-labelled public dataset traces. It does not train a new prior and does not affect runtime controller behavior. The reported command is scoped to CasinoLimit and UWF-ZeekData24 paths, and the report's `dataset_sources` field states which of those datasets actually contributed ordered multi-technique traces. These datasets provide labelled event traces, not Enterprise ATT&CK intrusion-set-to-technique relationships.
 
 Fetch optional validation material only when needed:
 
@@ -123,19 +123,19 @@ Fetch optional validation material only when needed:
 .venv/bin/python scripts/data/fetch_public_attack_datasets.py --dry-run
 .venv/bin/python scripts/data/fetch_public_attack_datasets.py --dataset uwf-zeekdata24
 .venv/bin/python scripts/data/fetch_public_attack_datasets.py --dataset casinolimit
-.venv/bin/python scripts/data/fetch_public_attack_datasets.py --dataset mordor --mordor-section compound --mordor-limit 20
 ```
 
 Run the offline dataset validation:
 
 ```bash
 .venv/bin/python scripts/evaluation/public_dataset_prior_validation.py \
-  vendor/datasets \
+  vendor/datasets/casinolimit \
+  vendor/datasets/uwf-zeekdata24 \
   --prior data/technique_prior/attack_group_technique_prior.json \
   --output results/public_dataset_prior_validation_report.json
 ```
 
-Expected: `trace_count > 0` when labelled local datasets exist. The script scans CSV, JSON, JSONL, YAML, and ZIP files for ordered ATT&CK technique traces, then reports the same family-aware precision, recall, specificity, and accuracy metrics used by scenario prior evaluation. It skips raw files larger than 2 MB by default; raise `--max-file-bytes` only when you specifically want to scan larger logs. A low score means the active group prior does not explain those public traces well; it does not mean the live honeynet route path is broken.
+Expected: `trace_count > 0` when labelled local datasets exist. The report includes `dataset_sources` so the run states which datasets actually contributed traces. The script scans CSV, JSON, JSONL, YAML, and ZIP files for ordered ATT&CK technique traces, then reports the same family-aware precision, recall, specificity, and accuracy metrics used by scenario prior evaluation. It skips raw files larger than 2 MB by default; raise `--max-file-bytes` only when you specifically want to scan larger logs. A low score means the active group prior does not explain those public traces well; it does not mean the live honeynet route path is broken.
 
 ## 4. Optional Controller-Only Route Check
 

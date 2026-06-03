@@ -77,11 +77,45 @@ function assetConfigurationLabels(assets) {
   });
 }
 
-function runningAssetLabel(asset) {
-  const assetId = asset.asset_id || asset.asset_name || "asset";
-  const configurationIds = asset.active_configuration_ids || [];
-  const target = configurationIds.length ? `${assetId}:${configurationIds.join(",")}` : assetId;
-  return `${target} ${asset.ports.join(", ")}`;
+function compactLabels(items) {
+  return (items || []).filter(item => item && item !== "-");
+}
+
+function decisionConfigurationLabels(decisions) {
+  const labels = [];
+  (decisions || []).forEach(decision => {
+    (decision.actions || []).forEach(action => {
+      if (action.configuration_id) {
+        labels.push(`${action.asset_id}:${action.configuration_id}`);
+      }
+    });
+    (decision.route_updates || []).forEach(update => {
+      const text = String(update || "");
+      const match = text.match(/\bconfigures\s+([^\s]+)/);
+      if (match) {
+        labels.push(match[1]);
+      }
+    });
+  });
+  return [...new Set(labels)];
+}
+
+function attackerActivityLabels(attacker) {
+  const commands = (attacker.commands || []).map(command => `cmd:${command}`);
+  const publicEvidence = (attacker.public_http_evidence || []).map(item => `public:${item}`);
+  const internalEvidence = (attacker.internal_http_evidence || []).map(item => `internal:${item}`);
+  const configs = [
+    ...assetConfigurationLabels(attacker.current_running_assets || []),
+    ...decisionConfigurationLabels(attacker.decisions || []),
+  ].map(item => `config:${item}`);
+  return [...new Set([...commands, ...publicEvidence, ...internalEvidence, ...configs])];
+}
+
+function decisionTargetLabel(event) {
+  if (event.configuration_id && event.asset_id) {
+    return `${event.asset_id}:${event.configuration_id}`;
+  }
+  return event.asset_id || "";
 }
 
 function detailOpenAttribute(key, defaultOpen = false) {
@@ -230,9 +264,10 @@ function renderAttackers(attackers) {
       const runningAssets = (attacker.current_running_assets || []).map(asset => asset.asset_id || asset.asset_name || "asset");
       const latestDecision = (attacker.decisions || []).slice(-1)[0] || {};
       const latestDecisionEvents = latestDecision.decision_events || [];
-      const latestDecisionLabel = latestDecisionEvents.length
-        ? latestDecisionEvents.map(event => event.asset_id || event.selected_technique || "-").join(", ")
-        : (latestDecision.reasons || []).join(", ");
+      const latestDecisionParts = latestDecisionEvents.length
+        ? latestDecisionEvents.flatMap(event => compactLabels([decisionTargetLabel(event), event.selected_technique]))
+        : (latestDecision.reasons || []);
+      const latestDecisionLabel = compactLabels(latestDecisionParts).join(", ");
       return `
       <details class="attacker-card" data-detail-key="${escapeHtml(attackerKey)}"${detailOpenAttribute(attackerKey, true)}>
         <summary class="attacker-head">
@@ -245,17 +280,14 @@ function renderAttackers(attackers) {
             ${latestDecisionLabel ? `<span class="badge warn">${escapeHtml(latestDecisionLabel)}</span>` : ""}
           </div>
         </summary>
-        <div class="attacker-body">
+          <div class="attacker-body">
           <div class="kv"><div class="key">Tactics</div><div>${badgeList(attacker.recent_tactics || [])}</div></div>
           <div class="kv"><div class="key">Techniques</div><div>${techniqueBadgeList(attacker.recent_techniques || [], attacker.confidence_by_technique || {})}</div></div>
-          <div class="kv"><div class="key">Commands</div><div>${badgeList(attacker.commands || [])}</div></div>
-          <div class="kv"><div class="key">Recent HTTP Evidence</div><div>${badgeList(attacker.public_http_evidence || [])}</div></div>
-          <div class="kv"><div class="key">Recent Internal HTTP</div><div>${badgeList(attacker.internal_http_evidence || [])}</div></div>
+          <div class="kv"><div class="key">Recent Activity</div><div>${badgeList(attackerActivityLabels(attacker))}</div></div>
           <div class="kv"><div class="key">Unlocked</div><div>${badgeList(attacker.unlocked_assets || [])}</div></div>
           <div class="kv"><div class="key">Configured</div><div>${badgeList(assetConfigurationLabels(attacker.current_running_assets || []), "warn")}</div></div>
-          <div class="kv"><div class="key">Running</div><div>${badgeList((attacker.current_running_assets || []).map(asset => runningAssetLabel(asset)))}</div></div>
           <div class="kv"><div class="key">Failed</div><div>${badgeList((attacker.failed_assets || []).map(asset => `${asset.asset_id} ${asset.failure_detail || asset.current_container_status || "failed"}`), "bad")}</div></div>
-          <div class="kv decision-kv"><div class="key">Decisions</div><div>${renderDecisions(attacker.decisions || [], attacker.attacker_key || "-", attacker.confidence_by_technique || {})}</div></div>
+          <div class="kv decision-kv"><div class="key">Decision Trace</div><div>${renderDecisions(attacker.decisions || [], attacker.attacker_key || "-", attacker.confidence_by_technique || {})}</div></div>
         </div>
       </details>
     `;
@@ -268,7 +300,7 @@ function renderDecisions(decisions, attackerKey, confidences = {}) {
     return '<span class="subtle">none</span>';
   }
   return `<div class="decision-list">
-    ${decisions.slice(-3).reverse().map(decision => renderDecision(decision, attackerKey, confidences)).join("")}
+    ${decisions.slice().reverse().map(decision => renderDecision(decision, attackerKey, confidences)).join("")}
   </div>`;
 }
 
@@ -281,19 +313,22 @@ function renderDecision(decision, attackerKey, confidences = {}) {
     const target = action.configuration_id
       ? `${action.asset_id}:${action.configuration_id}`
       : action.asset_id;
-    return `${action.action_type || "action"} ${target || "-"}`;
+    return `${action.action_type || "action"} ${target || ""}`.trim();
   });
-  const droppedLabels = (decision.dropped_actions || []).map(action => `${action.action_type || "action"} ${action.asset_id || "-"}`);
-  const summary = actionLabels.length ? actionLabels.join(", ") : (decision.reasons || []).join(", ") || "decision";
+  const droppedLabels = (decision.dropped_actions || []).map(action => `${action.action_type || "action"} ${action.asset_id || ""}`.trim());
+  const summary = actionLabels.length ? actionLabels.join(", ") : (decision.reasons || []).join(", ") || "no reveal";
   const detailKey = `decision:${attackerKey}:${decision.ts || "-"}:${actionLabels.join("|")}`;
   return `<details class="decision-block" data-detail-key="${escapeHtml(detailKey)}"${detailOpenAttribute(detailKey, true)}>
     <summary class="decision-meta">
-      <span class="mono">${escapeHtml(decision.ts || "-")}</span>
+      <span class="trace-summary"><span class="trace-dot"></span><span class="mono">${escapeHtml(decision.ts || "-")}</span></span>
       <span class="subtle">${escapeHtml(summary)}</span>
       <span>${techniqueBadgeList(decision.recent_techniques || [], confidences)}</span>
     </summary>
     ${eventRows}
-    <div class="decision-row subtle">actions ${badgeList(actionLabels)} dropped ${badgeList(droppedLabels, "bad")}</div>
+    <div class="decision-actions subtle">
+      <span>actions ${badgeList(actionLabels)}</span>
+      <span>dropped ${badgeList(droppedLabels, "bad")}</span>
+    </div>
   </details>`;
 }
 
@@ -304,14 +339,11 @@ function renderDecisionEvent(event) {
   const confidence = event.confidence_score === null || event.confidence_score === undefined
     ? "-"
     : Number(event.confidence_score).toFixed(2);
-  const target = event.configuration_id
-    ? `${event.asset_id}:${event.configuration_id}`
-    : event.asset_id || "-";
-  const labels = [
+  const labels = compactLabels([
     event.candidate_type,
     event.selected_technique,
-    target,
-  ].filter(Boolean);
+    decisionTargetLabel(event),
+  ]);
   const counts = `eligible ${event.eligible_asset_count ?? 0}, rejected ${event.rejected_asset_count ?? 0}, support ${support}, conf ${confidence}`;
   return `<div class="decision-row">
     <div>${badgeList(labels)}</div>
@@ -320,22 +352,117 @@ function renderDecisionEvent(event) {
   </div>`;
 }
 
-function renderObservationTable(records, columns) {
+function renderActivityTable(records) {
   if (!records.length) {
     return '<div class="empty">No events yet.</div>';
   }
   return `<table>
     <thead>
-      <tr>${columns.map(column => `<th>${escapeHtml(column.label)}</th>`).join("")}</tr>
+      <tr><th>Time</th><th>Attacker</th><th>Source</th><th>Event</th><th>Detail</th><th>Evidence</th></tr>
     </thead>
     <tbody>
       ${records.map(record => `
         <tr>
-          ${columns.map(column => `<td class="${column.mono ? "mono" : ""}">${escapeHtml(column.value(record))}</td>`).join("")}
+          <td class="mono">${escapeHtml(record.ts || "-")}</td>
+          <td class="mono">${escapeHtml(record.attacker || "-")}</td>
+          <td>${escapeHtml(record.source || "-")}</td>
+          <td>${escapeHtml(record.event || "-")}</td>
+          <td class="mono">${escapeHtml(record.detail || "-")}</td>
+          <td>${escapeHtml(record.evidence || "-")}</td>
         </tr>
       `).join("")}
     </tbody>
   </table>`;
+}
+
+function activityTimestamp(record) {
+  return record.ts || record.timestamp || record.utc_time || "-";
+}
+
+function buildRecentActivity(data) {
+  const rows = [];
+  (data.recent_entrypoint_observations || []).forEach(row => {
+    rows.push({
+      ts: activityTimestamp(row),
+      attacker: row.attacker_key || "-",
+      source: "public-http",
+      event: `${row.method || "HTTP"} ${row.path || "-"}`,
+      detail: `status ${row.response_status ?? "-"}`,
+      evidence: [...(row.matched_rules || []), ...(row.indicators || [])].join(", "),
+    });
+  });
+  (data.recent_cowrie_observations || []).forEach(row => {
+    rows.push({
+      ts: activityTimestamp(row),
+      attacker: row.attacker_key || row.src_ip || "-",
+      source: "cowrie",
+      event: row.eventid || "-",
+      detail: row.command || "-",
+      evidence: row.session || "-",
+    });
+  });
+  (data.recent_opencanary_observations || []).forEach(row => {
+    rows.push({
+      ts: activityTimestamp(row),
+      attacker: row.attacker_key || row.src_host || "-",
+      source: "opencanary",
+      event: row.service || "-",
+      detail: `port ${row.dst_port ?? "-"}`,
+      evidence: row.username ? `user ${row.username}` : (row.password_seen ? "password seen" : ""),
+    });
+  });
+  (data.recent_high_interaction_observations || []).forEach(row => {
+    rows.push({
+      ts: activityTimestamp(row),
+      attacker: row.attacker_key || row.src_ip || "-",
+      source: row.source || "high-interaction",
+      event: row.service || row.event_type || row.eventid || "-",
+      detail: row.path || row.command || row.signature || "-",
+      evidence: row.asset_id || row.category || "",
+    });
+  });
+  (data.attackers || []).forEach(attacker => {
+    (attacker.historical_opened_assets || []).forEach(asset => {
+      (asset.active_configuration_ids || []).forEach(configurationId => {
+        rows.push({
+          ts: asset.started_at || "-",
+          attacker: attacker.attacker_key || "-",
+          source: "runtime",
+          event: "configured runtime",
+          detail: `${asset.asset_id || "asset"}:${configurationId}`,
+          evidence: asset.image || asset.runtime_backend || "",
+        });
+      });
+    });
+    (attacker.decisions || []).forEach(decision => {
+      (decision.actions || []).forEach(action => {
+        const target = action.configuration_id
+          ? `${action.asset_id}:${action.configuration_id}`
+          : action.asset_id;
+        rows.push({
+          ts: decision.ts || "-",
+          attacker: attacker.attacker_key || "-",
+          source: "controller",
+          event: action.action_type || "action",
+          detail: target || "-",
+          evidence: (decision.recent_techniques || []).join(", "),
+        });
+      });
+      (decision.route_updates || []).forEach(update => {
+        rows.push({
+          ts: decision.ts || "-",
+          attacker: attacker.attacker_key || "-",
+          source: "orchestrator",
+          event: "route update",
+          detail: update || "-",
+          evidence: "",
+        });
+      });
+    });
+  });
+  return rows
+    .sort((left, right) => String(right.ts).localeCompare(String(left.ts)))
+    .slice(0, 60);
 }
 
 async function loadData() {
@@ -356,39 +483,7 @@ async function loadData() {
       data.asset_gateway_routes || [],
   ));
   replacePanelHtml("attackers-panel", renderAttackers(data.attackers || []));
-  replacePanelHtml("entrypoint-panel", renderObservationTable(
-    data.recent_entrypoint_observations || [],
-    [
-      { label: "Time", value: row => row.ts || row.timestamp || "-", mono: true },
-      { label: "Attacker", value: row => row.attacker_key || "-", mono: true },
-      { label: "Method", value: row => row.method || "-" },
-      { label: "Path", value: row => row.path || "-", mono: true },
-      { label: "Rules", value: row => (row.matched_rules || []).join(", ") || "-" },
-      { label: "Evidence", value: row => (row.indicators || []).join(", ") || "-" },
-      { label: "Status", value: row => row.response_status ?? "-" },
-    ],
-  ));
-  replacePanelHtml("cowrie-panel", renderObservationTable(
-    data.recent_cowrie_observations || [],
-    [
-      { label: "Time", value: row => row.ts || row.timestamp || "-", mono: true },
-      { label: "Attacker", value: row => row.attacker_key || row.src_ip || "-", mono: true },
-      { label: "Event", value: row => row.eventid || "-", mono: true },
-      { label: "Command", value: row => row.command || "-" },
-      { label: "Session", value: row => row.session || "-", mono: true },
-    ],
-  ));
-  replacePanelHtml("opencanary-panel", renderObservationTable(
-    data.recent_opencanary_observations || [],
-    [
-      { label: "Time", value: row => row.ts || row.utc_time || "-", mono: true },
-      { label: "Attacker", value: row => row.attacker_key || row.src_host || "-", mono: true },
-      { label: "Service", value: row => row.service || "-", mono: true },
-      { label: "Port", value: row => row.dst_port ?? "-" },
-      { label: "User", value: row => row.username || "-" },
-      { label: "Password", value: row => row.password_seen ? "seen" : "-" },
-    ],
-  ));
+  replacePanelHtml("activity-panel", renderActivityTable(buildRecentActivity(data)));
   document.getElementById("refresh-label").textContent = `Updated ${new Date(data.generated_at).toLocaleTimeString()} | every ${refreshSeconds}s`;
 }
 

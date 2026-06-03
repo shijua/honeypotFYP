@@ -179,6 +179,124 @@ def test_profile_recent_sequence_respects_time_window() -> None:
     assert "Discovery" not in latest.profile.recent_tactics
 
 
+def test_repeated_same_evidence_does_not_inflate_confidence() -> None:
+    service = ProfilerService(
+        InMemoryEvidenceRepository(),
+        InMemoryProfileRepository(),
+        build_test_attack_catalog(),
+    )
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+    first = service.ingest(
+        EvidenceIngestRequest(
+            attacker_key="198.51.100.60",
+            binding_id="binding-dup",
+            event=FalcoEvent(
+                ts=start,
+                falco_rule="HTTP asset request",
+                priority="low",
+                output="GET /api/openapi-summary.json",
+                tags=["mitre_discovery", "T1046"],
+                output_fields={
+                    "source": "internal_http",
+                    "asset_id": "internal-portal",
+                    "http_method": "GET",
+                    "http_path": "/api/openapi-summary.json",
+                    "http_rule_names": [
+                        "internal_http_portal_service_directory_artifacts"
+                    ],
+                },
+            ),
+        )
+    )
+    second = service.ingest(
+        EvidenceIngestRequest(
+            attacker_key="198.51.100.60",
+            binding_id="binding-dup",
+            event=FalcoEvent(
+                ts=start + timedelta(seconds=5),
+                falco_rule="HTTP asset request",
+                priority="low",
+                output="GET /api/openapi-summary.json again",
+                tags=["mitre_discovery", "T1046"],
+                output_fields={
+                    "source": "internal_http",
+                    "asset_id": "internal-portal",
+                    "http_method": "GET",
+                    "http_path": "/api/openapi-summary.json",
+                    "http_rule_names": [
+                        "internal_http_portal_service_directory_artifacts"
+                    ],
+                },
+            ),
+        )
+    )
+
+    assert (
+        second.profile.conf_by_technique["T1046"]
+        == first.profile.conf_by_technique["T1046"]
+    )
+
+
+def test_distinct_evidence_paths_still_increase_confidence() -> None:
+    service = ProfilerService(
+        InMemoryEvidenceRepository(),
+        InMemoryProfileRepository(),
+        build_test_attack_catalog(),
+    )
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+    first = service.ingest(
+        EvidenceIngestRequest(
+            attacker_key="198.51.100.61",
+            binding_id="binding-distinct",
+            event=FalcoEvent(
+                ts=start,
+                falco_rule="HTTP asset request",
+                priority="low",
+                output="GET /api/openapi-summary.json",
+                tags=["mitre_discovery", "T1046"],
+                output_fields={
+                    "source": "internal_http",
+                    "asset_id": "internal-portal",
+                    "http_method": "GET",
+                    "http_path": "/api/openapi-summary.json",
+                    "http_rule_names": [
+                        "internal_http_portal_service_directory_artifacts"
+                    ],
+                },
+            ),
+        )
+    )
+    second = service.ingest(
+        EvidenceIngestRequest(
+            attacker_key="198.51.100.61",
+            binding_id="binding-distinct",
+            event=FalcoEvent(
+                ts=start + timedelta(seconds=5),
+                falco_rule="HTTP asset request",
+                priority="low",
+                output="GET /runbooks/service-directory.md",
+                tags=["mitre_discovery", "T1046"],
+                output_fields={
+                    "source": "internal_http",
+                    "asset_id": "internal-portal",
+                    "http_method": "GET",
+                    "http_path": "/runbooks/service-directory.md",
+                    "http_rule_names": [
+                        "internal_http_portal_service_directory_artifacts"
+                    ],
+                },
+            ),
+        )
+    )
+
+    assert (
+        second.profile.conf_by_technique["T1046"]
+        > first.profile.conf_by_technique["T1046"]
+    )
+
+
 def test_profile_rebuild_accepts_mixed_naive_and_aware_datetimes() -> None:
     service = ProfilerService(
         InMemoryEvidenceRepository(),

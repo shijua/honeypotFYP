@@ -215,10 +215,61 @@ class ProfilerService:
 
         confidences: dict[str, float] = {}
         for key, items in grouped.items():
-            score = sum(item.weight for item in items)
+            # Repeated probes of the same path/command should not inflate
+            # confidence; distinct evidence fingerprints still stack.
+            weights_by_fingerprint: dict[tuple[object, ...], float] = {}
+            for item in items:
+                fingerprint = self._confidence_fingerprint(item)
+                weights_by_fingerprint[fingerprint] = max(
+                    weights_by_fingerprint.get(fingerprint, 0.0),
+                    item.weight,
+                )
+            score = sum(weights_by_fingerprint.values())
             confidences[key] = round(1 - math.exp(-score), 4)
 
         return confidences
+
+    def _confidence_fingerprint(self, evidence: TechniqueEvidence) -> tuple[object, ...]:
+        """Return a stable evidence identity for confidence aggregation."""
+        source_ref = evidence.source_ref
+        keys = (
+            "source",
+            "asset_id",
+            "event_type",
+            "falco_rule",
+            "proc_cmdline",
+            "proc_name",
+            "fd_name",
+            "http_surface",
+            "http_method",
+            "http_path",
+            "http_query_string",
+            "http_user_agent",
+            "http_rule_names",
+            "http_indicators",
+            "opencanary_service",
+            "opencanary_logtype",
+            "opencanary_command",
+            "opencanary_commands",
+            "opencanary_repo",
+            "high_interaction_source",
+            "high_interaction_service",
+            "high_interaction_event_type",
+            "username",
+            "password_seen",
+        )
+        parts: list[object] = []
+        for key in keys:
+            if key not in source_ref:
+                continue
+            value = source_ref[key]
+            if isinstance(value, list):
+                parts.append((key, tuple(str(item) for item in value)))
+            else:
+                parts.append((key, str(value)))
+        if parts:
+            return tuple(parts)
+        return ("reason", evidence.reason, evidence.success)
 
     def _priority_to_weight(self, priority: str) -> float:
         label = str(priority or "low").strip().lower()

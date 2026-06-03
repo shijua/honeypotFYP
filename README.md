@@ -94,11 +94,16 @@ HONEYPOT_COWRIE_COMMAND_MAPPING_MODE=hybrid \
 ./scripts/start_enterprise_stack.sh
 ```
 
-Optional ATT&CK-labelled public datasets can be fetched for offline validation work; they are not the active runtime prior.
+Optional ATT&CK-labelled public datasets can be fetched for offline validation work; they are not the active runtime prior. These datasets provide labelled traces rather than Enterprise ATT&CK-style intrusion-set-to-technique relationships, so they are used to check the prior rather than train it.
 
 ```bash
 .venv/bin/python scripts/data/fetch_public_attack_datasets.py --dry-run
-.venv/bin/python scripts/evaluation/public_dataset_prior_validation.py vendor/datasets --output /tmp/public_dataset_prior_validation_report.json
+.venv/bin/python scripts/data/fetch_public_attack_datasets.py --dataset uwf-zeekdata24
+.venv/bin/python scripts/data/fetch_public_attack_datasets.py --dataset casinolimit
+.venv/bin/python scripts/evaluation/public_dataset_prior_validation.py \
+  vendor/datasets/casinolimit \
+  vendor/datasets/uwf-zeekdata24 \
+  --output /tmp/public_dataset_prior_validation_report.json
 ```
 
 The dataset validator skips raw files larger than 2 MB by default so it can run as a lightweight offline check.

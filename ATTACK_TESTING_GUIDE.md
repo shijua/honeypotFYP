@@ -259,8 +259,8 @@ High-interaction target variants:
 # Apply the Dionaea-to-Glutton adjacent HTTP capture route.
 ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh dionaea-capture dionaea-to-glutton-http-capture
 
-# tests T1190/T1105 through generic high-interaction capture.
-curl -i "http://146.169.44.23:19999/config-check" | head
+# tests T1190/T1105 through generic high-interaction capture. This probe may not return an HTTP page; the expected effect is capture telemetry.
+printf "GET /config-check HTTP/1.1\r\nHost: capture.local\r\n\r\n" | nc -w 3 146.169.44.23 19999 || true
 
 # Apply the malware-sink same-port Dionaea upgrade.
 ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh malware-sink malware-dionaea-same-port-upgrade

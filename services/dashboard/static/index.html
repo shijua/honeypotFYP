@@ -56,41 +56,20 @@
       <summary class="panel-header">
         <div>
           <h2>Attacker Profiles</h2>
-          <p class="subtle">Recent tactics, commands, decisions, current assets, and failures per attacker.</p>
+          <p class="subtle">Recent tactics, evidence, configuration history, and decision trace per attacker.</p>
         </div>
       </summary>
       <div class="panel-body" id="attackers-panel"></div>
     </details>
 
-    <section class="grid">
-      <details class="panel">
-        <summary class="panel-header">
-          <div>
-            <h2>Recent Public HTTP Backend Requests</h2>
-            <p class="subtle">Public portal breadcrumbs and direct HTTP probes captured by the website backend.</p>
-          </div>
-        </summary>
-        <div class="panel-body" id="entrypoint-panel"></div>
-      </details>
-      <details class="panel">
-        <summary class="panel-header">
-          <div>
-            <h2>Recent Cowrie Activity</h2>
-            <p class="subtle">SSH login attempts and command input forwarded into the profiler path.</p>
-          </div>
-        </summary>
-        <div class="panel-body" id="cowrie-panel"></div>
-      </details>
-    </section>
-
-    <details class="panel full-width">
+    <details class="panel full-width" open>
       <summary class="panel-header">
         <div>
-          <h2>Recent OpenCanary Activity</h2>
-          <p class="subtle">Multi-protocol probes from OpenCanary-backed internal assets.</p>
+          <h2>Recent Activity</h2>
+          <p class="subtle">Public, SSH, protocol, high-interaction, and configuration activity in one timeline.</p>
         </div>
       </summary>
-      <div class="panel-body" id="opencanary-panel"></div>
+      <div class="panel-body" id="activity-panel"></div>
     </details>
   </div>
 

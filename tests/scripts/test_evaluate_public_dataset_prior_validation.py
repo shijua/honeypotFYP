@@ -107,11 +107,42 @@ def test_public_dataset_prior_validation_reports_prior_metrics(
 
     assert report["ok"] is True
     assert report["trace_count"] == 1
+    assert report["dataset_sources"] == ["datasets"]
     assert report["top_k"] == 40
     assert report["support_threshold"] == 0.15
     assert report["metrics"]["prefix_count"] == 2
     assert report["metrics"]["precision"] == 1.0
     assert report["metrics"]["recall"] == 1.0
+
+
+def test_public_dataset_prior_validation_reports_contributing_dataset_names(
+    tmp_path: Path,
+) -> None:
+    prior = tmp_path / "prior.json"
+    _write_prior(prior)
+    dataset_root = tmp_path / "vendor" / "datasets"
+    casinolimit = dataset_root / "casinolimit"
+    zeekdata = dataset_root / "uwf-zeekdata24"
+    casinolimit.mkdir(parents=True)
+    zeekdata.mkdir(parents=True)
+    (casinolimit / "trace.csv").write_text(
+        "timestamp,technique_id\n1,T1190\n2,T1105\n",
+        encoding="utf-8",
+    )
+    (zeekdata / "trace.jsonl").write_text(
+        json.dumps({"timestamp": "1", "technique": "T1190"}) + "\n"
+        + json.dumps({"timestamp": "2", "technique": "T1608"}) + "\n",
+        encoding="utf-8",
+    )
+
+    report = evaluate_public_dataset_prior(
+        dataset_paths=[dataset_root],
+        prior_path=prior,
+        config=RuntimeConfig(),
+    )
+
+    assert report["ok"] is True
+    assert report["dataset_sources"] == ["casinolimit", "uwf-zeekdata24"]
 
 
 def test_public_dataset_prior_validation_fails_without_traces(
