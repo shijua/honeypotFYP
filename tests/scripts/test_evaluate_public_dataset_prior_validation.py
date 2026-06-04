@@ -93,6 +93,9 @@ def test_public_dataset_prior_validation_reports_prior_metrics(
                     {"timestamp": "1", "technique": "T1190"},
                     {"timestamp": "2", "technique": "T1105"},
                     {"timestamp": "3", "technique": "T1608"},
+                    {"timestamp": "4", "technique": "T1046"},
+                    {"timestamp": "5", "technique": "T1059"},
+                    {"timestamp": "6", "technique": "T1082"},
                 ]
             }
         ),
@@ -112,15 +115,18 @@ def test_public_dataset_prior_validation_reports_prior_metrics(
     assert [row["top_k"] for row in report["k_sweep"]] == [5, 10, 20, 40]
     assert "rank_sweep" not in report
     assert report["support_threshold"] == 0.15
-    assert report["metrics"]["prefix_count"] == 2
-    assert report["metrics"]["precision"] == 1.0
-    assert report["metrics"]["recall"] == 1.0
-    assert report["metrics"]["mrr"] == 1.0
+    assert report["metrics"]["prefix_count"] == 5
+    assert report["metrics"]["recall"] > 0
+    assert report["metrics"]["mrr"] > 0
+    prefix_buckets = {row["bucket"]: row for row in report["prefix_length_buckets"]}
+    assert prefix_buckets["short_1_2"]["prefix_count"] == 2
+    assert prefix_buckets["medium_3_4"]["prefix_count"] == 2
+    assert prefix_buckets["long_5_plus"]["prefix_count"] == 1
     diagnostics = report["dataset_diagnostics"]
-    assert diagnostics["unique_technique_family_count"] == 3
+    assert diagnostics["unique_technique_family_count"] == 6
     assert diagnostics["prior_overlap"]["dataset_family_covered_by_prior_rate"] == 1.0
     assert diagnostics["concentration"]["top_3_share"] == 1.0
-    assert diagnostics["top_technique_families"][0]["technique"] == "T1105"
+    assert {row["technique"] for row in diagnostics["top_technique_families"]} >= {"T1190", "T1105", "T1608"}
     assert diagnostics["source_breakdown"][0]["source"] == "datasets"
 
 

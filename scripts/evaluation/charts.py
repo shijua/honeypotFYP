@@ -11,20 +11,18 @@ def write_reveal_policy_chart(report: dict[str, Any], path: Path) -> None:
     """Write a compact policy-comparison chart from `reveal_policy.py` output.
 
     Example:
-        write_reveal_policy_chart(report, Path("/tmp/reveal_policy_report.svg")).
+        write_reveal_policy_chart(report, Path("/tmp/reveal_policy_report.png")).
     """
     plt = _pyplot()
     policies = list(report.get("policies", {}).keys())
     labels = [_policy_label(policy) for policy in policies]
-    controller = report.get("policies", {}).get("controller", {})
     n_policies = max(len(policies), 1)
 
-    fig, axes = plt.subplots(
-        1, 2,
-        figsize=(13, max(4.2, 0.48 * n_policies + 2.6)),
+    fig, ax_quality = plt.subplots(
+        1,
+        1,
+        figsize=(7.8, max(4.2, 0.48 * n_policies + 2.6)),
     )
-    ax_quality = axes[0]
-    ax_prior = axes[1]
 
     # --- Panel 1: main scenarios use anchor correctness; broad regression
     # fixtures without anchors fall back to scenario-supported reveal rate.
@@ -34,7 +32,7 @@ def write_reveal_policy_chart(report: dict[str, Any], path: Path) -> None:
     )
     primary_metric = "anchor_step_correctness_rate" if has_anchor_steps else "reveal_correctness"
     primary_label = "Anchor correctness" if has_anchor_steps else "Supported reveal"
-    primary_title = "Anchor decision correctness" if has_anchor_steps else "Scenario-supported reveal rate"
+    primary_title = "Key decision correctness" if has_anchor_steps else "Edge case reveal correctness"
     quality_metrics = [
         (primary_metric, primary_label, "#14853d"),
         ("useful_evidence_per_reveal", "Useful response", "#2563eb"),
@@ -57,31 +55,6 @@ def write_reveal_policy_chart(report: dict[str, Any], path: Path) -> None:
     ax_quality.grid(axis="x", color="#e5e7eb")
     ax_quality.legend(loc="upper right", fontsize=8)
 
-    # --- Panel 2: Prior (CF) influence rate ---
-    # Fraction of decision steps where the CF prior changed the reveal vs gate-only.
-    prior_rate = float(controller.get("prior_influence_rate", 0.0) or 0.0)
-    influenced_count = int(controller.get("prior_influenced_step_count", 0) or 0)
-    comparison_count = int(controller.get("prior_comparison_step_count", 0) or 0)
-    bar_vals = [prior_rate, 1.0 - prior_rate]
-    bars = ax_prior.bar(
-        ["CF changed\nresult", "Gate-only\nsufficient"],
-        bar_vals,
-        color=["#7c3aed", "#d1d5db"],
-    )
-    ax_prior.set_ylim(0, 1.2)
-    ax_prior.set_ylabel("Fraction of decision steps")
-    ax_prior.set_title(
-        f"Prior (CF) influence rate\n"
-        f"{influenced_count}/{comparison_count} steps where prior changed the reveal"
-    )
-    ax_prior.grid(axis="y", color="#e5e7eb")
-    for bar, val in zip(bars, bar_vals):
-        ax_prior.text(
-            bar.get_x() + bar.get_width() / 2, val + 0.02,
-            f"{val:.0%}", ha="center", va="bottom", fontsize=11, fontweight="bold",
-        )
-
-    fig.suptitle(f"Reveal Policy Comparison — {int(report.get('scenario_count', 0) or 0)} scenarios")
     _save_chart(fig, path)
 
 
@@ -91,36 +64,51 @@ def write_prior_recommendation_chart(report: dict[str, Any], path: Path) -> None
     metrics = report.get("metrics", {})
     k_sweep = [row for row in report.get("k_sweep", []) if isinstance(row, dict)]
     top_k = int(report.get("top_k", 0) or 0)
-    support_threshold = float(report.get("support_threshold", 0.0) or 0.0)
-    prefix_count = int(metrics.get("prefix_count", 0) or 0)
-    trace_count = int(report.get("trace_count", 0) or 0)
+    # support_threshold = float(report.get("support_threshold", 0.0) or 0.0)
+    # prefix_count = int(metrics.get("prefix_count", 0) or 0)
+    # trace_count = int(report.get("trace_count", 0) or 0)
 
-    fig, axis = plt.subplots(1, 1, figsize=(8.6, 4.8))
+    # Prefix-length stratification is useful for the public dataset check,
+    # but scenario traces have too few medium/long prefixes to plot honestly.
+    # so only show prefix path on dataset
+    prefix_buckets = [
+        row
+        for row in report.get("prefix_length_buckets", [])
+        if isinstance(row, dict) and int(row.get("prefix_count", 0) or 0) > 0
+    ]
+    show_prefix_buckets = (
+        "public_dataset" in str(report.get("schema_version", ""))
+        or "dataset_paths" in report
+        or sum(int(row.get("prefix_count", 0) or 0) for row in prefix_buckets) >= 50
+    )
+    if show_prefix_buckets and prefix_buckets:
+        fig, axes = plt.subplots(1, 2, figsize=(13.2, 4.8))
+        axis = axes[0]
+        bucket_axis = axes[1]
+    else:
+        fig, axis = plt.subplots(1, 1, figsize=(8.6, 4.8))
+        bucket_axis = None
     if k_sweep:
         x_values = [int(row.get("top_k", 0) or 0) for row in k_sweep]
         series = [
             ("hit_rate_at_k", "Hit", "#7c3aed", "o"),
             ("recall", "Recall", "#14853d", "s"),
-            ("precision", "Precision", "#2563eb", "^"),
             ("mrr", "MRR", "#f59e0b", "D"),
         ]
         for key, label, color, marker in series:
             y_values = [float(row.get(key, 0.0) or 0.0) for row in k_sweep]
             axis.plot(x_values, y_values, marker=marker, linewidth=2, color=color, label=label)
-            for x_val, y_val in zip(x_values, y_values):
-                axis.text(x_val, y_val + 0.025, f"{y_val:.2f}", ha="center", fontsize=8)
         axis.set_xticks(x_values)
-        axis.legend(loc="upper left", bbox_to_anchor=(1.01, 1.0), fontsize=8, borderaxespad=0.0)
+        axis.legend(loc="lower right", fontsize=8)
     else:
         summary_keys = [
             ("hit_rate_at_k", f"Hit@K={top_k}"),
             ("recall", "Recall"),
-            ("precision", "Precision"),
             ("mrr", "MRR"),
         ]
         summary_values = [float(metrics.get(key, 0.0) or 0.0) for key, _ in summary_keys]
         summary_labels = [label for _, label in summary_keys]
-        bars = axis.bar(summary_labels, summary_values, color=["#7c3aed", "#14853d", "#2563eb", "#f59e0b"])
+        bars = axis.bar(summary_labels, summary_values, color=["#7c3aed", "#14853d", "#f59e0b"])
         for bar, value in zip(bars, summary_values):
             axis.text(bar.get_x() + bar.get_width() / 2, value + 0.02, f"{value:.2f}", ha="center", va="bottom", fontsize=9)
         axis.tick_params(axis="x", rotation=20)
@@ -129,35 +117,36 @@ def write_prior_recommendation_chart(report: dict[str, Any], path: Path) -> None
     axis.set_xlabel("Similar ATT&CK groups used by prior (K)")
     axis.set_ylabel("Rate")
     axis.grid(axis="y", color="#e5e7eb")
-    diagnostics = report.get("dataset_diagnostics", {})
-    if isinstance(diagnostics, dict) and diagnostics:
-        concentration = diagnostics.get("concentration", {})
-        overlap = diagnostics.get("prior_overlap", {})
-        unique_count = int(diagnostics.get("unique_technique_family_count", 0) or 0)
-        top3_share = float(concentration.get("top_3_share", 0.0) or 0.0) if isinstance(concentration, dict) else 0.0
-        overlap_rate = (
-            float(overlap.get("dataset_family_covered_by_prior_rate", 0.0) or 0.0)
-            if isinstance(overlap, dict)
-            else 0.0
-        )
-        axis.text(
-            0.5,
-            -0.23,
-            f"{trace_count} traces / {prefix_count} prefixes · "
-            f"{unique_count} unique technique families · "
-            f"top-3 share {top3_share:.2f} · prior overlap {overlap_rate:.2f}",
-            transform=axis.transAxes,
-            ha="center",
-            va="top",
-            fontsize=8,
-            color="#475569",
-        )
-
+    if bucket_axis is not None:
+        bucket_labels = [
+            str(row.get("label", row.get("bucket", "bucket"))).replace(" observed technique families", "")
+            for row in prefix_buckets
+        ]
+        x_positions = list(range(len(prefix_buckets)))
+        bucket_series = [
+            ("hit_rate_at_k", "Hit", "#7c3aed", "o"),
+            ("recall", "Recall", "#14853d", "s"),
+            ("mrr", "MRR", "#f59e0b", "D"),
+        ]
+        for key, label, color, marker in bucket_series:
+            y_values = [float(row.get(key, 0.0) or 0.0) for row in prefix_buckets]
+            bucket_axis.plot(x_positions, y_values, marker=marker, linewidth=2, color=color, label=label)
+        bucket_axis.set_xticks(x_positions)
+        bucket_axis.set_xticklabels(bucket_labels, rotation=15, ha="right")
+        bucket_axis.set_ylim(0, 1.2)
+        bucket_axis.set_title("Prior quality by prefix length")
+        bucket_axis.set_xlabel("Observed prefix length")
+        bucket_axis.set_ylabel("Rate")
+        bucket_axis.grid(axis="y", color="#e5e7eb")
+        bucket_axis.legend(loc="lower right", fontsize=8)
     # fig.suptitle(
     #     f"ATT&CK Group CF Prior  ·  neighbor K={top_k}  support≥{support_threshold:.2f}"
     #     f"  ·  {trace_count} traces  {prefix_count} prefixes"
     # )
-    fig.subplots_adjust(right=0.82)
+    if bucket_axis is not None:
+        fig.tight_layout()
+    else:
+        fig.subplots_adjust(right=0.82)
     _save_chart(fig, path)
 
 
@@ -208,8 +197,8 @@ def _write_runtime_latency_rows_chart(
         float(row.get("apply_p50_ms", row.get("orchestrator_apply_ms", 0.0)) or 0.0)
         for row in rows
     ]
-    apply_p95_ms = [
-        float(row.get("apply_p95_ms", row.get("orchestrator_apply_ms", 0.0)) or 0.0)
+    apply_p90_ms = [
+        float(row.get("apply_p90_ms", row.get("apply_p95_ms", row.get("orchestrator_apply_ms", 0.0))) or 0.0)
         for row in rows
     ]
     failed_rows = [not row.get("ok", int(row.get("failed_samples", 0) or 0) == 0) for row in rows]
@@ -221,10 +210,10 @@ def _write_runtime_latency_rows_chart(
     )
     y_positions = list(range(len(rows)))
     p50_colors = ["#dc2626" if failed else "#2563eb" for failed in failed_rows]
-    p95_colors = ["#991b1b" if failed else "#f59e0b" for failed in failed_rows]
+    p90_colors = ["#991b1b" if failed else "#f59e0b" for failed in failed_rows]
     p50_bars = axis.barh([position - 0.18 for position in y_positions], apply_p50_ms, height=0.34, color=p50_colors, label="p50")
-    p95_bars = axis.barh([position + 0.18 for position in y_positions], apply_p95_ms, height=0.34, color=p95_colors, label="p95")
-    for bars, values in ((p50_bars, apply_p50_ms), (p95_bars, apply_p95_ms)):
+    p90_bars = axis.barh([position + 0.18 for position in y_positions], apply_p90_ms, height=0.34, color=p90_colors, label="p90")
+    for bars, values in ((p50_bars, apply_p50_ms), (p90_bars, apply_p90_ms)):
         for bar, value in zip(bars, values):
             axis.text(
                 bar.get_width(),
@@ -276,8 +265,9 @@ def _pyplot():
 
 def _save_chart(fig: Any, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    fig.tight_layout(rect=(0, 0, 1, 0.94))
-    fig.savefig(path, bbox_inches="tight")
+    top = 0.94 if getattr(fig, "_suptitle", None) is not None else 1.0
+    fig.tight_layout(rect=(0, 0, 1, top))
+    fig.savefig(path, bbox_inches="tight", dpi=180)
     fig.clf()
 
 

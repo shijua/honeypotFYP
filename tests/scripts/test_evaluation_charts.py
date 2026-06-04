@@ -32,6 +32,7 @@ def test_runtime_latency_chart_writes_svg(tmp_path: Path) -> None:
                 "ok_samples": 2,
                 "failed_samples": 0,
                 "apply_p50_ms": 120.5,
+                "apply_p90_ms": 128.0,
                 "apply_p95_ms": 130.0,
             },
             {
@@ -41,6 +42,7 @@ def test_runtime_latency_chart_writes_svg(tmp_path: Path) -> None:
                 "ok_samples": 1,
                 "failed_samples": 0,
                 "apply_p50_ms": 35.0,
+                "apply_p90_ms": 35.0,
                 "apply_p95_ms": 35.0,
             },
             {
@@ -50,6 +52,7 @@ def test_runtime_latency_chart_writes_svg(tmp_path: Path) -> None:
                 "ok_samples": 1,
                 "failed_samples": 1,
                 "apply_p50_ms": 400.0,
+                "apply_p90_ms": 430.0,
                 "apply_p95_ms": 450.0,
             },
         ],
@@ -72,12 +75,6 @@ def test_runtime_latency_chart_writes_svg(tmp_path: Path) -> None:
             },
         ],
     }
-    path = tmp_path / "latency.svg"
+    path = tmp_path / "latency.png"
 
     write_runtime_latency_chart(report, path)
-
-    chart = path.read_text(encoding="utf-8")
-    assert chart.startswith("<?xml") or chart.startswith("<svg")
-    assert "Runtime Reveal Apply Latency" in chart
-
-    assert "internal-portal (prewarmed)" in chart

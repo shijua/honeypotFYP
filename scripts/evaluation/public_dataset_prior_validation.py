@@ -71,7 +71,7 @@ def main() -> int:
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(f"{text}\n", encoding="utf-8")
-        write_prior_recommendation_chart(report, args.output.with_suffix(".svg"))
+        write_prior_recommendation_chart(report, args.output.with_suffix(".png"))
     else:
         print(text)
     return 0 if report["ok"] else 1
@@ -131,6 +131,7 @@ def evaluate_public_dataset_prior(
         ],
         "metrics": metrics,
         "dataset_diagnostics": dataset_diagnostics,
+        "prefix_length_buckets": trace_report["prefix_length_buckets"],
         "k_sweep": trace_report["k_sweep"],
     }
 

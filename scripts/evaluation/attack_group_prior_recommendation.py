@@ -32,6 +32,11 @@ from scripts.evaluation.reveal_policy import load_scenarios
 from services.controller.repository import FileAttackGroupTechniquePriorRepository
 
 DEFAULT_K_SWEEP = (5, 10, 20, 40)
+PREFIX_LENGTH_BUCKETS = (
+    ("short_1_2", "1-2 observed technique families", 1, 2),
+    ("medium_3_4", "3-4 observed technique families", 3, 4),
+    ("long_5_plus", "5+ observed technique families", 5, None),
+)
 
 
 def main() -> int:
@@ -49,7 +54,7 @@ def main() -> int:
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(f"{text}\n", encoding="utf-8")
-        write_prior_recommendation_chart(report, args.output.with_suffix(".svg"))
+        write_prior_recommendation_chart(report, args.output.with_suffix(".png"))
     else:
         print(text)
     return 0 if report["ok"] else 1
@@ -97,6 +102,7 @@ def evaluate_prior_recommendations(
         "trace_count": len(traces),
         "excluded_scenarios": excluded,
         "metrics": trace_report["metrics"],
+        "prefix_length_buckets": trace_report["prefix_length_buckets"],
         "k_sweep": trace_report["k_sweep"],
     }
 
@@ -139,6 +145,12 @@ def evaluate_trace_recommendations(
         "technique_family_universe_size": len(technique_universe),
         "trace_count": len(traces),
         "metrics": metrics,
+        "prefix_length_buckets": _evaluate_trace_prefix_length_buckets(
+            traces,
+            prior_path,
+            top_k=runtime_config.recommendation_top_k,
+            support_threshold=runtime_config.recommendation_support_threshold,
+        ),
         "k_sweep": k_sweep,
     }
 
@@ -264,6 +276,90 @@ def _sweep_metrics(*, top_k: int, metrics: dict[str, Any]) -> dict[str, Any]:
         "mrr": float(metrics.get("mrr", 0.0) or 0.0),
         "recommendation_count_avg": float(metrics.get("recommendation_count_avg", 0.0) or 0.0),
     }
+
+
+def _evaluate_trace_prefix_length_buckets(
+    traces: list[dict[str, Any]],
+    prior_path: Path,
+    *,
+    top_k: int,
+    support_threshold: float,
+) -> list[dict[str, Any]]:
+    """Return Hit/Recall/MRR split by observed prefix length."""
+    repository = FileAttackGroupTechniquePriorRepository(prior_path)
+    buckets = {
+        bucket_id: {
+            "bucket": bucket_id,
+            "label": label,
+            "prefix_min": min_len,
+            "prefix_max": max_len,
+            "prefix_count": 0,
+            "prefix_hit_total": 0,
+            "true_positive_total": 0,
+            "false_negative_total": 0,
+            "reciprocal_rank_total": 0.0,
+            "future_technique_total": 0,
+        }
+        for bucket_id, label, min_len, max_len in PREFIX_LENGTH_BUCKETS
+    }
+    for trace in traces:
+        techniques = trace["techniques"]
+        for index in range(1, len(techniques)):
+            observed = technique_family_set(techniques[:index])
+            future = technique_family_set(techniques[index:])
+            bucket_id = _prefix_length_bucket(len(observed))
+            if bucket_id is None:
+                continue
+            bucket = buckets[bucket_id]
+            recommendations = repository.recommend(
+                set(techniques[:index]),
+                top_k=top_k,
+                support_threshold=support_threshold,
+            )
+            recommendation_families = dedupe_preserve(
+                family
+                for technique in recommendations
+                for family in technique_family_set([technique])
+            )
+            recommended = set(recommendation_families)
+            true_positives = len(recommended & future)
+            false_negatives = len(future - recommended)
+            rank = _first_hit_rank(recommendation_families, future)
+            bucket["prefix_count"] += 1
+            bucket["prefix_hit_total"] += int(true_positives > 0)
+            bucket["true_positive_total"] += true_positives
+            bucket["false_negative_total"] += false_negatives
+            bucket["reciprocal_rank_total"] += 0.0 if rank is None else 1 / rank
+            bucket["future_technique_total"] += len(future)
+    rows: list[dict[str, Any]] = []
+    for bucket_id, _label, _min_len, _max_len in PREFIX_LENGTH_BUCKETS:
+        bucket = buckets[bucket_id]
+        prefix_count = int(bucket["prefix_count"])
+        rows.append(
+            {
+                "bucket": bucket["bucket"],
+                "label": bucket["label"],
+                "prefix_min": bucket["prefix_min"],
+                "prefix_max": bucket["prefix_max"],
+                "prefix_count": prefix_count,
+                "hit_rate_at_k": _ratio(int(bucket["prefix_hit_total"]), prefix_count),
+                "recall": _ratio(
+                    int(bucket["true_positive_total"]),
+                    int(bucket["true_positive_total"]) + int(bucket["false_negative_total"]),
+                ),
+                "mrr": round(float(bucket["reciprocal_rank_total"]) / prefix_count, 6) if prefix_count else 0.0,
+                "future_technique_count_avg": round(float(bucket["future_technique_total"]) / prefix_count, 6) if prefix_count else 0.0,
+            }
+        )
+    return rows
+
+
+def _prefix_length_bucket(observed_family_count: int) -> str | None:
+    """Return the metric bucket for one observed prefix length."""
+    for bucket_id, _label, min_len, max_len in PREFIX_LENGTH_BUCKETS:
+        if observed_family_count >= min_len and (max_len is None or observed_family_count <= max_len):
+            return bucket_id
+    return None
 
 
 def _first_hit_rank(recommendation_families: list[str], positives: set[str]) -> int | None:

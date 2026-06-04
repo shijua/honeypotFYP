@@ -44,7 +44,7 @@ Read these fields first:
 
 No-reveal and boundary scenarios are excluded from prior quality scoring because they test controller restraint, not next-technique recommendation. The command loads both the main full-process fixture and the broader regression fixture, so the report's `scenario_files` field states the in-domain scenario sources used. This evaluator matches sub-techniques by parent ATT&CK technique family by default, for example `T1548.003` counts as a hit when `T1548` is recommended. `RuntimeConfig.recommendation_top_k` is the number of similar ATT&CK groups used by the collaborative-filtering prior, not a cap on emitted techniques. The runtime default remains neighbor `K=40` and `support_threshold=0.15`; the `k_sweep` field is a sensitivity check over that neighbor count.
 
-This also writes `results/attack_group_prior_report.svg`, a matplotlib summary of overall prior quality and per-scenario recall.
+This also writes `results/attack_group_prior_report.png`, a matplotlib summary of overall prior quality and per-scenario recall.
 
 ## 2. Offline Reveal Policy Replay
 
@@ -58,7 +58,7 @@ This is the main correctness evaluation. It replays the scenario file against mu
   --output results/reveal_policy_main_report.json
 ```
 
-This also writes `results/reveal_policy_main_report.svg`, a compact visual comparison of policy metrics. The SVG path is always the JSON output path with a `.svg` suffix.
+This also writes `results/reveal_policy_main_report.png`, a compact visual comparison of policy metrics. The PNG path is always the JSON output path with a `.png` suffix.
 The sequence mode runs each rich scenario timeline step-by-step with cumulative profile and exposure state. The main fixture uses anchor steps for exact checks and uses `anchor_step_correctness_rate` as the headline result; non-anchor steps still accumulate evidence and state but do not fail exact-step accuracy unless they open hidden/forbidden assets. Source grounding and replay semantics are documented in `tests/fixtures/SCENARIO_SOURCE_TRACEABILITY.md` and `tests/fixtures/FULL_REPLAY_SCENARIO_DESIGN.md`.
 
 The broader regression fixture is still useful for debugging edge cases. It may exit non-zero when it finds controller/scenario alignment issues; inspect the JSON rather than treating it as the headline acceptance check.
@@ -205,7 +205,7 @@ This measures reveal-application overhead after the compose stack is running. It
 ```bash
 .venv/bin/python scripts/evaluation/runtime_latency.py \
   --assets internal-portal,finance-share,web-admin-console,vpn-appliance,malware-sink,admin-jumpbox,dionaea-capture,honeytrap-generic \
-  --runs 5 \
+  --runs 10 \
   --output results/runtime_latency_report.json
 ```
 
@@ -236,7 +236,7 @@ Reported timings:
 - per-asset pass/fail plus apply min/p50/p95/max
 - warm/cold summaries in `class_summary`, direct/prewarmed summaries in `mode_summary`, and the main comparison paths in `path_summary`
 
-This also writes `results/runtime_latency_report.svg`, showing orchestrator apply p50/p95 by asset and reveal mode in one chart. In the report, use the JSON `path_summary` for the headline warm-direct, warm-prewarmed, and cold-direct comparison; use `asset_summary` only when per-asset detail is useful. The route table check is deliberately not plotted: it confirms that the gateway state was written, but it is not the same as measuring an attacker request reaching a backend. Startup verification is part of the orchestrator apply window: after `docker run`, the runtime checks that the container is still `Up` and, when configured, healthcheck-ready before recording it as running. If cold-start latency is visibly higher, discuss it as a known content/routing observability window rather than folding it into the reveal-policy accuracy result.
+This also writes `results/runtime_latency_report.png`, showing orchestrator apply p50/p90 by asset and reveal mode in one chart. In the report, use the JSON `path_summary` for the headline warm-direct, warm-prewarmed, and cold-direct comparison; use `asset_summary` only when per-asset detail is useful. The route table check is deliberately not plotted: it confirms that the gateway state was written, but it is not the same as measuring an attacker request reaching a backend. Startup verification is part of the orchestrator apply window: after `docker run`, the runtime checks that the container is still `Up` and, when configured, healthcheck-ready before recording it as running. If cold-start latency is visibly higher, discuss it as a known content/routing observability window rather than folding it into the reveal-policy accuracy result.
 
 ## 7. Manual Smoke
 
@@ -260,7 +260,7 @@ For a normal development check, run this sequence:
 .venv/bin/python scripts/evaluation/public_dataset_prior_validation.py vendor/datasets/casinolimit --prior data/technique_prior/attack_group_technique_prior.json --output results/public_dataset_prior_validation_report.json
 .venv/bin/python scripts/evaluation/reveal_policy.py tests/fixtures/reveal_policy_main_scenarios.json --policy all --replay-mode sequence --output results/reveal_policy_main_report.json
 .venv/bin/python scripts/evaluation/reveal_policy.py tests/fixtures/reveal_policy_scenarios.json --policy all --replay-mode sequence --output results/reveal_policy_regression_report.json
-.venv/bin/python scripts/evaluation/runtime_latency.py --assets internal-portal,finance-share,web-admin-console,vpn-appliance,malware-sink,admin-jumpbox,dionaea-capture,honeytrap-generic --runs 5 --output results/runtime_latency_report.json
+.venv/bin/python scripts/evaluation/runtime_latency.py --assets internal-portal,finance-share,web-admin-console,vpn-appliance,malware-sink,admin-jumpbox,dionaea-capture,honeytrap-generic --runs 10 --output results/runtime_latency_report.json
 # Optional route-selection sanity check, not attacker-behaviour evaluation.
 .venv/bin/python scripts/evaluation/reveal_port_simulation.py --mode controller-only --scenario-file tests/fixtures/reveal_port_scenarios.json --output results/reveal_port_controller_report.json
 docker-compose -p honeynet -f docker-compose.control.yml -f docker-compose.enterprise.yml config

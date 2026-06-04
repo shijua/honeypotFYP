@@ -81,10 +81,8 @@ def test_attack_group_prior_recommendation_reports_default_paper_metrics(
     assert metrics["source_breakdown"][0]["precision"] == 1.0
     assert metrics["source_breakdown"][0]["recall"] == 1.0
 
-    chart_path = tmp_path / "prior.svg"
+    chart_path = tmp_path / "prior.png"
     write_prior_recommendation_chart(report, chart_path)
-    # assert "ATT&amp;CK Group Prior Recommendation" in chart_path.read_text(encoding="utf-8")
-    # assert "Precision" not in chart_path.read_text(encoding="utf-8")
 
 
 def test_attack_group_prior_recommendation_combines_files_and_timeline_steps(

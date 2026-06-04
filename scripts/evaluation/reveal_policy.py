@@ -105,7 +105,7 @@ def main() -> int:
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(f"{text}\n", encoding="utf-8")
-        write_reveal_policy_chart(report, args.output.with_suffix(".svg"))
+        write_reveal_policy_chart(report, args.output.with_suffix(".png"))
         print(format_reveal_policy_report_summary([(_scenario_set_label(args.scenario_file), report)]))
     else:
         print(text)

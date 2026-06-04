@@ -88,7 +88,8 @@ def main() -> int:
     binding_samples: list[dict[str, Any]] = []
     cleanup_samples: list[dict[str, Any]] = []
     cleanup_enabled = not args.keep_latency_samples
-    warm_asset_ids = [asset_id for asset_id in asset_ids if latency_classes.get(asset_id, "cold") == "warm"]
+    if cleanup_enabled:
+        _ensure_runtime_state_writable(Path(args.state_dir))
     for run_index in range(1, args.runs + 1):
         if cleanup_enabled:
             cleanup_samples.append(
@@ -99,18 +100,23 @@ def main() -> int:
                     phase=f"before-run-{run_index}",
                 )
             )
-        attacker_key = args.attacker_key if args.runs == 1 else f"{args.attacker_key}-latency-{run_id}-direct-{run_index}"
-        binding, binding_latency = _resolve_binding(args.project_name, attacker_key)
-        binding_samples.append(
-            {
-                "run_index": run_index,
-                "reveal_mode": "direct",
-                "attacker_key": attacker_key,
-                "binding_id": binding["binding_id"],
-                "binding_resolve_ms": binding_latency,
-            }
-        )
         for asset_id in asset_ids:
+            attacker_key = (
+                args.attacker_key
+                if args.runs == 1 and len(asset_ids) == 1
+                else f"{args.attacker_key}-latency-{run_id}-direct-{run_index}-{asset_id}"
+            )
+            binding, binding_latency = _resolve_binding(args.project_name, attacker_key)
+            binding_samples.append(
+                {
+                    "run_index": run_index,
+                    "reveal_mode": "direct",
+                    "asset_id": asset_id,
+                    "attacker_key": attacker_key,
+                    "binding_id": binding["binding_id"],
+                    "binding_resolve_ms": binding_latency,
+                }
+            )
             results.append(
                 _measure_asset(
                     project_name=args.project_name,
@@ -124,28 +130,30 @@ def main() -> int:
                     route_timeout=args.route_timeout,
                 )
             )
-        if cleanup_enabled and _is_generated_latency_key(attacker_key, args.attacker_key):
-            cleanup_samples.append(
-                _cleanup_binding_sample(
-                    project_name=args.project_name,
-                    state_dir=Path(args.state_dir),
-                    binding_id=str(binding["binding_id"]),
-                    attacker_key=attacker_key,
-                    phase=f"after-direct-{run_index}",
+            if cleanup_enabled and _is_generated_latency_key(attacker_key, args.attacker_key):
+                cleanup_samples.append(
+                    _cleanup_binding_sample(
+                        project_name=args.project_name,
+                        state_dir=Path(args.state_dir),
+                        binding_id=str(binding["binding_id"]),
+                        attacker_key=attacker_key,
+                        phase=f"after-direct-{run_index}-{asset_id}",
+                    )
                 )
-            )
-        if warm_asset_ids:
-            prewarm_attacker_key = f"{args.attacker_key}-latency-{run_id}-prewarmed-{run_index}"
+            if latency_classes.get(asset_id, "cold") != "warm":
+                continue
+            prewarm_attacker_key = f"{args.attacker_key}-latency-{run_id}-prewarmed-{run_index}-{asset_id}"
             prewarm_binding, prewarm_binding_latency = _resolve_binding(args.project_name, prewarm_attacker_key)
             prewarm_response, prewarm_ms = _prewarm_assets(
                 project_name=args.project_name,
                 binding_id=prewarm_binding["binding_id"],
-                asset_ids=warm_asset_ids,
+                asset_ids=[asset_id],
             )
             binding_samples.append(
                 {
                     "run_index": run_index,
                     "reveal_mode": "prewarmed",
+                    "asset_id": asset_id,
                     "attacker_key": prewarm_attacker_key,
                     "binding_id": prewarm_binding["binding_id"],
                     "binding_resolve_ms": prewarm_binding_latency,
@@ -154,20 +162,19 @@ def main() -> int:
                     "failed_asset_ids": prewarm_response.get("failed_asset_ids", []),
                 }
             )
-            for asset_id in warm_asset_ids:
-                results.append(
-                    _measure_asset(
-                        project_name=args.project_name,
-                        run_index=run_index,
-                        reveal_mode="prewarmed",
-                        binding_id=prewarm_binding["binding_id"],
-                        attacker_key=prewarm_attacker_key,
-                        asset_id=asset_id,
-                        latency_class="warm",
-                        state_dir=Path(args.state_dir),
-                        route_timeout=args.route_timeout,
-                    )
+            results.append(
+                _measure_asset(
+                    project_name=args.project_name,
+                    run_index=run_index,
+                    reveal_mode="prewarmed",
+                    binding_id=prewarm_binding["binding_id"],
+                    attacker_key=prewarm_attacker_key,
+                    asset_id=asset_id,
+                    latency_class="warm",
+                    state_dir=Path(args.state_dir),
+                    route_timeout=args.route_timeout,
                 )
+            )
             if cleanup_enabled:
                 cleanup_samples.append(
                     _cleanup_binding_sample(
@@ -175,7 +182,7 @@ def main() -> int:
                         state_dir=Path(args.state_dir),
                         binding_id=str(prewarm_binding["binding_id"]),
                         attacker_key=prewarm_attacker_key,
-                        phase=f"after-prewarmed-{run_index}",
+                        phase=f"after-prewarmed-{run_index}-{asset_id}",
                     )
                 )
 
@@ -203,7 +210,7 @@ def main() -> int:
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(f"{text}\n", encoding="utf-8")
-        write_runtime_latency_chart(report, args.output.with_suffix(".svg"))
+        write_runtime_latency_chart(report, args.output.with_suffix(".png"))
     else:
         print(text)
     return 0 if all(item["ok"] for item in results) else 1
@@ -336,6 +343,28 @@ def _measure_asset(
 def _is_generated_latency_key(attacker_key: str, requested_attacker_key: str) -> bool:
     """Return True for synthetic attacker keys created by this latency script."""
     return attacker_key.startswith(f"{requested_attacker_key}-latency-")
+
+
+def _ensure_runtime_state_writable(state_dir: Path) -> None:
+    """Fail early with a useful message when runtime state is not user-writable."""
+    lock_paths = [
+        state_dir / ".bindings.json.lock",
+        state_dir / ".asset_runtime.json.lock",
+        state_dir / ".asset_gateway_routes.json.lock",
+        state_dir / ".gateway_routes.json.lock",
+    ]
+    try:
+        state_dir.mkdir(parents=True, exist_ok=True)
+        for lock_path in lock_paths:
+            with lock_path.open("a+", encoding="utf-8"):
+                pass
+    except PermissionError as exc:
+        raise SystemExit(
+            "runtime latency cleanup cannot write data/runtime lock files. "
+            "Stop the stack if it is running, then fix ownership with:\n"
+            f"  sudo chown -R $USER:$USER {state_dir}\n"
+            f"permission error: {exc}"
+        ) from exc
 
 
 def _cleanup_generated_latency_samples(
@@ -616,17 +645,25 @@ def _latency_distribution(prefix: str, values: list[float]) -> dict[str, float]:
     return {
         f"{prefix}_min_ms": values[0],
         f"{prefix}_p50_ms": _percentile(values, 50),
+        f"{prefix}_p90_ms": _percentile(values, 90),
         f"{prefix}_p95_ms": _percentile(values, 95),
         f"{prefix}_max_ms": values[-1],
     }
 
 
 def _percentile(values: list[float], percentile: int) -> float:
-    """Return nearest-rank percentile for a sorted value list."""
+    """Return a linearly interpolated percentile for a sorted value list."""
     if not values:
         return 0.0
-    rank = max(0, min(len(values) - 1, math.ceil((percentile / 100) * len(values)) - 1))
-    return values[rank]
+    if len(values) == 1:
+        return values[0]
+    rank = (percentile / 100) * (len(values) - 1)
+    lower = math.floor(rank)
+    upper = math.ceil(rank)
+    if lower == upper:
+        return values[int(rank)]
+    fraction = rank - lower
+    return round(values[lower] + (values[upper] - values[lower]) * fraction, 3)
 
 
 if __name__ == "__main__":
