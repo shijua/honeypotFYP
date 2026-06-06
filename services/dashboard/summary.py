@@ -159,6 +159,8 @@ def _attacker_report(
     ]
     current_assets = _current_runtime_assets(historical_assets)
     failed_assets = _failed_runtime_assets(historical_assets, current_assets)
+    unlocked_assets = binding.get("unlocked_assets", []) if binding else []
+    unlocked_assets = _ordered_unlocked_assets(unlocked_assets, historical_assets)
 
     return {
         "attacker_key": attacker_key,
@@ -179,8 +181,16 @@ def _attacker_report(
             profile,
             config.chain_window_seconds,
         ),
-        "recent_tactics": profile.get("recent_tactics", []),
-        "recent_techniques": profile.get("recent_techniques", []),
+        "recent_tactics": _ordered_profile_values(
+            profile.get("recent_tactics", []),
+            attacker_evidence,
+            "group",
+        ),
+        "recent_techniques": _ordered_profile_values(
+            profile.get("recent_techniques", []),
+            attacker_evidence,
+            "tech_id",
+        ),
         "confidence_by_technique": profile.get("conf_by_technique", {}),
         # These fields explain why catalog-gated internal assets became
         # eligible, e.g. a .bak request on the public site unlocking finance.
@@ -192,11 +202,14 @@ def _attacker_report(
         "recent_internal_http_indicators": profile.get("recent_internal_http_indicators", []),
         "confidence_by_tactic": profile.get("conf_by_tactic", {}),
         "docker_probe_error": docker_probe.error,
-        "unlocked_assets": binding.get("unlocked_assets", []) if binding else [],
+        "unlocked_assets": unlocked_assets,
         "historical_opened_assets": historical_assets,
         "current_running_assets": current_assets,
         "failed_assets": failed_assets,
-        "decisions": [_decision_summary(item) for item in attacker_trace],
+        "decisions": [
+            _decision_summary(item, attacker_evidence)
+            for item in attacker_trace
+        ],
     }
 
 
@@ -208,6 +221,42 @@ def _latest_binding(
     if not matches:
         return None
     return sorted(matches, key=lambda item: str(item.get("last_seen_ts", "")))[-1]
+
+
+def _ordered_unlocked_assets(
+    unlocked_assets: object,
+    historical_assets: list[dict[str, Any]],
+) -> list[str]:
+    """Return unlocked assets in reveal order when runtime timestamps exist."""
+    raw_unlocked = unlocked_assets if isinstance(unlocked_assets, list) else []
+    unlocked = [str(asset_id) for asset_id in raw_unlocked if asset_id]
+    if not unlocked:
+        return []
+    opened_ids = [
+        str(asset.get("asset_id"))
+        for asset in sorted(historical_assets, key=lambda item: str(item.get("started_at", "")))
+        if asset.get("asset_id")
+    ]
+    ordered = dedupe_preserve([asset_id for asset_id in opened_ids if asset_id in unlocked])
+    return dedupe_preserve([*ordered, *unlocked])
+
+
+def _ordered_profile_values(
+    profile_values: object,
+    evidence_records: list[dict[str, Any]],
+    evidence_field: str,
+) -> list[str]:
+    """Order profile tactics/techniques by when supporting evidence appeared."""
+    values = [str(value) for value in profile_values if value] if isinstance(profile_values, list) else []
+    if not values:
+        return []
+    value_set = set(values)
+    evidence_values = [
+        str(item.get(evidence_field))
+        for item in sorted(evidence_records, key=lambda record: str(record.get("ts", "")))
+        if item.get(evidence_field) in value_set
+    ]
+    return dedupe_preserve([*evidence_values, *values])
 
 
 def _eventids(observations: list[dict[str, Any]]) -> list[str]:
@@ -420,18 +469,30 @@ def _failed_runtime_assets(
     ]
 
 
-def _decision_summary(record: dict[str, Any]) -> dict[str, Any]:
+def _decision_summary(
+    record: dict[str, Any],
+    evidence_records: list[dict[str, Any]],
+) -> dict[str, Any]:
     actions = record.get("actions", [])
     actions = actions if isinstance(actions, list) else []
     dropped_actions = record.get("dropped_actions", [])
     dropped_actions = dropped_actions if isinstance(dropped_actions, list) else []
     decision_events = record.get("decision_events", [])
     decision_events = decision_events if isinstance(decision_events, list) else []
+    recent_evidence_ids = [
+        str(evidence_id)
+        for evidence_id in record.get("recent_evidence_ids", [])
+        if evidence_id
+    ]
     return {
         "ts": record.get("ts"),
         "recent_tactics": record.get("recent_tactics", []),
         "recent_techniques": record.get("recent_techniques", []),
-        "recent_evidence_ids": record.get("recent_evidence_ids", []),
+        "recent_evidence_ids": recent_evidence_ids,
+        "trigger_evidence": _trigger_evidence_summaries(
+            recent_evidence_ids,
+            evidence_records,
+        ),
         "candidate_asset_ids": record.get("candidate_asset_ids", []),
         "actions": [
             _action_summary(action)
@@ -468,6 +529,81 @@ def _decision_summary(record: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _trigger_evidence_summaries(
+    evidence_ids: list[str],
+    evidence_records: list[dict[str, Any]],
+) -> list[dict[str, str]]:
+    """Summarize evidence that produced a controller tick."""
+    by_id = {
+        str(item.get("evidence_id")): item
+        for item in evidence_records
+        if item.get("evidence_id")
+    }
+    summaries = [
+        summary
+        for evidence_id in evidence_ids
+        if (summary := _trigger_evidence_summary(by_id.get(evidence_id)))
+    ]
+    seen: set[str] = set()
+    deduped: list[dict[str, str]] = []
+    for summary in summaries:
+        key = summary.get("text", "")
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(summary)
+    return deduped
+
+
+def _trigger_evidence_summary(item: dict[str, Any] | None) -> dict[str, str] | None:
+    if not isinstance(item, dict):
+        return None
+    source_ref = item.get("source_ref")
+    source_ref = source_ref if isinstance(source_ref, dict) else {}
+    source = str(source_ref.get("source") or item.get("source") or "evidence")
+    label = str(item.get("reason") or source)
+    detail = ""
+    if source in {"public_http", "internal_http"}:
+        method = str(source_ref.get("http_method") or "HTTP").upper()
+        path = source_ref.get("http_path")
+        query = source_ref.get("http_query_string")
+        detail = str(path or "")
+        if detail and isinstance(query, str) and query:
+            detail = f"{detail}?{query}"
+        if detail:
+            detail = f"{method} {detail}"
+    elif source == "cowrie":
+        detail = _cowrie_command_from_source_ref(source_ref)
+    elif source == "opencanary":
+        detail = str(source_ref.get("service") or "")
+    if not detail:
+        detail = str(item.get("tech_id") or item.get("group") or "")
+    text = f"cmd:{detail}" if source == "cowrie" and detail else f"{source}:{detail}" if detail else source
+    return {
+        "evidence_id": str(item.get("evidence_id")),
+        "source": source,
+        "label": label,
+        "detail": detail,
+        "text": text,
+    }
+
+
+def _cowrie_command_from_source_ref(source_ref: dict[str, Any]) -> str:
+    """Extract the original Cowrie command from structured fields or output text."""
+    command = source_ref.get("command") or source_ref.get("input")
+    if isinstance(command, str) and command.strip():
+        return command.strip()
+    output = source_ref.get("output")
+    if not isinstance(output, str):
+        return ""
+    # Example: "cowrie.command.input from 146.169.44.23: cat /etc/passwd [rule]"
+    _, separator, tail = output.partition(": ")
+    if not separator:
+        return ""
+    command_text = tail.split(" [", 1)[0].strip()
+    return command_text
+
+
 def _action_summary(action: dict[str, Any]) -> dict[str, Any]:
     return {
         "action_type": action.get("action_type"),
@@ -483,12 +619,30 @@ def _decision_event_summary(event: dict[str, Any]) -> dict[str, Any]:
     details = details if isinstance(details, dict) else {}
     configuration = details.get("configuration_reveal", {})
     configuration = configuration if isinstance(configuration, dict) else {}
-    eligible_assets = details.get("eligible_assets", [])
-    eligible_assets = eligible_assets if isinstance(eligible_assets, list) else []
+    eligible_reveal_options = details.get("eligible_reveal_options", [])
+    eligible_reveal_options = (
+        eligible_reveal_options if isinstance(eligible_reveal_options, list) else []
+    )
+    if not eligible_reveal_options:
+        eligible_assets = details.get("eligible_assets", [])
+        eligible_assets = eligible_assets if isinstance(eligible_assets, list) else []
+        eligible_reveal_options = [
+            {"action_type": "unlock", "asset_id": asset_id}
+            for asset_id in eligible_assets
+        ]
+    normalized_reveal_options = [
+        _reveal_option_summary(option)
+        for option in eligible_reveal_options
+        if isinstance(option, dict)
+    ]
     rejected_assets = details.get("rejected_assets", {})
     rejected_assets = rejected_assets if isinstance(rejected_assets, dict) else {}
     matched_markers = details.get("matched_dependency_markers", [])
     matched_markers = matched_markers if isinstance(matched_markers, list) else []
+    observed_techniques = details.get("observed_techniques", [])
+    observed_techniques = observed_techniques if isinstance(observed_techniques, list) else []
+    covered_techniques = details.get("covered_techniques", [])
+    covered_techniques = covered_techniques if isinstance(covered_techniques, list) else []
     return {
         "ts": event.get("ts"),
         "decision_type": event.get("decision_type"),
@@ -500,14 +654,39 @@ def _decision_event_summary(event: dict[str, Any]) -> dict[str, Any]:
         "selected_technique": details.get("selected_technique"),
         "confidence_score": details.get("confidence_score"),
         "recommendation_support": details.get("recommendation_support"),
+        "expected_technique_gain": details.get("expected_technique_gain"),
+        "covered_techniques": covered_techniques,
         "asset_group": details.get("asset_group"),
         "configuration_id": configuration.get("configuration_id"),
         "target_asset_id": configuration.get("target_asset_id"),
-        "eligible_asset_count": len(eligible_assets),
+        "eligible_reveal_options": normalized_reveal_options,
+        "eligible_reveal_option_count": len(normalized_reveal_options),
         "rejected_asset_count": len(rejected_assets),
+        "rejection_reason_counts": _value_counts(rejected_assets.values()),
         "matched_dependency_markers": matched_markers,
+        "observed_techniques": observed_techniques,
+        "prior_support_enabled": details.get("prior_support_enabled"),
         "prior_degraded": details.get("prior_degraded"),
+        "no_reveal_reason": details.get("no_reveal_reason"),
     }
+
+
+def _reveal_option_summary(option: dict[str, Any]) -> dict[str, Any]:
+    """Return the stable identity of one unlock or configuration option."""
+    return {
+        "action_type": option.get("action_type"),
+        "asset_id": option.get("asset_id"),
+        "configuration_id": option.get("configuration_id"),
+        "target_asset_id": option.get("target_asset_id"),
+    }
+
+
+def _value_counts(values: Any) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for value in values:
+        label = str(value)
+        counts[label] = counts.get(label, 0) + 1
+    return counts
 
 
 def _current_compose_statuses(compose_project: str) -> dict[str, str]:

@@ -67,13 +67,17 @@ TRACE_KEYS = {
     "technique_signal_score",
     "ordering",
     "eligible_assets",
+    "eligible_reveal_options",
+    "eligible_configuration_variants",
     "rejected_assets",
     "prior_degraded",
+    "prior_support_enabled",
 }
 NO_REVEAL_TRACE_KEYS = {
     "reveal_action",
     "no_reveal_reason",
     "prior_degraded",
+    "prior_support_enabled",
     "rejected_assets",
 }
 
@@ -222,7 +226,7 @@ def format_reveal_policy_report_summary(named_reports: list[tuple[str, dict[str,
         [
             "",
             "### Gate narrowing and candidate-space shape",
-            "| Scenario set | Ready assets before gate avg | Eligible assets after gate avg | Gate narrowing | 0 eligible | 1 eligible | 2+ eligible |",
+            "| Scenario set | Reveal decision space avg | Eligible reveal options avg | Option narrowing | 0 eligible options | 1 eligible option | 2+ eligible options |",
             "|---|---:|---:|---:|---:|---:|---:|",
         ]
     )
@@ -232,8 +236,8 @@ def format_reveal_policy_report_summary(named_reports: list[tuple[str, dict[str,
         lines.append(
             "| "
             f"{name} | "
-            f"{_format_float(controller.get('gate_ready_assets_before_gate_avg'))} | "
-            f"{_format_float(controller.get('gate_eligible_assets_after_gate_avg'))} | "
+            f"{_format_float(controller.get('gate_reveal_decision_space_avg'))} | "
+            f"{_format_float(controller.get('gate_eligible_reveal_options_avg'))} | "
             f"{_format_percent(controller.get('gate_narrowing_rate'))} | "
             f"{_format_percent(buckets.get('zero'))} | "
             f"{_format_percent(buckets.get('one'))} | "
@@ -409,8 +413,26 @@ def evaluate_scenario(
     reveal_constraints = _reveal_constraint_result(scenario, reveal_actions)
     opened_set = set(opened_assets)
     expected_no_reveal = bool(scenario.get("expected_no_reveal"))
-    gate_opened, _gate_events = gate_only_reveals(assets, request)
-    prior_influenced = policy == "controller" and opened_assets != gate_opened
+    # Only the controller needs a same-state gate-only counterfactual to
+    # attribute a changed choice to prior support. Re-running gate-only for
+    # other baselines would not contribute to the prior-influence metric.
+    if policy == "controller":
+        gate_opened, gate_actions, _gate_events = gate_only_reveals(
+            assets,
+            request,
+            config=config,
+        )
+        prior_comparable = _prior_is_healthy_for_comparison(decision_events)
+        prior_influenced = prior_comparable and reveal_actions != gate_actions
+        prior_comparison_step_count = 1 if prior_comparable else 0
+    elif policy == "gate-only":
+        gate_opened = list(opened_assets)
+        prior_influenced = False
+        prior_comparison_step_count = 0
+    else:
+        gate_opened = []
+        prior_influenced = False
+        prior_comparison_step_count = 0
     gate_metrics = _decision_gate_metrics(decision_events)
     main_reveals, explore_reveals = _reveals_by_role(decision_events)
     touched_declared = isinstance(scenario.get("touched_assets"), list)
@@ -446,14 +468,14 @@ def evaluate_scenario(
         "correct_no_reveal": expected_no_reveal and not opened_assets,
         "prior_influenced": prior_influenced,
         "prior_influenced_step_count": 1 if prior_influenced else 0,
-        "prior_comparison_step_count": 1,
+        "prior_comparison_step_count": prior_comparison_step_count,
         "gate_only_opened_assets": gate_opened,
         "gate_decision_point_count": gate_metrics["decision_point_count"],
-        "gate_ready_asset_total": gate_metrics["ready_asset_total"],
-        "gate_eligible_asset_total": gate_metrics["eligible_asset_total"],
+        "gate_eligible_reveal_option_total": gate_metrics["eligible_reveal_option_total"],
+        "gate_reveal_decision_space_total": gate_metrics["reveal_decision_space_total"],
         "gate_narrowing_rate_total": gate_metrics["narrowing_rate_total"],
-        "gate_ready_assets_before_gate_avg": gate_metrics["ready_assets_before_gate_avg"],
-        "gate_eligible_assets_after_gate_avg": gate_metrics["eligible_assets_after_gate_avg"],
+        "gate_reveal_decision_space_avg": gate_metrics["reveal_decision_space_avg"],
+        "gate_eligible_reveal_options_avg": gate_metrics["eligible_reveal_options_avg"],
         "gate_narrowing_rate": gate_metrics["narrowing_rate"],
         "gate_eligible_bucket_counts": gate_metrics["eligible_bucket_counts"],
         "rejection_reason_counts": gate_metrics["rejection_reason_counts"],
@@ -483,8 +505,12 @@ def _evaluate_policy_actions(
         opened_assets, decision_events = random_eligible_reveals(assets, request)
         return opened_assets, unlock_action_summaries(opened_assets), decision_events
     if policy == "gate-only":
-        opened_assets, decision_events = gate_only_reveals(assets, request)
-        return opened_assets, unlock_action_summaries(opened_assets), decision_events
+        opened_assets, reveal_actions, decision_events = gate_only_reveals(
+            assets,
+            request,
+            config=config,
+        )
+        return opened_assets, reveal_actions, decision_events
     if policy == "top-recommendation":
         opened_assets, decision_events = top_recommendation_reveals(
             assets,
@@ -745,16 +771,18 @@ def _collapse_timeline_rows(
         "correct_no_reveal": expected_no_reveal and not opened_assets,
         "prior_influenced": any(row["prior_influenced"] for row in step_rows),
         "prior_influenced_step_count": sum(1 for row in step_rows if row["prior_influenced"]),
-        "prior_comparison_step_count": len(step_rows),
+        "prior_comparison_step_count": sum(
+            int(row["prior_comparison_step_count"]) for row in step_rows
+        ),
         "gate_only_opened_assets": dedupe_preserve(
             asset for row in step_rows for asset in row["gate_only_opened_assets"]
         ),
         "gate_decision_point_count": gate_metrics["decision_point_count"],
-        "gate_ready_asset_total": gate_metrics["ready_asset_total"],
-        "gate_eligible_asset_total": gate_metrics["eligible_asset_total"],
+        "gate_eligible_reveal_option_total": gate_metrics["eligible_reveal_option_total"],
+        "gate_reveal_decision_space_total": gate_metrics["reveal_decision_space_total"],
         "gate_narrowing_rate_total": gate_metrics["narrowing_rate_total"],
-        "gate_ready_assets_before_gate_avg": gate_metrics["ready_assets_before_gate_avg"],
-        "gate_eligible_assets_after_gate_avg": gate_metrics["eligible_assets_after_gate_avg"],
+        "gate_reveal_decision_space_avg": gate_metrics["reveal_decision_space_avg"],
+        "gate_eligible_reveal_options_avg": gate_metrics["eligible_reveal_options_avg"],
         "gate_narrowing_rate": gate_metrics["narrowing_rate"],
         "gate_eligible_bucket_counts": gate_metrics["eligible_bucket_counts"],
         "rejection_reason_counts": gate_metrics["rejection_reason_counts"],
@@ -842,8 +870,12 @@ def _dedupe_reveal_actions(actions: Any) -> list[dict[str, str]]:
 def _sum_gate_metrics(rows: list[dict[str, Any]]) -> dict[str, Any]:
     """Aggregate gate metrics from per-step rows."""
     decision_points = sum(int(row["gate_decision_point_count"]) for row in rows)
-    ready_total = sum(int(row["gate_ready_asset_total"]) for row in rows)
-    eligible_total = sum(int(row["gate_eligible_asset_total"]) for row in rows)
+    reveal_option_total = sum(
+        int(row["gate_eligible_reveal_option_total"]) for row in rows
+    )
+    decision_space_total = sum(
+        int(row["gate_reveal_decision_space_total"]) for row in rows
+    )
     narrowing_total = sum(float(row["gate_narrowing_rate_total"]) for row in rows)
     buckets = Counter[str]()
     reasons = Counter[str]()
@@ -852,11 +884,11 @@ def _sum_gate_metrics(rows: list[dict[str, Any]]) -> dict[str, Any]:
         reasons.update(row["rejection_reason_counts"])
     return {
         "decision_point_count": decision_points,
-        "ready_asset_total": ready_total,
-        "eligible_asset_total": eligible_total,
+        "eligible_reveal_option_total": reveal_option_total,
+        "reveal_decision_space_total": decision_space_total,
         "narrowing_rate_total": narrowing_total,
-        "ready_assets_before_gate_avg": _average(ready_total, decision_points),
-        "eligible_assets_after_gate_avg": _average(eligible_total, decision_points),
+        "reveal_decision_space_avg": _average(decision_space_total, decision_points),
+        "eligible_reveal_options_avg": _average(reveal_option_total, decision_points),
         "narrowing_rate": _average(narrowing_total, decision_points),
         "eligible_bucket_counts": {
             bucket: buckets.get(bucket, 0)
@@ -954,6 +986,22 @@ def _controller_reveal_actions(actions: list[Any]) -> list[dict[str, str]]:
             summary["configuration_id"] = configuration_id
         summaries.append(summary)
     return summaries
+
+
+def _prior_is_healthy_for_comparison(decision_events: list[dict[str, Any]]) -> bool:
+    """Return whether controller traces show a usable prior for this step.
+
+    A degraded prior is a runtime fault condition, not an ablation result, so
+    those steps must not contribute to the prior-influence numerator or
+    denominator.
+    """
+    if not decision_events:
+        return False
+    for event in decision_events:
+        details = event.get("details")
+        if not isinstance(details, dict) or details.get("prior_degraded") is not None:
+            return False
+    return True
 
 
 def _reveals_by_role(decision_events: list[dict[str, Any]]) -> tuple[list[str], list[str]]:
@@ -1096,14 +1144,14 @@ def _decision_trace_complete(decision_events: list[dict[str, Any]]) -> bool:
 
 
 def _decision_gate_metrics(decision_events: list[dict[str, Any]]) -> dict[str, Any]:
-    """Summarise dependency-gate narrowing from decision trace details.
+    """Summarise reveal-option narrowing from decision trace details.
 
-    The trace already records assets that survived the hard gate and assets
-    rejected before scoring. This helper turns that audit trail into evaluation
-    metrics without changing controller behaviour.
+    One asset unlock and one configuration variant each count as one reveal
+    option. Rejected catalog assets are also counted as options in the trace
+    decision space. Variants filtered before scoring are not yet traced.
     """
-    ready_counts: list[int] = []
-    eligible_counts: list[int] = []
+    decision_space_counts: list[int] = []
+    reveal_option_counts: list[int] = []
     narrowing_rates: list[float] = []
     bucket_counts: Counter[str] = Counter()
     reason_counts: Counter[str] = Counter()
@@ -1111,29 +1159,35 @@ def _decision_gate_metrics(decision_events: list[dict[str, Any]]) -> dict[str, A
         details = event.get("details")
         if not isinstance(details, dict):
             continue
-        eligible_assets = string_list(details.get("eligible_assets"))
+        eligible_reveal_options = _dict_list(details.get("eligible_reveal_options"))
         raw_rejected = details.get("rejected_assets")
         rejected_assets = raw_rejected if isinstance(raw_rejected, dict) else {}
-        if not eligible_assets and not rejected_assets:
+        if not eligible_reveal_options and not rejected_assets:
             continue
-        ready_count = len(eligible_assets) + len(rejected_assets)
-        if ready_count <= 0:
+        eligible_count = len(eligible_reveal_options)
+        decision_space_count = eligible_count + len(rejected_assets)
+        if decision_space_count <= 0:
             continue
-        eligible_count = len(eligible_assets)
-        ready_counts.append(ready_count)
-        eligible_counts.append(eligible_count)
-        narrowing_rates.append(1.0 - (eligible_count / ready_count))
+        decision_space_counts.append(decision_space_count)
+        reveal_option_counts.append(eligible_count)
+        narrowing_rates.append(1.0 - (eligible_count / decision_space_count))
         bucket_counts[_eligible_bucket(eligible_count)] += 1
         for reason in rejected_assets.values():
             reason_counts[_rejection_reason_category(reason)] += 1
-    decision_point_count = len(ready_counts)
+    decision_point_count = len(decision_space_counts)
     return {
         "decision_point_count": decision_point_count,
-        "ready_asset_total": sum(ready_counts),
-        "eligible_asset_total": sum(eligible_counts),
+        "eligible_reveal_option_total": sum(reveal_option_counts),
+        "reveal_decision_space_total": sum(decision_space_counts),
         "narrowing_rate_total": round(sum(narrowing_rates), 6),
-        "ready_assets_before_gate_avg": _average(sum(ready_counts), decision_point_count),
-        "eligible_assets_after_gate_avg": _average(sum(eligible_counts), decision_point_count),
+        "reveal_decision_space_avg": _average(
+            sum(decision_space_counts),
+            decision_point_count,
+        ),
+        "eligible_reveal_options_avg": _average(
+            sum(reveal_option_counts),
+            decision_point_count,
+        ),
         "narrowing_rate": _average(sum(narrowing_rates), decision_point_count),
         "eligible_bucket_counts": {
             bucket: bucket_counts.get(bucket, 0)
@@ -1141,6 +1195,13 @@ def _decision_gate_metrics(decision_events: list[dict[str, Any]]) -> dict[str, A
         },
         "rejection_reason_counts": dict(sorted(reason_counts.items())),
     }
+
+
+def _dict_list(value: object) -> list[dict[str, Any]]:
+    """Return only dictionary items from a trace list field."""
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
 
 
 def _eligible_bucket(eligible_count: int) -> str:
@@ -1193,8 +1254,12 @@ def _aggregate_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
         for row in rows
     )
     gate_decision_points = sum(int(row["gate_decision_point_count"]) for row in rows)
-    gate_ready_assets = sum(int(row["gate_ready_asset_total"]) for row in rows)
-    gate_eligible_assets = sum(int(row["gate_eligible_asset_total"]) for row in rows)
+    gate_eligible_reveal_options = sum(
+        int(row["gate_eligible_reveal_option_total"]) for row in rows
+    )
+    gate_reveal_decision_space = sum(
+        int(row["gate_reveal_decision_space_total"]) for row in rows
+    )
     gate_narrowing_total = sum(float(row["gate_narrowing_rate_total"]) for row in rows)
     gate_bucket_counts = Counter[str]()
     rejection_reason_counts = Counter[str]()
@@ -1292,8 +1357,16 @@ def _aggregate_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "prior_comparison_step_count": prior_comparison_steps,
         "prior_influence_rate": _ratio(prior_influenced_steps, prior_comparison_steps),
         "gate_decision_point_count": gate_decision_points,
-        "gate_ready_assets_before_gate_avg": _average(gate_ready_assets, gate_decision_points),
-        "gate_eligible_assets_after_gate_avg": _average(gate_eligible_assets, gate_decision_points),
+        "gate_reveal_decision_space_total": gate_reveal_decision_space,
+        "gate_eligible_reveal_option_total": gate_eligible_reveal_options,
+        "gate_reveal_decision_space_avg": _average(
+            gate_reveal_decision_space,
+            gate_decision_points,
+        ),
+        "gate_eligible_reveal_options_avg": _average(
+            gate_eligible_reveal_options,
+            gate_decision_points,
+        ),
         "gate_narrowing_rate": _average(gate_narrowing_total, gate_decision_points),
         "gate_eligible_bucket_counts": {
             bucket: gate_bucket_counts.get(bucket, 0)

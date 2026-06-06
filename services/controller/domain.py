@@ -151,10 +151,13 @@ class ControllerService:
         asset_repository: AssetRepository,
         technique_prior_repository: TechniquePriorRepository,
         config: RuntimeConfig | None = None,
+        *,
+        use_prior_support: bool = True,
     ) -> None:
         self._asset_repository = asset_repository
         self._technique_prior_repository = technique_prior_repository
         self._config = config or RuntimeConfig()
+        self._use_prior_support = use_prior_support
 
     def tick(self, request: ControllerTickRequest) -> ControllerTickResponse:
         """Score eligible assets and return unlock/noop actions for one profile tick.
@@ -172,10 +175,14 @@ class ControllerService:
         considered: list[CandidateScore] = []
         rejected: dict[str, str] = {}
         thresholded_observed = self._thresholded_observed_techniques(request.profile)
-        recommendations = self._technique_prior_repository.recommend(
-            thresholded_observed,
-            top_k=self._config.recommendation_top_k,
-            support_threshold=self._config.recommendation_support_threshold,
+        recommendations = (
+            self._technique_prior_repository.recommend(
+                thresholded_observed,
+                top_k=self._config.recommendation_top_k,
+                support_threshold=self._config.recommendation_support_threshold,
+            )
+            if self._use_prior_support
+            else {}
         )
 
         if _scanner_only_profile(request.profile):
@@ -223,7 +230,7 @@ class ControllerService:
                     request,
                     selected,
                     rejected,
-                    eligible_asset_ids=self._candidate_asset_ids(candidates),
+                    eligible_candidates=candidates,
                 )
             )
             if selected.action_type == ActionType.unlock:
@@ -425,6 +432,7 @@ class ControllerService:
                 has_concrete_marker=_has_concrete_dependency_marker(
                     option.matched_dependency_markers
                 ),
+                use_prior_support=self._use_prior_support,
             )
             for technique in option.covered_techniques
         }
@@ -464,7 +472,12 @@ class ControllerService:
         selected_technique, selected_parts = max(
             technique_scores.items(),
             key=lambda item: (
-                _technique_gain(item[0], profile.conf_by_technique, recommendations),
+                _technique_gain(
+                    item[0],
+                    profile.conf_by_technique,
+                    recommendations,
+                    use_prior_support=self._use_prior_support,
+                ),
                 float(item[1]["signal_score"]),
                 item[0],
             ),
@@ -482,6 +495,7 @@ class ControllerService:
             tuple(technique_scores),
             profile.conf_by_technique,
             recommendations,
+            use_prior_support=self._use_prior_support,
         )
 
         return CandidateScore(
@@ -517,6 +531,7 @@ class ControllerService:
         recommendations: dict[str, float],
         *,
         has_concrete_marker: bool,
+        use_prior_support: bool,
     ) -> dict[str, Any]:
         """Classify one technique as recommended, continuation, weak, or unsupported.
 
@@ -527,17 +542,27 @@ class ControllerService:
                 {"candidate_type": "recommended", "signal_score": 0.4, ...}
         """
         current_confidence = float(confidences.get(technique, 0.0))
-        recommendation_support = float(recommendations.get(technique, 0.0))
+        recommendation_support = (
+            float(recommendations.get(technique, 0.0))
+            if use_prior_support
+            else 0.0
+        )
         matched_profile_technique = technique if current_confidence > 0 else None
-        matched_prior_technique = technique if recommendation_support > 0 else None
-        match_type = "exact" if current_confidence > 0 or recommendation_support > 0 else "none"
+        matched_prior_technique = (
+            technique if use_prior_support and recommendation_support > 0 else None
+        )
+        match_type = "exact" if current_confidence > 0 else "none"
         family_confidence, family_confidence_technique = _best_family_score(technique, confidences)
-        family_prior, family_prior_technique = _best_family_score(technique, recommendations)
+        family_prior, family_prior_technique = (
+            _best_family_score(technique, recommendations)
+            if use_prior_support
+            else (0.0, None)
+        )
         if family_confidence > current_confidence:
             current_confidence = family_confidence
             matched_profile_technique = family_confidence_technique
             match_type = "family"
-        if family_prior > recommendation_support:
+        if use_prior_support and family_prior > recommendation_support:
             recommendation_support = family_prior
             matched_prior_technique = family_prior_technique
             match_type = "family"
@@ -549,6 +574,11 @@ class ControllerService:
         if observed_for_continuation:
             candidate_type = "continuation"
             signal_score = min(1.0, current_confidence)
+        elif not use_prior_support:
+            # Prior ablation: hard-gated options remain candidates, while their
+            # gain uses a constant plausibility term and therefore pure novelty.
+            candidate_type = "gate_only"
+            signal_score = 1.0
         elif recommendation_support > 0:
             candidate_type = "recommended"
             signal_score = recommendation_support
@@ -720,8 +750,22 @@ class ControllerService:
         candidate: CandidateScore,
         rejected: dict[str, str],
         *,
-        eligible_asset_ids: list[str],
+        eligible_candidates: list[CandidateScore],
     ) -> DecisionEvent:
+        eligible_reveal_options = [
+            _candidate_reveal_option_summary(candidate)
+            for candidate in eligible_candidates
+        ]
+        eligible_asset_ids = dedupe_preserve(
+            candidate.asset.asset_id
+            for candidate in eligible_candidates
+            if candidate.action_type == ActionType.unlock
+        )
+        eligible_configuration_variants = [
+            option
+            for option in eligible_reveal_options
+            if option["action_type"] == ActionType.configure.value
+        ]
         details = {
             "strategy": candidate.strategy,
             "selected_strategy": candidate.strategy,
@@ -740,9 +784,16 @@ class ControllerService:
             "covered_techniques": list(candidate.covered_techniques),
             "matched_dependency_markers": list(candidate.matched_dependency_markers),
             "matched_dependency_marker_count": candidate.matched_dependency_marker_count,
-            "prior_degraded": self._technique_prior_repository.degraded_reason,
+            "prior_degraded": (
+                self._technique_prior_repository.degraded_reason
+                if self._use_prior_support
+                else None
+            ),
+            "prior_support_enabled": self._use_prior_support,
             "observed_techniques": sorted(self._thresholded_observed_techniques(request.profile)),
             "eligible_assets": eligible_asset_ids,
+            "eligible_reveal_options": eligible_reveal_options,
+            "eligible_configuration_variants": eligible_configuration_variants,
             "rejected_assets": dict(rejected),
             "ordering": _controller_ordering_details(candidate),
         }
@@ -766,7 +817,7 @@ class ControllerService:
             binding_id=request.binding_id,
             decision_type=decision_type,
             reason=(
-                f"{candidate.strategy} selected {exposed_asset_id} "
+                f"{candidate.strategy} selected on {exposed_asset_id} "
                 f"via {candidate.selected_technique}"
             ),
             trigger_evidence_ids=request.profile.recent_evidence_ids,
@@ -798,7 +849,12 @@ class ControllerService:
                     reason=reason,
                     trigger_evidence_ids=request.profile.recent_evidence_ids,
                     details={
-                        "prior_degraded": self._technique_prior_repository.degraded_reason,
+                        "prior_degraded": (
+                            self._technique_prior_repository.degraded_reason
+                            if self._use_prior_support
+                            else None
+                        ),
+                        "prior_support_enabled": self._use_prior_support,
                         "reveal_action": "no_reveal",
                         "no_reveal_reason": reason,
                         "rejected_assets": rejected or {},
@@ -867,15 +923,22 @@ def _expected_technique_gain(
     covered_techniques: tuple[str, ...],
     confidences: dict[str, float],
     recommendations: dict[str, float],
+    *,
+    use_prior_support: bool = True,
 ) -> float:
     """Return expected new technique gain for one reveal candidate.
 
     G(a) = sum p_t * (1 - C_t) over covered techniques. Prior support is the
     plausibility term; the candidate technique's own profile confidence is the
-    novelty discount.
+    novelty discount. In the prior ablation, p_t is fixed at 1.
     """
     return sum(
-        _technique_gain(technique, confidences, recommendations)
+        _technique_gain(
+            technique,
+            confidences,
+            recommendations,
+            use_prior_support=use_prior_support,
+        )
         for technique in covered_techniques
     )
 
@@ -884,12 +947,18 @@ def _technique_gain(
     technique: str,
     confidences: dict[str, float],
     recommendations: dict[str, float],
+    *,
+    use_prior_support: bool = True,
 ) -> float:
-    """Return p_t * (1-C_t) with family matching only for prior support."""
+    """Return p_t * (1-C_t), or pure novelty when prior support is disabled."""
     confidence = float(confidences.get(technique, 0.0))
-    support = max(
-        float(recommendations.get(technique, 0.0)),
-        _best_family_score(technique, recommendations)[0],
+    support = (
+        max(
+            float(recommendations.get(technique, 0.0)),
+            _best_family_score(technique, recommendations)[0],
+        )
+        if use_prior_support
+        else 1.0
     )
     return support * max(0.0, 1.0 - confidence)
 
@@ -945,6 +1014,19 @@ def _structural_priority_rank(candidate: CandidateScore) -> int:
 def _candidate_exposed_asset_id(candidate: CandidateScore) -> str:
     """Return the asset id that a decision exposes to the attacker."""
     return candidate.target_asset_id or candidate.asset.asset_id
+
+
+def _candidate_reveal_option_summary(candidate: CandidateScore) -> dict[str, str]:
+    """Return the stable identity of one scored unlock or configuration option."""
+    summary = {
+        "action_type": candidate.action_type.value,
+        "asset_id": candidate.asset.asset_id,
+    }
+    if candidate.configuration_id:
+        summary["configuration_id"] = candidate.configuration_id
+    if candidate.target_asset_id:
+        summary["target_asset_id"] = candidate.target_asset_id
+    return summary
 
 
 def _has_concrete_dependency_marker(markers: list[str]) -> bool:

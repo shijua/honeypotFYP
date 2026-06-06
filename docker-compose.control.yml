@@ -146,6 +146,7 @@ services:
       --loop-state-file data/runtime/adaptive_loop_state.json
       --feedback-file data/runtime/reveal_feedback.json
       --max-actions-per-trigger 2
+      --timeout-seconds 60
       --poll-seconds 2"
     environment:
       PYTHONPATH: /app

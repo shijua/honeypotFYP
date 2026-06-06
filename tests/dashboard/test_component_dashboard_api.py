@@ -154,6 +154,21 @@ def test_dashboard_summary_endpoint_returns_live_snapshot(
                             "http_evidence_labels": ["internal-http artifact access"],
                             "http_indicators": ["path:.zip"],
                         },
+                    },
+                    {
+                        "evidence_id": "e-cowrie-command-1",
+                        "ts": "2026-01-01T00:00:02Z",
+                        "attacker_key": "198.51.100.10",
+                        "binding_id": "binding-1",
+                        "tech_id": "T1087.001",
+                        "group": "Discovery",
+                        "weight": 2.0,
+                        "success": True,
+                        "reason": "cowrie.command.input",
+                        "source_ref": {
+                            "source": "cowrie",
+                            "output": "cowrie.command.input from 198.51.100.10: cat /etc/passwd [local_account_file_discovery]",
+                        },
                     }
                 ]
             }
@@ -211,6 +226,7 @@ def test_dashboard_summary_endpoint_returns_live_snapshot(
                 {
                     "attacker_key": "198.51.100.10",
                     "ts": "2026-01-01T00:00:03Z",
+                    "recent_evidence_ids": ["e-public-http-1", "e-cowrie-command-1"],
                     "candidate_asset_ids": ["internal-portal"],
                     "actions": [{"action_type": "unlock", "asset_id": "internal-portal"}],
                     "decision_events": [
@@ -226,10 +242,20 @@ def test_dashboard_summary_endpoint_returns_live_snapshot(
                                 "selected_technique": "T1087",
                                 "confidence_score": 0.8,
                                 "recommendation_support": 0.3,
+                                "expected_technique_gain": 0.6,
+                                "covered_techniques": ["T1087", "T1110"],
                                 "asset_group": "portal",
                                 "eligible_assets": ["internal-portal"],
+                                "eligible_reveal_options": [
+                                    {
+                                        "action_type": "unlock",
+                                        "asset_id": "internal-portal",
+                                    }
+                                ],
                                 "rejected_assets": {"finance-share": "dependency not met"},
                                 "matched_dependency_markers": ["any_http_indicators:combined:.env"],
+                                "observed_techniques": ["T1110", "T1087"],
+                                "prior_support_enabled": True,
                                 "prior_degraded": None,
                             },
                         }
@@ -468,6 +494,22 @@ def test_dashboard_summary_endpoint_returns_live_snapshot(
         "T1087": 0.3935,
     }
     decision = payload["attackers"][0]["decisions"][0]
+    assert decision["trigger_evidence"] == [
+        {
+            "evidence_id": "e-public-http-1",
+            "source": "public_http",
+            "label": "HTTP honeypot request",
+            "detail": "HTTP /.env",
+            "text": "public_http:HTTP /.env",
+        },
+        {
+            "evidence_id": "e-cowrie-command-1",
+            "source": "cowrie",
+            "label": "cowrie.command.input",
+            "detail": "cat /etc/passwd",
+            "text": "cmd:cat /etc/passwd",
+        },
+    ]
     assert decision["actions"] == [
         {
             "action_type": "unlock",
@@ -478,8 +520,22 @@ def test_dashboard_summary_endpoint_returns_live_snapshot(
     ]
     assert decision["decision_events"][0]["reveal_role"] == "main"
     assert decision["decision_events"][0]["selected_technique"] == "T1087"
-    assert decision["decision_events"][0]["eligible_asset_count"] == 1
+    assert decision["decision_events"][0]["eligible_reveal_option_count"] == 1
+    assert decision["decision_events"][0]["eligible_reveal_options"] == [
+        {
+            "action_type": "unlock",
+            "asset_id": "internal-portal",
+            "configuration_id": None,
+            "target_asset_id": None,
+        }
+    ]
     assert decision["decision_events"][0]["rejected_asset_count"] == 1
+    assert decision["decision_events"][0]["rejection_reason_counts"] == {
+        "dependency not met": 1
+    }
+    assert decision["decision_events"][0]["prior_support_enabled"] is True
+    assert decision["decision_events"][0]["covered_techniques"] == ["T1087", "T1110"]
+    assert decision["decision_events"][0]["observed_techniques"] == ["T1110", "T1087"]
     assert decision["decision_events"][0]["matched_dependency_markers"] == [
         "any_http_indicators:combined:.env"
     ]
@@ -518,9 +574,21 @@ def test_dashboard_index_serves_html() -> None:
     assert '/static/dashboard.js' in response.body.decode("utf-8")
     assert ".metrics" in css
     assert ".status-badge" in css
+    assert ".decision-flow" in css
+    assert ".decision-waiting" in css
     assert "async function loadData()" in js
     assert "function renderHealth" in js
     assert "function techniqueBadgeList" in js
+    assert "function formatRejectionReason" in js
+    assert "waiting for ${noun}" in js
+    assert "gain terms:" in js
+    assert "selected support" in js
+    assert 'detailOpenAttribute(detailKey, hasRevealAction)' in js
+    assert 'class="trace-label">Gate' in js
+    assert 'class="trace-label">Rank' in js
+    assert 'class="trace-label">Action' in js
+    assert 'class="trace-label">Triggered by' in js
+    assert "waiting_for_reveal_response" in js
 
 
 def test_forwarder_startup_connection_refusal_is_warning() -> None:

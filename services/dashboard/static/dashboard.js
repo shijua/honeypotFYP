@@ -54,9 +54,9 @@ function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
-function badgeList(items, className = "") {
+function badgeList(items, className = "", emptyLabel = "none") {
   if (!items || items.length === 0) {
-    return '<span class="subtle">none</span>';
+    return `<span class="subtle">${escapeHtml(emptyLabel)}</span>`;
   }
   return items.map(item => `<span class="badge ${className}">${escapeHtml(item)}</span>`).join("");
 }
@@ -116,6 +116,37 @@ function decisionTargetLabel(event) {
     return `${event.asset_id}:${event.configuration_id}`;
   }
   return event.asset_id || "";
+}
+
+function revealOptionLabel(option) {
+  const target = option.configuration_id
+    ? `${option.asset_id}:${option.configuration_id}`
+    : option.asset_id;
+  return `${option.action_type || "reveal"} ${target || ""}`.trim();
+}
+
+function countLabels(counts) {
+  return Object.entries(counts || {}).map(([label, count]) => {
+    const noun = Number(count) === 1 ? "asset" : "assets";
+    return `${count} ${noun} rejected: ${formatRejectionReason(label)}`;
+  });
+}
+
+function formatRejectionReason(reason) {
+  const text = String(reason || "");
+  const dependencyMatch = text.match(/^missing dependencies:\s*\[(.*)\]$/);
+  if (!dependencyMatch) {
+    return text;
+  }
+  const dependencies = dependencyMatch[1]
+    .split(",")
+    .map(item => item.trim().replace(/^['"]|['"]$/g, ""))
+    .filter(Boolean);
+  if (!dependencies.length) {
+    return "waiting for required dependency";
+  }
+  const noun = dependencies.length === 1 ? "dependency" : "dependencies";
+  return `waiting for ${noun}: ${dependencies.join(", ")}`;
 }
 
 function detailOpenAttribute(key, defaultOpen = false) {
@@ -300,12 +331,14 @@ function renderDecisions(decisions, attackerKey, confidences = {}) {
     return '<span class="subtle">none</span>';
   }
   return `<div class="decision-list">
-    ${decisions.slice().reverse().map(decision => renderDecision(decision, attackerKey, confidences)).join("")}
+    ${decisions.map(decision => renderDecision(decision, attackerKey, confidences)).join("")}
   </div>`;
 }
 
 function renderDecision(decision, attackerKey, confidences = {}) {
   const events = decision.decision_events || [];
+  const isWaitingOnly = events.length > 0 && events.every(event => event.no_reveal_reason === "waiting_for_reveal_response");
+  const hasRevealAction = (decision.actions || []).some(action => action.action_type && action.action_type !== "noop");
   const eventRows = events.length
     ? events.map(event => renderDecisionEvent(event)).join("")
     : `<div class="decision-row">${badgeList(decision.reasons || [], "warn")}</div>`;
@@ -316,39 +349,96 @@ function renderDecision(decision, attackerKey, confidences = {}) {
     return `${action.action_type || "action"} ${target || ""}`.trim();
   });
   const droppedLabels = (decision.dropped_actions || []).map(action => `${action.action_type || "action"} ${action.asset_id || ""}`.trim());
-  const summary = actionLabels.length ? actionLabels.join(", ") : (decision.reasons || []).join(", ") || "no reveal";
+  const droppedHtml = droppedLabels.length
+    ? `<span>dropped ${badgeList(droppedLabels, "bad")}</span>`
+    : "";
+  const actionHtml = actionLabels.some(label => label !== "noop")
+    ? `<span>actions ${badgeList(actionLabels, "", "no reveal actions")}</span>`
+    : "";
+  const footerHtml = actionHtml || droppedHtml
+    ? `<div class="decision-actions subtle">${actionHtml}${droppedHtml}</div>`
+    : "";
   const detailKey = `decision:${attackerKey}:${decision.ts || "-"}:${actionLabels.join("|")}`;
-  return `<details class="decision-block" data-detail-key="${escapeHtml(detailKey)}"${detailOpenAttribute(detailKey, true)}>
+  const triggerLabels = (decision.trigger_evidence || []).map(item => item.text || item.evidence_id).filter(Boolean);
+  const triggerLine = triggerLabels.length
+    ? `<span class="trace-trigger"><span class="trace-label">Triggered by</span>${badgeList(triggerLabels)}</span>`
+    : "";
+  if (isWaitingOnly) {
+    return `<div class="decision-block decision-waiting">
+      <div class="decision-meta">
+        <span class="trace-summary"><span class="trace-dot trace-dot-wait"></span><span class="mono">${escapeHtml(decision.ts || "-")}</span></span>
+        ${triggerLine}
+        <span class="badge">waiting for response</span>
+      </div>
+    </div>`;
+  }
+  return `<details class="decision-block" data-detail-key="${escapeHtml(detailKey)}"${detailOpenAttribute(detailKey, hasRevealAction)}>
     <summary class="decision-meta">
       <span class="trace-summary"><span class="trace-dot"></span><span class="mono">${escapeHtml(decision.ts || "-")}</span></span>
-      <span class="subtle">${escapeHtml(summary)}</span>
-      <span>${techniqueBadgeList(decision.recent_techniques || [], confidences)}</span>
+      ${triggerLine}
+      <span class="trace-observed"><span class="trace-label">Observed</span>${techniqueBadgeList(decision.recent_techniques || [], confidences)}</span>
     </summary>
     ${eventRows}
-    <div class="decision-actions subtle">
-      <span>actions ${badgeList(actionLabels)}</span>
-      <span>dropped ${badgeList(droppedLabels, "bad")}</span>
-    </div>
+    ${footerHtml}
   </details>`;
 }
 
 function renderDecisionEvent(event) {
   const support = event.recommendation_support === null || event.recommendation_support === undefined
-    ? "-"
+    ? "0.00"
     : Number(event.recommendation_support).toFixed(2);
   const confidence = event.confidence_score === null || event.confidence_score === undefined
-    ? "-"
+    ? "0.00"
     : Number(event.confidence_score).toFixed(2);
-  const labels = compactLabels([
-    event.candidate_type,
-    event.selected_technique,
+  const gain = event.expected_technique_gain === null || event.expected_technique_gain === undefined
+    ? "0.00"
+    : Number(event.expected_technique_gain).toFixed(2);
+  const coveredTechniques = event.covered_techniques || [];
+  const eligibleLabels = (event.eligible_reveal_options || []).map(revealOptionLabel);
+  const rejectionLabels = countLabels(event.rejection_reason_counts);
+  const priorState = event.prior_support_enabled === false
+    ? "disabled"
+    : (event.prior_degraded ? `degraded: ${event.prior_degraded}` : "active");
+  const roleLabel = event.reveal_role === "explore"
+    ? "explore lane"
+    : (event.reveal_role === "main" ? "main lane" : "no reveal lane");
+  const techniqueSource = event.candidate_type === "recommended"
+    ? "from ATT&CK prior"
+    : (event.candidate_type === "observed" ? "from observed profile" : event.candidate_type || "not selected");
+  const actionLabel = compactLabels([
+    event.decision_type,
     decisionTargetLabel(event),
-  ]);
-  const counts = `eligible ${event.eligible_asset_count ?? 0}, rejected ${event.rejected_asset_count ?? 0}, support ${support}, conf ${confidence}`;
-  return `<div class="decision-row">
-    <div>${badgeList(labels)}</div>
-    <div class="subtle">${escapeHtml(counts)}</div>
-    <div class="subtle">${badgeList(event.matched_dependency_markers || [])}</div>
+    event.no_reveal_reason,
+  ]).join(" ");
+  return `<div class="decision-flow">
+    <div class="trace-lane">
+      <div class="trace-label">Gate</div>
+      <div class="trace-content">
+        <div>${badgeList(eligibleLabels, "", "no eligible reveal options")}</div>
+        <div class="subtle">eligible options: ${escapeHtml(event.eligible_reveal_option_count ?? 0)} | rejected assets: ${escapeHtml(event.rejected_asset_count ?? 0)}</div>
+        <div class="subtle">${badgeList(rejectionLabels, "bad", "no rejected assets")}</div>
+        <div class="subtle">matched signals: ${badgeList(event.matched_dependency_markers || [], "", "no matched dependency signals")}</div>
+      </div>
+    </div>
+    <div class="trace-arrow" aria-hidden="true">→</div>
+    <div class="trace-lane">
+      <div class="trace-label">Rank</div>
+      <div class="trace-content">
+        <div>${badgeList([roleLabel], "warn")}</div>
+        <div class="rank-technique">selected technique: ${badgeList(event.selected_technique ? [event.selected_technique] : [], "warn", "no technique selected")}</div>
+        <div class="subtle">strategy ${escapeHtml(event.strategy || "not selected")} | candidate ${escapeHtml(techniqueSource)}</div>
+        <div class="subtle">gain terms: ${badgeList(coveredTechniques, "", "no covered techniques")}</div>
+        <div class="subtle">score: total gain ${escapeHtml(gain)} over covered techniques; selected support ${escapeHtml(support)}, selected confidence ${escapeHtml(confidence)}; prior ${escapeHtml(priorState)}</div>
+      </div>
+    </div>
+    <div class="trace-arrow" aria-hidden="true">→</div>
+    <div class="trace-lane trace-action">
+      <div class="trace-label">Action</div>
+      <div class="trace-content">
+        <div>${badgeList(actionLabel ? [actionLabel] : [], event.decision_type === "noop" ? "bad" : "", "no action selected")}</div>
+        <div class="subtle">${escapeHtml(event.reason || "")}</div>
+      </div>
+    </div>
   </div>`;
 }
 
@@ -461,7 +551,7 @@ function buildRecentActivity(data) {
     });
   });
   return rows
-    .sort((left, right) => String(right.ts).localeCompare(String(left.ts)))
+    .sort((left, right) => String(left.ts).localeCompare(String(right.ts)))
     .slice(0, 60);
 }
 

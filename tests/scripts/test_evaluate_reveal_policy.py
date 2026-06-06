@@ -5,16 +5,159 @@ from pathlib import Path
 
 import pytest
 
+from libs.contracts.models import AssetDefinition
+import scripts.evaluation.reveal_policy as reveal_policy_module
 from scripts.evaluation.charts import write_reveal_policy_chart
 from scripts.evaluation.reveal_policy import (
+    evaluate_scenario,
     evaluate_reveal_policies,
     format_reveal_policy_report_summary,
     load_scenarios,
+    scenario_request,
     scenario_timeline,
 )
+from scripts.evaluation.reveal_policy_baselines import gate_only_reveals
 
 
 pytestmark = pytest.mark.unit
+
+
+def test_gate_only_uses_controller_novelty_ordering_without_prior() -> None:
+    assets = [
+        AssetDefinition.model_validate(
+            {
+                "asset_id": "high-confidence-first",
+                "asset_name": "High Confidence First",
+                "exposure_type": "internal",
+                "interaction_level": "medium",
+                "covers_tactics": ["Discovery"],
+                "dependencies": [],
+                "default_settings": {
+                    "unlock_signals": {"any_techniques": ["T1083", "T1046"]},
+                    "selection_profile": {
+                        "asset_group": "first",
+                        "covered_techniques": ["T1083"],
+                        "telemetry_value": 0.5,
+                    },
+                },
+            }
+        ),
+        AssetDefinition.model_validate(
+            {
+                "asset_id": "low-confidence-second",
+                "asset_name": "Low Confidence Second",
+                "exposure_type": "internal",
+                "interaction_level": "medium",
+                "covers_tactics": ["Discovery"],
+                "dependencies": [],
+                "default_settings": {
+                    "unlock_signals": {"any_techniques": ["T1083", "T1046"]},
+                    "selection_profile": {
+                        "asset_group": "second",
+                        "covered_techniques": ["T1046"],
+                        "telemetry_value": 0.5,
+                    },
+                },
+            }
+        ),
+    ]
+    request = scenario_request(
+        {
+            "scenario_id": "gate-only-novelty",
+            "profile": {
+                "conf_by_technique": {"T1083": 0.9, "T1046": 0.1},
+                "recent_techniques": ["T1083", "T1046"],
+                "recent_evidence_ids": ["e1"],
+            },
+        }
+    )
+
+    opened, actions, events = gate_only_reveals(assets, request, max_reveals=1)
+
+    assert opened == ["low-confidence-second"]
+    assert actions == [{"action_type": "unlock", "asset_id": "low-confidence-second"}]
+    assert events[0]["details"]["prior_support_enabled"] is False
+    assert events[0]["details"]["reveal_policy"] == "gate-only"
+    assert events[0]["details"]["recommendation_support"] == 0.0
+    assert events[0]["details"]["ordering"]["expected_technique_gain"] == 0.9
+
+
+def test_prior_influence_compares_reveal_actions_not_only_opened_assets(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        reveal_policy_module,
+        "_evaluate_policy_actions",
+        lambda **_kwargs: (
+            ["same-asset"],
+            [{"action_type": "unlock", "asset_id": "same-asset"}],
+            [{"details": {"prior_degraded": None}}],
+        ),
+    )
+    monkeypatch.setattr(
+        reveal_policy_module,
+        "gate_only_reveals",
+        lambda *_args, **_kwargs: (
+            ["same-asset"],
+            [
+                {
+                    "action_type": "configure",
+                    "asset_id": "same-asset",
+                    "configuration_id": "variant-a",
+                }
+            ],
+            [],
+        ),
+    )
+
+    row = evaluate_scenario(
+        {"scenario_id": "same-asset-different-action"},
+        assets=[],
+        catalog_path=tmp_path / "catalog.json",
+        prior_path=tmp_path / "prior.json",
+        policy="controller",
+        config=reveal_policy_module.RuntimeConfig(),
+    )
+
+    assert row["prior_influenced"] is True
+    assert row["prior_comparison_step_count"] == 1
+
+
+def test_prior_influence_excludes_degraded_prior_steps(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        reveal_policy_module,
+        "_evaluate_policy_actions",
+        lambda **_kwargs: (
+            ["controller-choice"],
+            [{"action_type": "unlock", "asset_id": "controller-choice"}],
+            [{"details": {"prior_degraded": "prior file missing"}}],
+        ),
+    )
+    monkeypatch.setattr(
+        reveal_policy_module,
+        "gate_only_reveals",
+        lambda *_args, **_kwargs: (
+            ["gate-choice"],
+            [{"action_type": "unlock", "asset_id": "gate-choice"}],
+            [],
+        ),
+    )
+
+    row = evaluate_scenario(
+        {"scenario_id": "degraded-prior"},
+        assets=[],
+        catalog_path=tmp_path / "catalog.json",
+        prior_path=tmp_path / "prior.json",
+        policy="controller",
+        config=reveal_policy_module.RuntimeConfig(),
+    )
+
+    assert row["prior_influenced"] is False
+    assert row["prior_comparison_step_count"] == 0
 
 
 def test_reveal_policy_evaluator_compares_baselines(tmp_path: Path) -> None:
@@ -185,9 +328,14 @@ def test_reveal_policy_evaluator_compares_baselines(tmp_path: Path) -> None:
     assert "prior_influence_rate" in controller
     assert "prior_influenced_step_count" in controller
     assert controller["prior_comparison_step_count"] == controller["step_count"]
+    assert report["policies"]["gate-only"]["prior_comparison_step_count"] == 0
+    assert report["policies"]["all-open"]["prior_comparison_step_count"] == 0
     assert "diagnostic_or_useful_per_reveal" in controller
     assert controller["gate_decision_point_count"] > 0
-    assert controller["gate_ready_assets_before_gate_avg"] >= controller["gate_eligible_assets_after_gate_avg"]
+    assert controller["gate_reveal_decision_space_avg"] >= controller["gate_eligible_reveal_options_avg"]
+    assert "gate_eligible_reveal_options_avg" in controller
+    assert "gate_eligible_assets_after_gate_avg" not in controller
+    assert "gate_eligible_configuration_options_avg" not in controller
     assert 0 <= controller["gate_narrowing_rate"] <= 1
     assert sum(controller["gate_eligible_bucket_counts"].values()) == controller["gate_decision_point_count"]
     assert controller["rejection_reason_counts"]

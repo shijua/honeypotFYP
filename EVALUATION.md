@@ -101,9 +101,9 @@ For the controller row, check:
 - `timeline_reveal_efficiency_avg`: average per-scenario touched revealed assets divided by total revealed assets.
 - `source_traceability_declared_rate`: whether each timeline step declares source reference and exactness level.
 - `opened_asset_count` / `avg_opened_assets`: total opened assets and average reveals per scenario.
-- `gate_narrowing_rate`: average fraction of considered assets removed by the hard dependency/readiness/signal gate before ranking.
-- `gate_ready_assets_before_gate_avg` / `gate_eligible_assets_after_gate_avg`: average candidate count before and after the gate.
-- `gate_eligible_bucket_counts`: decision-point count where the gate left `zero`, `one`, or `two_plus` eligible candidates.
+- `gate_narrowing_rate`: average fraction of trace-visible reveal options removed by the hard dependency/readiness/signal gate before ranking. One asset unlock and one configuration variant each count as one reveal option.
+- `gate_reveal_decision_space_avg` / `gate_eligible_reveal_options_avg`: average combined reveal-option count before and after the gate.
+- `gate_eligible_bucket_counts`: decision-point count where the gate left `zero`, `one`, or `two_plus` eligible reveal options.
 - `rejection_reason_counts`: why assets were rejected before ranking, grouped into stable categories such as missing dependency, already revealed, unavailable, or no matching signal.
 - `prior_influence_rate`: how often the controller selection differs from the gate-only baseline at decision-step level, showing when the group prior changes an individual reveal decision.
 - `decision_trace_completeness`: decision details include the required audit fields.
@@ -111,7 +111,7 @@ For the controller row, check:
 Quick summary:
 
 ```bash
-jq '{ok: .ok, controller: (.policies.controller | {scenario_count, step_count, anchor_step_count, anchor_step_correctness_rate, anchor_missing_expected_reveal_count, anchor_failed_no_reveal_count, reveal_correctness, irrelevant_reveal_rate, hidden_violation_rate, correct_no_reveal_rate, step_no_reveal_correctness_rate, avg_opened_assets, useful_evidence_per_reveal, timeline_reveal_efficiency_avg, diagnostic_or_useful_per_reveal, gate_narrowing_rate, gate_ready_assets_before_gate_avg, gate_eligible_assets_after_gate_avg, gate_eligible_bucket_counts, rejection_reason_counts, prior_influenced_step_count, prior_comparison_step_count, prior_influence_rate, decision_trace_completeness_rate, source_traceability_declared_rate, choice_signal_count, resolved_choice_rate, choice_signal_counts})}' results/reveal_policy_main_report.json
+jq '{ok: .ok, controller: (.policies.controller | {scenario_count, step_count, anchor_step_count, anchor_step_correctness_rate, anchor_missing_expected_reveal_count, anchor_failed_no_reveal_count, reveal_correctness, irrelevant_reveal_rate, hidden_violation_rate, correct_no_reveal_rate, step_no_reveal_correctness_rate, avg_opened_assets, useful_evidence_per_reveal, timeline_reveal_efficiency_avg, diagnostic_or_useful_per_reveal, gate_narrowing_rate, gate_reveal_decision_space_avg, gate_eligible_reveal_options_avg, gate_eligible_bucket_counts, rejection_reason_counts, prior_influenced_step_count, prior_comparison_step_count, prior_influence_rate, decision_trace_completeness_rate, source_traceability_declared_rate, choice_signal_count, resolved_choice_rate, choice_signal_counts})}' results/reveal_policy_main_report.json
 ```
 
 To print the Markdown tables used for report prose, including the gate-narrowing, rejection-reason, prior-influence, and audit checks that are not plotted as separate figures:

@@ -695,6 +695,15 @@ def test_tick_reveals_follow_on_configuration_for_open_asset() -> None:
     details = response.decision_events[0].details
     assert details["configuration_reveal"]["configuration_id"] == "git-seeded-repository-backend"
     assert details["candidate_type"] == "configuration"
+    assert details["eligible_assets"] == []
+    assert details["eligible_reveal_options"] == [
+        {
+            "action_type": "configure",
+            "asset_id": "git-internal",
+            "configuration_id": "git-seeded-repository-backend",
+        }
+    ]
+    assert details["eligible_configuration_variants"] == details["eligible_reveal_options"]
 
 
 def test_tick_does_not_configure_asset_when_attacker_left_active_path() -> None:
