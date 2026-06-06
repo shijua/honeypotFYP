@@ -283,7 +283,9 @@ class ProfilerService:
         if mappings:
             return mappings
 
-        # Without ATT&CK tags, keep the fallback unclassified. TODO
+        # Untagged rules are preserved for audit but not forced into a tactic or
+        # technique. This avoids inventing ATT&CK evidence when the adapter did
+        # not provide a clear mapping.
         return [
             AttackMapping(
                 tech_id=None,

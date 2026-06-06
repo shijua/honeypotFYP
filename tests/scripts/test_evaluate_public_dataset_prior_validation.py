@@ -124,8 +124,9 @@ def test_public_dataset_prior_validation_reports_prior_metrics(
     assert prefix_buckets["long_5_plus"]["prefix_count"] == 1
     diagnostics = report["dataset_diagnostics"]
     assert diagnostics["unique_technique_family_count"] == 6
-    assert diagnostics["prior_overlap"]["dataset_family_covered_by_prior_rate"] == 1.0
-    assert diagnostics["concentration"]["top_3_share"] == 1.0
+    assert diagnostics["prior_overlap"]["dataset_family_covered_by_prior_rate"] == 0.666667
+    assert diagnostics["prior_overlap"]["dataset_only_technique_families"] == ["T1059", "T1082"]
+    assert diagnostics["concentration"]["top_3_share"] == 0.5
     assert {row["technique"] for row in diagnostics["top_technique_families"]} >= {"T1190", "T1105", "T1608"}
     assert diagnostics["source_breakdown"][0]["source"] == "datasets"
 

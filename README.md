@@ -24,11 +24,14 @@ Use the testing guide when you want to simulate attacker behavior. The `live-app
 | `data/assets/` | Asset catalog and selection metadata used by the controller and orchestrator. |
 | `data/detections/` | Project-owned Sigma-style detection rules for public/internal HTTP, Cowrie, and high-interaction telemetry. |
 | `data/runtime/` | Local runtime state written by the running stack; ignored except for placeholders. |
-| `data/technique_prior/` | Generated ATT&CK group technique prior output; ignored except for placeholders. |
+| `data/technique_prior/` | Generated ATT&CK group technique prior used by the controller; ignored except for placeholders. |
 | `deploy/` | Docker/runtime assets, static internal surfaces, public portal files, and honeypot configuration. |
 | `tests/` | Unit, component, evaluation, and fixture tests. `tests/fixtures/README.md` explains scenario files. |
-| `archive/` | Historical research code kept out of the active runtime and pytest path. |
 | `vendor/` | Optional external source material such as SigmaHQ rules and public validation datasets; ignored by git. |
+
+## Local Generated State
+
+A clean clone should be understandable from the tracked source, docs, tests, `data/assets/`, `data/detections/`, and `deploy/`. Ignored local outputs such as `.venv/`, `data/runtime/`, `data/mitre/`, `data/technique_prior/`, `vendor/`, `results/`, `*.egg-info/`, and root-level `infra-deploy/` can be deleted and recreated; the intentional fake internal repo seed lives under `deploy/internal-assets/git-internal/seed/infra-deploy/`.
 
 ## Setup
 
@@ -43,19 +46,9 @@ python3.10 -m venv .venv
   --path data/technique_prior/attack_group_technique_prior.json
 ```
 
-The generated prior at `data/technique_prior/attack_group_technique_prior.json` is local state and ignored by git. Raw public validation datasets, if used, belong under ignored `vendor/datasets/`.
+The active reveal policy reads the generated ATT&CK group-technique prior at `data/technique_prior/attack_group_technique_prior.json`. This generated file is local state and ignored by git. Raw public validation datasets, if used, belong under ignored `vendor/datasets/`.
 
-## Fast Checks
-
-```bash
-.venv/bin/pytest tests/entrypoint/test_asset_access_to_technique_coverage.py tests/assets/test_asset_catalog_runtime.py tests/controller -q
-.venv/bin/python scripts/evaluation/reveal_policy.py tests/fixtures/reveal_policy_main_scenarios.json --policy all --replay-mode sequence --output /tmp/reveal_policy_main_report.json
-# Optional control-plane route check; this is not an attacker-behaviour evaluation.
-.venv/bin/python scripts/evaluation/reveal_port_simulation.py --mode controller-only --scenario-file tests/fixtures/reveal_port_scenarios.json --output /tmp/reveal_port_controller_report.json
-docker-compose -p honeynet -f docker-compose.control.yml -f docker-compose.enterprise.yml config
-```
-
-For the full evaluation sequence and chart outputs, see [EVALUATION.md](EVALUATION.md).
+For evaluation commands, chart generation, route checks, and latency checks, see [EVALUATION.md](EVALUATION.md).
 
 ## Live Stack
 
@@ -64,44 +57,13 @@ For the full evaluation sequence and chart outputs, see [EVALUATION.md](EVALUATI
 ./scripts/start_enterprise_stack.sh
 ```
 
-After the stack starts, use [ATTACK_TESTING_GUIDE.md](ATTACK_TESTING_GUIDE.md) for manual traffic. If you only want to verify the control-plane route path, run:
+After the stack starts, use [ATTACK_TESTING_GUIDE.md](ATTACK_TESTING_GUIDE.md) for manual traffic and check the dashboard at port `8090` for profiles, decisions, routes, and asset state. Generated route-check reports, when you run them from [EVALUATION.md](EVALUATION.md), are written under `data/runtime/`.
 
-```bash
-.venv/bin/python scripts/evaluation/reveal_port_simulation.py \
-  --mode live-apply \
-  --scenario-file tests/fixtures/reveal_port_scenarios.json \
-  --output data/runtime/reveal_port_simulation_report.json
-```
+## Optional Sigma Rule Source
 
-Then inspect:
-
-```bash
-jq '.summary, .scenarios[] | {scenario_id, ok, selected_assets, selected_actions, expected_routes, actual_routes, failure_reason}' \
-  data/runtime/reveal_port_simulation_report.json
-```
-
-Remember: `live-apply` validates route creation, not attacker behavior. To verify commands, HTTP paths, protocol probes, and resulting ATT&CK evidence, run the manual sections in [ATTACK_TESTING_GUIDE.md](ATTACK_TESTING_GUIDE.md).
-
-## Optional Rule And Dataset Sources
-
-Cowrie command detection supports local, Sigma, and hybrid modes. The default hybrid mode uses project-owned rules plus optional SigmaHQ Linux rules when `vendor/sigma` exists.
+Cowrie command detection still supports `local`, `sigma`, and `hybrid` via `HONEYPOT_COWRIE_COMMAND_MAPPING_MODE`. The default is `hybrid`: it loads `data/cowrie/command_mapping_rules.json` first, then compatible Sigma YAML from `data/detections/cowrie_sigma` and optional SigmaHQ Linux rules when `vendor/sigma` exists.
 
 ```bash
 mkdir -p vendor
 test -d vendor/sigma || git clone --depth 1 https://github.com/SigmaHQ/sigma.git vendor/sigma
-HONEYPOT_COWRIE_SIGMA_RULES_PATH=data/detections/cowrie_sigma:vendor/sigma/rules/linux \
-HONEYPOT_COWRIE_COMMAND_MAPPING_MODE=hybrid \
-./scripts/start_enterprise_stack.sh
 ```
-
-Optional ATT&CK-labelled public datasets can be fetched for offline validation work; they are not the active runtime prior. These datasets provide labelled traces rather than Enterprise ATT&CK-style intrusion-set-to-technique relationships, so they are used to check the prior rather than train it.
-
-```bash
-.venv/bin/python scripts/data/fetch_public_attack_datasets.py --dry-run
-.venv/bin/python scripts/data/fetch_public_attack_datasets.py --dataset casinolimit
-.venv/bin/python scripts/evaluation/public_dataset_prior_validation.py \
-  vendor/datasets/casinolimit \
-  --output /tmp/public_dataset_prior_validation_report.json
-```
-
-The dataset validator skips raw files larger than 2 MB by default so it can run as a lightweight offline check.

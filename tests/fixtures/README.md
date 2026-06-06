@@ -4,7 +4,7 @@ These fixtures are intentionally split by evaluation question.
 
 ## `reveal_policy_main_scenarios.json`
 
-Main offline policy replay. This is the headline decision-quality fixture: it uses fewer, richer full-process timelines, exact checks only at `anchor_check` steps, and final scenario outcomes instead of treating every tiny evidence step as a full accuracy point. It checks whether each policy reaches useful or scenario-supported assets, avoids hidden assets, chooses `no_reveal` for boundary cases, and distinguishes asset unlocks from configuration reveals. The semantics are documented in `FULL_REPLAY_SCENARIO_DESIGN.md`, and detailed source mapping lives in `SCENARIO_SOURCE_TRACEABILITY.md`.
+Main offline policy replay. This is the headline decision-quality fixture: it uses fewer, richer full-process timelines, exact checks only at `anchor_check` steps, and final scenario outcomes instead of treating every tiny evidence step as a full accuracy point. It checks whether each policy reaches useful or scenario-supported assets, avoids hidden assets, chooses `no_reveal` for boundary cases, and distinguishes asset unlocks from configuration reveals.
 
 | Scenario | Type | Reference id | Source basis | Expected behavior |
 | --- | --- | --- | --- | --- |
@@ -13,6 +13,27 @@ Main offline policy replay. This is the headline decision-quality fixture: it us
 | `main-finance-collection-loop` | main-collection | `cisa-red-team-aa23-059a` | CISA red-team file/data discovery, adapted to backup and finance archive clues | Backup and collection evidence should reveal the finance collection path. |
 | `main-active-git-configuration-loop` | main-configuration | `cisa-red-team-aa23-059a` | CISA red-team config/credential discovery, adapted to active Git browsing | Active repository browsing should materialize Git-local configuration clues. |
 | `main-boundary-enterprise-ad-no-reveal-loop` | main-boundary | `cisa-red-team-aa23-059a` | CISA red-team AD/SMB/credential techniques used as an out-of-scope boundary | Unsupported enterprise AD behavior should remain closed. |
+
+### Replay Semantics
+
+Each timeline step represents one controller decision point. The evaluator adds the step's `new_evidence` to the cumulative profile, runs the selected policy once, then updates simulated `unlocked_asset_ids` and `revealed_configurations` from the returned actions. Later steps therefore see assets and configuration variants opened earlier in the scenario.
+
+This is an offline replay. It does not start Docker, open gateway routes, or generate live attacker traffic. It answers the decision-quality question: given this sequence of attacker evidence, did the policy make the key anchor decisions correctly without exposing hidden assets?
+
+| Step field | Meaning |
+| --- | --- |
+| `step_id` | Stable step identifier used in reports. |
+| `phase` | Human-readable phase such as public exploit, discovery, follow-up, or active-path configuration. |
+| `new_evidence` | Evidence records introduced at this step; these use the same compact fields as the previous `evidence_sequence`. |
+| `anchor_check` | When true, this step participates in exact step correctness. Use this only for first reveal, boundary/no-reveal, response-gated wait, active-path configuration, and final useful follow-up checks. |
+| `expected_reveals` | Exact unlock/configure actions expected at this step. |
+| `allowed_reveals` | Extra acceptable actions when multiple equivalent catalog variants are reasonable. |
+| `expected_no_reveal` | The correct action for this step is to avoid opening new exposure. |
+| `expected_response_gate_wait` | A stricter no-reveal case: the policy should wait because the previous reveal has not produced a response. |
+| `touched_assets` | Assets the replay says the attacker actually touched after a reveal; this is used for choice/reveal-efficiency metrics. |
+| `source_refs` | Per-step source grounding. Each entry declares a reference id and exactness level. |
+
+Only steps with `anchor_check: true` are used for exact reveal/no-reveal correctness. Non-anchor steps still accumulate evidence, update unlocked assets, and can fail the scenario if they open a hidden asset, but they do not fail exact-step accuracy just because the controller chose another reasonable asset. The main report `ok` condition is based on no hidden violations, no missing or unexpected anchor actions, no failed anchor no-reveal checks, and declared source traceability. `timeline_reveal_efficiency` is intentionally simple: revealed assets that the scenario later marks as touched divided by total revealed assets.
 
 ## `reveal_policy_scenarios.json`
 
@@ -46,20 +67,23 @@ Engineering route validation. These scenarios verify that a selected asset maps 
 | Capture and upgrade backends | `dionaea-malware-upgrade`, `honeytrap-generic-probe` | Upgrade or capture targets expose the expected same-story backend ports. |
 | Payload/exploit follow-up | `malware-exploit-probe`, `web-exploit-payload-probe`, `generic-transfer-honeytrap` | Exploit or transfer evidence opens the payload sink or generic capture route. |
 
-## Official Source Links
+## Source Traceability
 
-| Source | URL |
+Every offline reveal-policy scenario must state which behavior came from an official report or ATT&CK entry, what the local honeynet substitutes for that behavior, and whether the mapping is direct, technique-level, a local adaptation, or a negative control. The public sources ground behavior and ATT&CK technique families, not exact local strings. Paths such as `/assets/app.js.map`, `/.env.old`, `/backup/passwords_internal.txt`, and `/admin` are local cover-story artifacts used to emulate broader report-backed behaviors such as file discovery, credential discovery, admin surface probing, remote-service interest, and tool-transfer intent.
+
+| Exactness level | Meaning |
 | --- | --- |
-| Reference id `cisa-lockbit-tool-transfer` | CISA LockBit plus ATT&CK T1190/T1608/T1105 local adaptation. |
-| Reference id `cisa-red-team-aa23-059a` | CISA red-team file, credential, database, and remote-service behaviour local adaptation. |
-| Reference id `mitre-scan-exploit-negative` | ATT&CK scanning/exploitation techniques used as a negative control. |
-| Reference id `cisa-ransomware-mixed` | CISA BianLian and LockBit discovery/tool-transfer mixed-signal adaptation. |
-| Reference id `mitre-discovery-negative` | ATT&CK discovery behaviour used as a false-positive control. |
-| Reference id `mitre-admin-web-discovery` | ATT&CK admin/log/service discovery and login-probing adaptation. |
-| Reference id `active-path-negative-control` | Local negative control for active-path configuration semantics. |
-| CISA AA23-075A #StopRansomware: LockBit 3.0 | https://www.cisa.gov/news-events/cybersecurity-advisories/aa23-075a |
-| CISA AA23-059A Red Team Shares Key Findings | https://www.cisa.gov/news-events/cybersecurity-advisories/aa23-059a |
-| CISA AA23-136A #StopRansomware: BianLian Ransomware Group | https://www.cisa.gov/news-events/cybersecurity-advisories/aa23-136a |
-| CISA AA23-320A Scattered Spider | https://www.cisa.gov/news-events/cybersecurity-advisories/aa23-320a |
-| CISA AA24-038A PRC State-Sponsored Actors Compromise U.S. Critical Infrastructure | https://www.cisa.gov/news-events/cybersecurity-advisories/aa24-038a |
-| MITRE ATT&CK Enterprise Techniques | https://attack.mitre.org/techniques/enterprise/ |
+| `direct` | The report describes the same behavior at roughly the same level of detail as the replay step. |
+| `technique-level` | The source supports the ATT&CK technique or behavior family, but not this exact local path, file, or hostname. |
+| `local-adaptation` | The local path, file, service, or asset is honeynet-specific and only simulates a source-backed behavior. |
+| `negative-control` | The scenario is deliberately synthetic and tests no-reveal or false-positive behavior. |
+
+| Reference id | Source | URL | How it is used |
+| --- | --- | --- | --- |
+| `cisa-lockbit-tool-transfer` | CISA AA23-075A LockBit 3.0 advisory | https://www.cisa.gov/news-events/cybersecurity-advisories/aa23-075a | Grounds public-facing exploitation, use of tools, command-and-control/tool-transfer behavior, and ransomware follow-up techniques. |
+| `cisa-red-team-aa23-059a` | CISA AA23-059A Red Team key findings | https://www.cisa.gov/news-events/cybersecurity-advisories/aa23-059a | Grounds credential discovery, password-store findings, remote-service/lateral-movement interest, network service discovery, and AD boundary behavior. |
+| `cisa-ransomware-mixed` | CISA AA23-136A BianLian plus LockBit advisory | https://www.cisa.gov/news-events/cybersecurity-advisories/aa23-136a | Grounds mixed discovery, tool download, share discovery, collection, and exfiltration-style behavior. |
+| `mitre-admin-web-discovery` | MITRE ATT&CK Enterprise techniques | https://attack.mitre.org/techniques/enterprise/ | Grounds generic admin/login probing as ATT&CK technique-level behavior, not a named incident. |
+| `mitre-scan-exploit-negative` | MITRE ATT&CK Enterprise techniques | https://attack.mitre.org/techniques/enterprise/ | Negative-control scan/exploit shape. |
+| `mitre-discovery-negative` | MITRE ATT&CK Enterprise techniques | https://attack.mitre.org/techniques/enterprise/ | Negative-control discovery shape. |
+| `active-path-negative-control` | Local evaluation control | local fixture only | Tests that configuration reveal does not happen after the attacker leaves the relevant active path. |

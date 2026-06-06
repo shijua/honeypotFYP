@@ -840,32 +840,3 @@ class HighInteractionIngestResponse(VersionedModel):
     observation: HighInteractionObservation
     binding: BindingRecord
     profile: ProfileSnapshot
-
-
-# TODO edge with from and to
-# ---- Attack-graph probability contracts ----
-class EdgeStats(VersionedModel):
-    """Lightweight probability statistics for one attack-graph edge.
-
-    Example:
-        {"edge_id": "cred->collect", "alpha": 2.0, "beta": 1.0, "mean_probability": 0.66}
-    """
-
-    edge_id: str
-    n_avail: int = 0
-    n_taken: int = 0
-    alpha: float = 1.0
-    beta: float = 1.0
-    mean_probability: float = 0.5
-    updated_at: datetime = Field(default_factory=utcnow)
-
-
-class EdgeObservationRequest(VersionedModel):
-    """Observation request for updating one attack-graph edge.
-
-    Example:
-        {"edge_id": "cred->collect", "binding_id": "binding-1"}
-    """
-
-    edge_id: str
-    binding_id: str

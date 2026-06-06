@@ -17,11 +17,7 @@ pytestmark = pytest.mark.unit
 
 def test_reveal_policy_scenarios_reference_existing_assets_and_covered_techniques() -> None:
     assets = _assets_by_id()
-    reference_text = (
-        (ROOT / "tests/fixtures/README.md").read_text(encoding="utf-8")
-        + "\n"
-        + (ROOT / "tests/fixtures/SCENARIO_SOURCE_TRACEABILITY.md").read_text(encoding="utf-8")
-    )
+    reference_text = (ROOT / "tests/fixtures/README.md").read_text(encoding="utf-8")
     policy_fixtures = [
         (ROOT / "tests/fixtures/reveal_policy_main_scenarios.json", set()),
         (

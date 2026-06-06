@@ -13,6 +13,7 @@ from services.controller.repository import FileAttackGroupTechniquePriorReposito
 
 
 def unlock_action_summaries(asset_ids: list[str]) -> list[dict[str, str]]:
+    """Return the compact action shape used by evaluation reports."""
     return [{"action_type": "unlock", "asset_id": asset_id} for asset_id in asset_ids]
 
 
@@ -20,6 +21,11 @@ def all_open_reveals(
     assets: list[AssetDefinition],
     request: ControllerTickRequest,
 ) -> tuple[list[str], list[dict[str, Any]]]:
+    """Reveal every dependency-unblocked internal asset.
+
+    This baseline intentionally ignores profile evidence and prior support. It
+    is useful as an over-exposure comparison, not as a realistic controller.
+    """
     opened = [
         asset.asset_id
         for asset in assets
@@ -204,6 +210,7 @@ def top_recommendation_reveals(
 
 
 def asset_dependency_ready(asset: AssetDefinition, request: ControllerTickRequest) -> bool:
+    """Return whether structural catalog constraints allow this asset now."""
     return (
         asset.exposure_type == "internal"
         and asset.asset_id not in request.unlocked_asset_ids
@@ -212,6 +219,7 @@ def asset_dependency_ready(asset: AssetDefinition, request: ControllerTickReques
 
 
 def asset_covered_techniques(asset: AssetDefinition) -> set[str]:
+    """Read the technique families this asset claims to cover."""
     selection_profile = asset.default_settings.get("selection_profile")
     if not isinstance(selection_profile, dict):
         return set()
@@ -220,6 +228,7 @@ def asset_covered_techniques(asset: AssetDefinition) -> set[str]:
 
 
 def asset_unlock_signals_match(asset: AssetDefinition, request: ControllerTickRequest) -> bool:
+    """Return whether the current profile satisfies the asset's signal gate."""
     unlock_signals = asset.default_settings.get("unlock_signals")
     if not isinstance(unlock_signals, dict) or not unlock_signals:
         return bool(request.profile.recent_evidence_ids or request.profile.recent_techniques)

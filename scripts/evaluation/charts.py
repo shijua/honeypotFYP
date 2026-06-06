@@ -10,6 +10,10 @@ from typing import Any
 def write_reveal_policy_chart(report: dict[str, Any], path: Path) -> None:
     """Write a compact policy-comparison chart from `reveal_policy.py` output.
 
+    Reports with anchor steps use anchor-step correctness as the green quality
+    bar. Broad regression reports without anchors use supported-reveal rate
+    instead, so the two chart types should not be averaged into one score.
+
     Example:
         write_reveal_policy_chart(report, Path("/tmp/reveal_policy_report.png")).
     """
@@ -24,8 +28,8 @@ def write_reveal_policy_chart(report: dict[str, Any], path: Path) -> None:
         figsize=(7.8, max(4.2, 0.48 * n_policies + 2.6)),
     )
 
-    # --- Panel 1: main scenarios use anchor correctness; broad regression
-    # fixtures without anchors fall back to scenario-supported reveal rate.
+    # Main scenarios use anchor correctness; broad regression fixtures without
+    # anchors fall back to scenario-supported reveal rate.
     has_anchor_steps = any(
         int(report.get("policies", {}).get(policy, {}).get("anchor_step_count", 0) or 0) > 0
         for policy in policies

@@ -59,7 +59,7 @@ This is the main correctness evaluation. It replays the scenario file against mu
 ```
 
 This also writes `results/reveal_policy_main_report.png`, a compact visual comparison of policy metrics. The PNG path is always the JSON output path with a `.png` suffix.
-The sequence mode runs each rich scenario timeline step-by-step with cumulative profile and exposure state. The main fixture uses anchor steps for exact checks and uses `anchor_step_correctness_rate` as the headline result; non-anchor steps still accumulate evidence and state but do not fail exact-step accuracy unless they open hidden/forbidden assets. Source grounding and replay semantics are documented in `tests/fixtures/SCENARIO_SOURCE_TRACEABILITY.md` and `tests/fixtures/FULL_REPLAY_SCENARIO_DESIGN.md`.
+The sequence mode runs each rich scenario timeline step-by-step with cumulative profile and exposure state. The main fixture uses anchor steps for exact checks and uses `anchor_step_correctness_rate` as the headline result; non-anchor steps still accumulate evidence and state but do not fail exact-step accuracy unless they open hidden/forbidden assets. Source grounding and replay semantics are documented in `tests/fixtures/README.md`.
 
 The broader regression fixture is still useful for debugging edge cases. It may exit non-zero when it finds controller/scenario alignment issues; inspect the JSON rather than treating it as the headline acceptance check.
 
@@ -77,7 +77,7 @@ Policies compared:
 - `passive`: never reveal.
 - `all-open`: reveal every eligible asset.
 - `random-eligible`: random eligible baseline.
-- `gate-only`: dependency gate without technique prior ranking.
+- `gate-only`: the controller policy with the ATT&CK prior-support term disabled; hard gates, expected-gain ordering, explore handling, and tie-breaks remain controller-owned.
 - `top-recommendation`: strongest prior recommendation only.
 - `controller`: current controller policy.
 
