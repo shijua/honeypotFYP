@@ -1,8 +1,10 @@
 """Sigma-backed matcher for normalized high-interaction honeypot events.
 
-The high-interaction forwarder turns Dionaea and Honeytrap logs into
-one `HighInteractionLogEvent` shape. This module then applies a small Sigma
-subset to that normalized shape and returns profiler-ready ATT&CK tags.
+The high-interaction forwarder turns Dionaea, Glutton, Wordpot, and compatible
+capture logs into one `HighInteractionLogEvent` shape. Glutton generic capture
+is labeled as `honeytrap` in the normalized event schema to keep existing rules
+stable. This module applies a small Sigma subset to that normalized shape and
+returns profiler-ready ATT&CK tags.
 """
 
 from __future__ import annotations

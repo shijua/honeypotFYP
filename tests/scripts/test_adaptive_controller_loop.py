@@ -804,6 +804,47 @@ def test_reveal_feedback_records_reveal_and_later_useful_touch(tmp_path) -> None
     assert payload["pending"][0]["revealed_assets"] == ["finance-share"]
 
 
+def test_reveal_feedback_does_not_block_after_configuration_only(tmp_path) -> None:
+    feedback_file = tmp_path / "reveal_feedback.json"
+
+    adaptive_controller_loop.record_reveal_feedback(
+        feedback_file=feedback_file,
+        attacker_key="198.51.100.15",
+        binding_id="binding-config",
+        applied_actions=[
+            {
+                "action_type": "configure",
+                "binding_id": "binding-config",
+                "asset_id": "malware-sink",
+                "configuration_id": "malware-dionaea-same-port-upgrade",
+                "target_asset_id": "dionaea-capture",
+                "reason": "selected",
+            }
+        ],
+        controller_response={
+            "candidate_asset_ids": ["malware-sink", "dionaea-capture"],
+            "decision_events": [
+                {
+                    "asset_added": "dionaea-capture",
+                    "details": {
+                        "selected_technique": "T1105",
+                        "matched_dependency_markers": ["any_techniques:T1105"],
+                        "asset_group": "payload-transfer-high",
+                    },
+                }
+            ],
+        },
+    )
+
+    assert not feedback_file.exists()
+    assert adaptive_controller_loop.response_gate_decision(
+        feedback_file=feedback_file,
+        attacker_key="198.51.100.15",
+        binding_id="binding-config",
+        profile={},
+    )["allowed"] is True
+
+
 def test_reveal_feedback_marks_unclassified_touch_as_shallow(tmp_path) -> None:
     feedback_file = tmp_path / "reveal_feedback.json"
     evidence_file = tmp_path / "evidence.json"

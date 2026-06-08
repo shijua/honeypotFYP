@@ -1,9 +1,10 @@
 """Domain logic for high-interaction honeypot telemetry.
 
-Dionaea and Honeytrap expose different raw log formats, but their role
-in this prototype is the same: once a same-port upgrade is active, convert real
+Dionaea, Glutton, and Wordpot expose different raw log formats, but their role
+in this prototype is the same: once an upgrade route is active, convert real
 backend interactions into low-noise ATT&CK evidence and preserve the asset id
-that produced it.
+that produced it. Glutton-backed generic capture uses the normalized source
+label `honeytrap` for compatibility with existing rules and reports.
 """
 
 from __future__ import annotations

@@ -211,9 +211,6 @@ def tick_once(
                 applied_actions=applied_reveal_actions,
             )
         applied_reveals += len(applied_reveal_actions)
-        _mark_evidence_processed(loop_state, attacker_key, recent_evidence_ids)
-        if loop_state_file is not None:
-            save_loop_state(loop_state_file, loop_state)
         if trace_file is not None:
             append_trace_record(
                 trace_file,
@@ -229,6 +226,9 @@ def tick_once(
                     orchestrator_response=orchestrator_response,
                 ),
             )
+        _mark_evidence_processed(loop_state, attacker_key, recent_evidence_ids)
+        if loop_state_file is not None:
+            save_loop_state(loop_state_file, loop_state)
         print_apply_summary(attacker_key, orchestrator_response)
 
     return applied_reveals
@@ -458,9 +458,15 @@ def record_reveal_feedback(
         action asset_id="git-internal" plus details selected_technique="T1213"
         records one pending reveal in `data/runtime/reveal_feedback.json`.
     """
+    # only unlock actions trigger feedback, and one action may reveal multiple assets via target_asset_id, so gather all the revealed asset_ids for feedback records
+    feedback_actions = [
+        action
+        for action in applied_actions
+        if action.get("action_type") == "unlock"
+    ]
     applied_asset_ids = {
         asset_id
-        for action in applied_actions
+        for action in feedback_actions
         for asset_id in (action.get("asset_id"), action.get("target_asset_id"))
         if isinstance(asset_id, str)
     }
@@ -471,7 +477,7 @@ def record_reveal_feedback(
     revealed_assets = dedupe_preserve(
         [
             asset_id
-            for action in applied_actions
+            for action in feedback_actions
             for asset_id in (action.get("asset_id"), action.get("target_asset_id"))
             if isinstance(asset_id, str)
         ]

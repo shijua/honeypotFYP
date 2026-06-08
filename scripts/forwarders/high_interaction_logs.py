@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Forward Dionaea/Honeytrap logs into the high-interaction adapter.
+"""Forward high-interaction backend logs into the high-interaction adapter.
 
 The supported raw input is intentionally broad: a JSON line is passed through
 as structured logdata, while a plain text line becomes `logdata.message`. The
 adapter receives one normalized event with an explicit `source`, `service`,
-`event_type`, `asset_id`, and attacker key.
+`event_type`, `asset_id`, and attacker key. Glutton generic capture currently
+uses `source=honeytrap` as the normalized compatibility label.
 """
 
 from __future__ import annotations

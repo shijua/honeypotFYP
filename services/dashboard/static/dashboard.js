@@ -326,12 +326,19 @@ function renderAttackers(attackers) {
   </div>`;
 }
 
+function decisionSortKey(decision) {
+  return String(decision.ts || "");
+}
+
 function renderDecisions(decisions, attackerKey, confidences = {}) {
   if (!decisions.length) {
     return '<span class="subtle">none</span>';
   }
+  const newestFirst = decisions
+    .slice()
+    .sort((left, right) => decisionSortKey(right).localeCompare(decisionSortKey(left)));
   return `<div class="decision-list">
-    ${decisions.map(decision => renderDecision(decision, attackerKey, confidences)).join("")}
+    ${newestFirst.map(decision => renderDecision(decision, attackerKey, confidences)).join("")}
   </div>`;
 }
 

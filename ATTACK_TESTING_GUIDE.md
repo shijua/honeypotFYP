@@ -214,6 +214,8 @@ ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnow
 
 High-interaction target variants:
 
+Note: `honeytrap-generic` is the asset id used by the catalogue, but the current generic capture container is Glutton (`dtagdevsec/glutton`). The high-interaction adapter still records the normalized source as `honeytrap` so existing Sigma rules and dashboard fields remain stable.
+
 ```bash
 ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh dionaea-capture dionaea-to-glutton-http-capture # Apply the Dionaea-to-Glutton adjacent HTTP capture route.
 
@@ -224,7 +226,7 @@ ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test
 
 curl -i "http://146.169.44.23:18085/downloads/agent-update.bin" | head # tests T1041/T1105/T1190/T1204.002 when latest 18085 route points to Dionaea.
 
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh malware-sink malware-honeytrap-generic-listener # Apply the malware-sink adjacent generic capture listener.
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh malware-sink malware-honeytrap-generic-listener # Apply the malware-sink adjacent Glutton generic capture listener.
 
 # tests T1046/T1105/T1190 through generic TCP capture.
 printf "payload upload test\r\n" | nc -w 3 146.169.44.23 19999 || true
@@ -302,7 +304,7 @@ history -c # Indicator removal.
 exit # End the Cowrie session.
 ```
 
-Expected minimum mappings:
+Expected minimum mappings for this Cowrie adapter smoke. Some command-level mappings below are adapter-only checks and are not part of the 28-technique controller/catalogue subset used in the thesis figure.
 
 | Command | Expected technique |
 | --- | --- |
@@ -457,7 +459,7 @@ Expected: static HTTP assets produce internal HTTP evidence; Git/MySQL/Redis/FTP
 
 ## 6. High-Interaction And Capture Runtime Smoke
 
-Use this after the fixed-port smoke when you want to verify upgraded capture backends. These commands force-unlock Dionaea plus the generic TCP capture asset for the same attacker key, then probe their gateway-managed ports.
+Use this after the fixed-port smoke when you want to verify upgraded capture backends. These commands force-unlock Dionaea plus the Glutton-backed generic TCP capture asset for the same attacker key, then probe their gateway-managed ports.
 
 ```bash
 # Reuse the latest attacker key so high-interaction routes match this source IP.
@@ -466,7 +468,7 @@ TEST_ATTACKER_KEY="$(
     jq -r '.recent_entrypoint_observations | .[0].attacker_key // "146.169.44.23"'
 )"
 
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/unlock_internal_assets_for_test.sh --assets dionaea-capture,honeytrap-generic # Force-unlock Dionaea and generic capture backends.
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/unlock_internal_assets_for_test.sh --assets dionaea-capture,honeytrap-generic # Force-unlock Dionaea and Glutton-backed generic capture backends.
 
 sleep 10 # Give Docker backends and sidecar forwarders time to start.
 
@@ -545,7 +547,7 @@ printf "KEYS *\r\n" | nc -w 2 "$TARGET" 16379 || true                           
 printf "GET session:portal.reader\r\n" | nc -w 2 "$TARGET" 16379 || true              # T1005
 printf "CONFIG GET *\r\n" | nc -w 2 "$TARGET" 16379 || true                          # T1552.001
 printf "USER anonymous\r\nPASS anonymous\r\nRETR finance-drop.zip\r\nQUIT\r\n" | nc -w 4 "$TARGET" 12121 || true # T1021, T1039, T1110
-printf "USER anonymous\r\nPASS anonymous\r\nSTOR finance-drop.zip\r\nQUIT\r\n" | nc -w 4 "$TARGET" 12121 || true # T1567.002
+printf "USER anonymous\r\nPASS anonymous\r\nSTOR finance-drop.zip\r\nQUIT\r\n" | nc -w 4 "$TARGET" 12121 || true # Raw adapter mapping may emit T1567.002; the controller subset reports this at T1567 family level.
 tmpask="$(mktemp)"; printf '#!/bin/sh\necho wrongpass\n' > "$tmpask"; chmod +x "$tmpask"; DISPLAY=:0 SSH_ASKPASS="$tmpask" SSH_ASKPASS_REQUIRE=force setsid ssh -o NumberOfPasswordPrompts=1 -o PubkeyAuthentication=no -o PreferredAuthentications=password -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 12222 root@"$TARGET" true </dev/null || true; rm -f "$tmpask" # T1021.004, T1110
 { sleep 1; printf "admin\r\n"; sleep 1; printf "admin123\r\n"; sleep 1; } | nc -w 8 "$TARGET" 12323 || true # T1021, T1110
 printf "EHLO tester\r\nVRFY finance\r\nAUTH LOGIN\r\nYWRtaW4=\r\nV3JvbmdQYXNz\r\nQUIT\r\n" | nc -w 4 "$TARGET" 2525 || true # T1046, T1087.003, T1110
@@ -615,7 +617,7 @@ history -c # Indicator removal.
 exit # End the Cowrie session.
 ```
 
-Expected Cowrie techniques include `T1003`, `T1016`, `T1033`, `T1053`, `T1059`, `T1070`, `T1082`, `T1083`, `T1105`, `T1548`, and `T1552.001`.
+Expected Cowrie techniques include controller-subset techniques such as `T1016`, `T1033`, `T1059`, `T1082`, `T1083`, `T1105`, and `T1552.001`. The same smoke may also produce adapter-only command mappings such as `T1003`, `T1053`, `T1070`, and `T1548`; these validate Cowrie command parsing but are not part of the controller/catalogue subset figure.
 
 Automated alternative for repeatable validation:
 
@@ -674,9 +676,9 @@ Check the evidence-level result:
 ```bash
 sleep 5 # Wait for all forwarders and adapters to flush events into the profiler.
 
-REQUIRED='["T1003","T1005","T1016","T1018","T1021","T1021.004","T1033","T1039","T1041","T1046","T1053","T1057","T1059","T1069","T1070","T1074","T1078","T1082","T1083","T1087.003","T1105","T1110","T1133","T1190","T1204.002","T1213","T1518","T1548","T1552.001","T1567","T1567.002","T1572","T1608"]' # Expected technique set for the manual coverage smoke.
+REQUIRED='["T1005","T1016","T1018","T1021","T1021.004","T1033","T1039","T1041","T1046","T1057","T1059","T1069","T1074","T1078","T1082","T1083","T1087.003","T1105","T1110","T1133","T1190","T1204.002","T1213","T1518","T1552.001","T1567","T1572","T1608"]' # Expected controller/catalogue subset for the manual coverage smoke.
 
-jq --argjson required "$REQUIRED" ' # Compare persisted evidence against the required technique set.
+jq --argjson required "$REQUIRED" ' # Compare persisted evidence against the required controller/catalogue subset.
   (.records // {}) as $records |
   [
     (

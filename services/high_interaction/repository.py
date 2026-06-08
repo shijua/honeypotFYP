@@ -11,10 +11,10 @@ from libs.contracts.models import HighInteractionObservation
 
 
 class HighInteractionObservationRepository(Protocol):
-    """Storage contract for Dionaea/Honeytrap observations.
+    """Storage contract for normalized high-interaction observations.
 
     Example:
-        add(HighInteractionObservation(source="dionaea", service="http", ...)) -> same observation
+        add(HighInteractionObservation(source="honeytrap", asset_id="honeytrap-generic", ...)) -> same observation
     """
 
     def add(self, observation: HighInteractionObservation) -> HighInteractionObservation:

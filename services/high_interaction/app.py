@@ -1,4 +1,4 @@
-"""FastAPI app for Dionaea/Honeytrap telemetry."""
+"""FastAPI app for Dionaea, Glutton, and Wordpot capture telemetry."""
 
 from __future__ import annotations
 

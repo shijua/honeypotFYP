@@ -16,7 +16,7 @@ Telemetry and attacker-facing adapters:
 - `opencanary`
 - `high_interaction`
 
-These are adapter categories, not one service per honeypot image. Concrete runtimes such as Mailoney, Dionaea, Glutton, Wordpot, OpenCanary, and Cowrie are catalog-selected backends that feed one of these adapters through gateway logs or sidecar forwarders.
+These are adapter categories, not one service per honeypot image. Concrete runtimes such as Mailoney, Dionaea, Glutton, Wordpot, OpenCanary, and Cowrie are catalog-selected backends that feed one of these adapters through gateway logs or sidecar forwarders. The asset id `honeytrap-generic` is a legacy/generic-capture name; its current generic capture backend is Glutton, while the normalized high-interaction source label remains `honeytrap` for existing rules and reports.
 
 Runtime visibility and operator UI:
 - `asset_gateway`
@@ -94,7 +94,7 @@ benign-surface signals provide baseline context
 | Public Cowrie, SSH canary, admin jumpbox Cowrie variants | `cowrie` | Cowrie JSON logs are tailed by `cowrie_json.py`; catalog sidecars are used when Cowrie runs as an adaptive internal backend. |
 | OpenCanary Git/MySQL/Redis/FTP/SSH/Telnet/SMTP and protocol gateway events | `opencanary` | OpenCanary logs or `asset_gateway` protocol events are forwarded by `opencanary_json.py`. |
 | Mailoney SMTP relay variant | `opencanary` | It is a same-port backend for `mail-relay`; SMTP route/protocol observations remain normalized through the protocol/OpenCanary adapter path. |
-| Dionaea, Glutton/Honeytrap, Wordpot capture variants | `high_interaction` | Backend logs or gateway high-interaction events are tailed by `high_interaction_logs.py` and POSTed to the high-interaction adapter. |
+| Dionaea, Glutton generic capture, Wordpot capture variants | `high_interaction` | Backend logs or gateway high-interaction events are tailed by `high_interaction_logs.py` and POSTed to the high-interaction adapter. Glutton events are normalized with source label `honeytrap` for compatibility with the existing high-interaction rules. |
 
 ## Controller Policy
 

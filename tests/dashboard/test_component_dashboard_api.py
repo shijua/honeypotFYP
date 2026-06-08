@@ -467,6 +467,7 @@ def test_dashboard_summary_endpoint_returns_live_snapshot(
     assert payload["gateway_routes"][0]["exposed_assets"] == ["internal-portal"]
     assert payload["attackers"][0]["current_running_assets"][0]["asset_id"] == "internal-portal"
     assert payload["attackers"][0]["failed_assets"] == []
+    assert "reveal_feedback" not in payload["attackers"][0]
     assert payload["attackers"][0]["public_http_evidence"] == [
         "rule:public-http credential or backup discovery",
         "combined:.env",
@@ -580,6 +581,8 @@ def test_dashboard_index_serves_html() -> None:
     assert "function renderHealth" in js
     assert "function techniqueBadgeList" in js
     assert "function formatRejectionReason" in js
+    assert "function decisionSortKey" in js
+    assert "decisionSortKey(right).localeCompare(decisionSortKey(left))" in js
     assert "waiting for ${noun}" in js
     assert "gain terms:" in js
     assert "selected support" in js

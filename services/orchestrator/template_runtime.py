@@ -272,6 +272,7 @@ class DockerTemplateRuntime:
             )
         if existing_container_status != "missing":
             self._cleanup_failed_container(container_name)
+            _wait_for_container_removal(container_name)
 
         try:
             subprocess.run(
@@ -331,6 +332,7 @@ class DockerTemplateRuntime:
                         capture_output=True,
                         text=True,
                     )
+                    _wait_for_container_removal(sidecar)
         container_name = record.settings.get("container_name")
         if isinstance(container_name, str) and container_name:
             subprocess.run(
@@ -339,6 +341,7 @@ class DockerTemplateRuntime:
                 capture_output=True,
                 text=True,
             )
+            _wait_for_container_removal(container_name)
         updated = record.model_copy(update={"status": "stopped"})
         return self._repository.upsert(updated)
 
@@ -537,6 +540,7 @@ class DockerTemplateRuntime:
             capture_output=True,
             text=True,
         )
+        _wait_for_container_removal(container_name)
 
     def _start_sidecar_forwarders(
         self,
@@ -583,6 +587,7 @@ class DockerTemplateRuntime:
                 continue
             if status != "missing":
                 self._cleanup_failed_container(sidecar_name)
+                _wait_for_container_removal(sidecar_name)
             sidecar_args = _sidecar_docker_args(
                 binding_id=binding_id,
                 asset=asset,
@@ -2013,7 +2018,7 @@ def _container_status(container_name: str) -> str:
             "ps",
             "-a",
             "--filter",
-            f"name={container_name}",
+            f"name=^/{container_name}$",
             "--format",
             "{{.Status}}",
         ],
@@ -2025,6 +2030,19 @@ def _container_status(container_name: str) -> str:
         return "missing"
     statuses = [line.strip() for line in result.stdout.splitlines() if line.strip()]
     return statuses[0] if statuses else "missing"
+
+
+def _wait_for_container_removal(
+    container_name: str,
+    *,
+    attempts: int = 20,
+    delay_seconds: float = 0.25,
+) -> None:
+    """Wait until Docker releases a removed container name."""
+    for _ in range(attempts):
+        if _container_status(container_name) == "missing":
+            return
+        time.sleep(delay_seconds)
 
 
 def _healthcheck_ready(

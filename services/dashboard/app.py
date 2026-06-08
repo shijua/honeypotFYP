@@ -15,14 +15,14 @@ from fastapi.responses import HTMLResponse
 from libs.common.config import RuntimeConfig
 from libs.common.json_utils import read_json_object
 from services.dashboard.health import build_chain_health
-from services.dashboard.summary import summarize_demo
+from services.dashboard.summary import DockerStatusProbe, summarize_demo
 
 app = FastAPI(title="dashboard", version="0.1.0")
 
 APP_DIR = Path(__file__).resolve().parent
 INDEX_HTML_PATH = APP_DIR / "static" / "index.html"
 STATIC_DIR = APP_DIR / "static"
-REFRESH_SECONDS = 3
+REFRESH_SECONDS = 1
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="dashboard-static")
 
@@ -44,7 +44,11 @@ def api_summary() -> dict[str, Any]:
     """Return one pollable JSON snapshot for the dashboard."""
     state_dir = _state_dir()
     project_name = _project_name()
-    report = summarize_demo(state_dir)
+    containers = _probe_project_containers(project_name)
+    report = summarize_demo(
+        state_dir,
+        docker_probe=_docker_probe_from_containers(containers),
+    )
 
     bindings = _sorted_records(
         _read_items(state_dir / "bindings.json", "records"),
@@ -75,7 +79,6 @@ def api_summary() -> dict[str, Any]:
         "observations",
     )
     decision_trace = _read_items(state_dir / "decision_trace.json", "records")
-    containers = _probe_project_containers(project_name)
     attackers = [
         attacker
         for attacker in report.get("attackers", [])
@@ -264,6 +267,27 @@ def _probe_project_containers(project_name: str) -> list[dict[str, str]]:
             }
         )
     return sorted(containers, key=lambda item: item["name"])
+
+
+def _docker_probe_from_containers(containers: list[dict[str, str]]) -> DockerStatusProbe:
+    """Reuse the dashboard container probe for per-asset runtime status."""
+    diagnostic = next(
+        (item for item in containers if item.get("kind") == "diagnostic"),
+        None,
+    )
+    if diagnostic:
+        return DockerStatusProbe(
+            statuses={},
+            error=diagnostic.get("status") or diagnostic.get("name") or "docker unavailable",
+        )
+    return DockerStatusProbe(
+        statuses={
+            str(item.get("name")): str(item.get("status", ""))
+            for item in containers
+            if item.get("name")
+        },
+        error=None,
+    )
 
 
 def _diagnostic_container(name: str, status: str) -> dict[str, str]:

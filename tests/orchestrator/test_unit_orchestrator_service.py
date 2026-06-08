@@ -47,6 +47,16 @@ def _missing_then_up_status() -> Callable[[str], str]:
     return fake_container_status
 
 
+def test_wait_for_container_removal_polls_until_name_is_released(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    statuses = iter(["Removal In Progress", "Removal In Progress", "missing"])
+    monkeypatch.setattr(template_runtime_module, "_container_status", lambda name: next(statuses))
+    monkeypatch.setattr(template_runtime_module.time, "sleep", lambda seconds: None)
+
+    template_runtime_module._wait_for_container_removal("honeynet-test-ops-db")
+
+
 def test_apply_unlock_updates_binding_assets_and_route_updates() -> None:
     binding_service = BindingService(InMemoryBindingRepository())
     gateway_service = GatewayService(InMemoryGatewayRouteRepository())

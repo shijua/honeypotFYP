@@ -25,7 +25,11 @@ class DockerStatusProbe:
     error: str | None = None
 
 
-def summarize_demo(state_dir: Path) -> dict[str, Any]:
+def summarize_demo(
+    state_dir: Path,
+    *,
+    docker_probe: DockerStatusProbe | None = None,
+) -> dict[str, Any]:
     """Build a deterministic dashboard report from runtime JSON files."""
     cowrie_observations = list_records(
         state_dir / "cowrie_observations.json",
@@ -59,12 +63,18 @@ def summarize_demo(state_dir: Path) -> dict[str, Any]:
     profiles_payload = read_json_object(state_dir / "profiles.json", {"profiles": {}})
     profiles = profiles_payload.get("profiles", {})
     profiles = profiles if isinstance(profiles, dict) else {}
-    docker_probe = current_docker_status()
+    docker_probe = docker_probe or current_docker_status()
+    attacker_sources = [
+        *observations,
+        *bindings,
+        *decision_trace,
+        *evidence_records,
+    ]
 
     attackers = sorted(
         {
             str(item.get("attacker_key"))
-            for item in [*observations, *bindings, *decision_trace, *evidence_records]
+            for item in attacker_sources
             if isinstance(item, dict) and item.get("attacker_key")
         }
     )
