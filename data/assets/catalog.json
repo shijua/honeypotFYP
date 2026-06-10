@@ -753,7 +753,7 @@
         "entrypoint": "sh",
         "command": [
           "-lc",
-          "mkdir -p /tmp/cowrie /home/cowrie/cowrie/log /home/cowrie/cowrie/honeyfs/etc; touch /home/cowrie/cowrie/honeyfs/etc/issue.net; exec /usr/bin/twistd --nodaemon -y cowrie.tac --pidfile /tmp/cowrie/cowrie.pid cowrie"
+          "mkdir -p /tmp/cowrie /home/cowrie/cowrie/etc /home/cowrie/cowrie/log /home/cowrie/cowrie/log/tty /home/cowrie/cowrie/honeyfs/etc; touch /home/cowrie/cowrie/honeyfs/etc/issue.net; exec /usr/bin/twistd --nodaemon -y cowrie.tac --pidfile /tmp/cowrie/cowrie.pid cowrie"
         ],
         "sidecar_forwarders": [
           {
@@ -917,7 +917,7 @@
             "entrypoint": "sh",
             "command": [
               "-lc",
-              "mkdir -p /tmp/cowrie /home/cowrie/cowrie/log /home/cowrie/cowrie/honeyfs/etc; touch /home/cowrie/cowrie/honeyfs/etc/issue.net; exec /usr/bin/twistd --nodaemon -y cowrie.tac --pidfile /tmp/cowrie/cowrie.pid cowrie"
+              "mkdir -p /tmp/cowrie /home/cowrie/cowrie/etc /home/cowrie/cowrie/log /home/cowrie/cowrie/log/tty /home/cowrie/cowrie/honeyfs/etc; touch /home/cowrie/cowrie/honeyfs/etc/issue.net; exec /usr/bin/twistd --nodaemon -y cowrie.tac --pidfile /tmp/cowrie/cowrie.pid cowrie"
             ]
           },
           "materialized_artifacts": [
@@ -1633,7 +1633,7 @@
             "entrypoint": "sh",
             "command": [
               "-lc",
-              "mkdir -p /tmp/cowrie /home/cowrie/cowrie/log /home/cowrie/cowrie/honeyfs/etc; touch /home/cowrie/cowrie/honeyfs/etc/issue.net; exec /usr/bin/twistd --nodaemon -y cowrie.tac --pidfile /tmp/cowrie/cowrie.pid cowrie"
+              "mkdir -p /tmp/cowrie /home/cowrie/cowrie/etc /home/cowrie/cowrie/log /home/cowrie/cowrie/log/tty /home/cowrie/cowrie/honeyfs/etc; touch /home/cowrie/cowrie/honeyfs/etc/issue.net; exec /usr/bin/twistd --nodaemon -y cowrie.tac --pidfile /tmp/cowrie/cowrie.pid cowrie"
             ]
           },
           "materialized_artifacts": [
@@ -2525,7 +2525,7 @@
           {
             "host": "127.0.0.1",
             "requested_host_port": 18085,
-            "container_port": 80
+            "container_port": 81
           },
           {
             "host": "127.0.0.1",

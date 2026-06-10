@@ -653,6 +653,8 @@ def _decision_event_summary(event: dict[str, Any]) -> dict[str, Any]:
     observed_techniques = observed_techniques if isinstance(observed_techniques, list) else []
     covered_techniques = details.get("covered_techniques", [])
     covered_techniques = covered_techniques if isinstance(covered_techniques, list) else []
+    gain_terms = details.get("gain_terms", [])
+    gain_terms = gain_terms if isinstance(gain_terms, list) else []
     return {
         "ts": event.get("ts"),
         "decision_type": event.get("decision_type"),
@@ -666,6 +668,7 @@ def _decision_event_summary(event: dict[str, Any]) -> dict[str, Any]:
         "recommendation_support": details.get("recommendation_support"),
         "expected_technique_gain": details.get("expected_technique_gain"),
         "covered_techniques": covered_techniques,
+        "gain_terms": gain_terms,
         "asset_group": details.get("asset_group"),
         "configuration_id": configuration.get("configuration_id"),
         "target_asset_id": configuration.get("target_asset_id"),

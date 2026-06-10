@@ -48,6 +48,7 @@ services:
       HONEYPOT_INTERNAL_PROTOCOL_EVENTS_FILE: data/runtime/internal_protocol_events.jsonl
       HONEYPOT_HIGH_INTERACTION_EVENTS_FILE: data/runtime/high_interaction_events.jsonl
       HONEYPOT_ASSET_GATEWAY_HTTP_PORTS: "${ASSET_GATEWAY_HTTP_PORTS:-18080,18081,18082,18443,18085}"
+      HONEYPOT_ASSET_GATEWAY_SINGLE_ROUTE_FALLBACK: "${ASSET_GATEWAY_SINGLE_ROUTE_FALLBACK:-true}"
     volumes:
       - .:/app
     ports:

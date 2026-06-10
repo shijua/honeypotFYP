@@ -27,6 +27,7 @@ import asyncio
 import json
 import os
 import re
+import sys
 from dataclasses import dataclass, replace
 from datetime import timezone
 from pathlib import Path
@@ -87,6 +88,7 @@ def select_route(
     *,
     client_ip: str,
     public_port: int,
+    allow_single_route_fallback: bool = False,
 ) -> AssetRoute | None:
     """Pick the unlocked backend route for one client IP and fixed public port."""
     port_routes = [route for route in routes if route.public_port == public_port]
@@ -95,6 +97,8 @@ def select_route(
     ]
     if exact_routes:
         return sorted(exact_routes, key=lambda route: route.updated_at)[-1]
+    if allow_single_route_fallback and len(port_routes) == 1:
+        return port_routes[0]
     return None
 
 
@@ -136,12 +140,26 @@ async def _handle_connection(
         load_routes(route_path),
         client_ip=client_ip,
         public_port=public_port,
+        allow_single_route_fallback=_single_route_fallback_enabled(),
     )
     if route is None:
         # No binding has exposed this asset to this source IP yet.
+        _log_no_route(
+            route_path=route_path,
+            client_ip=client_ip,
+            public_port=public_port,
+        )
         client_writer.close()
         await client_writer.wait_closed()
         return
+    if route.attacker_key != client_ip:
+        print(
+            "[asset-gateway] single-route fallback "
+            f"client_ip={client_ip} routed_as={route.attacker_key} "
+            f"asset={route.asset_id} public_port={public_port}",
+            file=sys.stderr,
+            flush=True,
+        )
 
     initial_client_data = b""
     parsed_http_request: ParsedHttpRequest | None = None
@@ -160,7 +178,7 @@ async def _handle_connection(
         await _report_internal_http_request(
             parsed_http_request,
             route=route,
-            client_ip=client_ip,
+            client_ip=route.attacker_key,
         )
         if session_result is not None:
             await _write_http_response(
@@ -170,7 +188,7 @@ async def _handle_connection(
             )
             return
 
-    protocol_observer = _protocol_observer(route, client_ip)
+    protocol_observer = _protocol_observer(route, route.attacker_key)
     observed_initial_data = False
     if initial_client_data and protocol_observer is not None and _high_interaction_source(route.asset_id):
         # HTTP capture backends may close before proxying succeeds; record the
@@ -183,7 +201,14 @@ async def _handle_connection(
             route.backend_host,
             route.backend_port,
         )
-    except OSError:
+    except OSError as exc:
+        print(
+            "[asset-gateway] backend connect failed "
+            f"asset={route.asset_id} client_ip={client_ip} "
+            f"backend={route.backend_host}:{route.backend_port} error={exc}",
+            file=sys.stderr,
+            flush=True,
+        )
         client_writer.close()
         await client_writer.wait_closed()
         return
@@ -194,14 +219,18 @@ async def _handle_connection(
         backend_writer.write(initial_client_data)
         await backend_writer.drain()
 
-    await asyncio.gather(
-        _pipe(
-            client_reader,
-            backend_writer,
-            observe_data=protocol_observer,
-        ),
-        _pipe(backend_reader, client_writer),
-    )
+    try:
+        await asyncio.gather(
+            _pipe(
+                client_reader,
+                backend_writer,
+                observe_data=protocol_observer,
+            ),
+            _pipe(backend_reader, client_writer),
+        )
+    finally:
+        await _close_writer(backend_writer)
+        await _close_writer(client_writer)
 
 
 async def _pipe(
@@ -223,11 +252,27 @@ async def _pipe(
     except (ConnectionError, OSError):
         pass
     finally:
-        writer.close()
-        try:
-            await writer.wait_closed()
-        except (ConnectionError, OSError):
-            pass
+        await _finish_write_direction(writer)
+
+
+async def _finish_write_direction(writer: asyncio.StreamWriter) -> None:
+    """Half-close one proxy direction so request/response protocols can reply."""
+    try:
+        if writer.can_write_eof():
+            writer.write_eof()
+            await writer.drain()
+            return
+    except (ConnectionError, OSError):
+        pass
+    await _close_writer(writer)
+
+
+async def _close_writer(writer: asyncio.StreamWriter) -> None:
+    writer.close()
+    try:
+        await writer.wait_closed()
+    except (ConnectionError, OSError):
+        pass
 
 
 def _route_from_item(item: dict[str, Any]) -> AssetRoute:
@@ -247,6 +292,32 @@ def _peer_ip(writer: asyncio.StreamWriter) -> str:
     if isinstance(peer, tuple) and peer:
         return str(peer[0])
     return ""
+
+
+def _single_route_fallback_enabled() -> bool:
+    value = os.environ.get("HONEYPOT_ASSET_GATEWAY_SINGLE_ROUTE_FALLBACK", "")
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _log_no_route(
+    *,
+    route_path: Path,
+    client_ip: str,
+    public_port: int,
+) -> None:
+    port_routes = [
+        route
+        for route in load_routes(route_path)
+        if route.public_port == public_port
+    ]
+    route_keys = sorted({route.attacker_key for route in port_routes})
+    print(
+        "[asset-gateway] no route "
+        f"client_ip={client_ip} public_port={public_port} "
+        f"route_attacker_keys={route_keys}",
+        file=sys.stderr,
+        flush=True,
+    )
 
 
 async def _read_initial_client_data(

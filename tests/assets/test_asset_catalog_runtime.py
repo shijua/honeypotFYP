@@ -149,6 +149,53 @@ def test_static_internal_asset_ports_are_wired_to_compose_and_env() -> None:
         assert str(port) in env_example
 
 
+def test_cowrie_runtime_mappings_use_container_ssh_port() -> None:
+    assets = _catalog_by_id()
+    checks = [
+        assets["admin-jumpbox"].default_settings["runtime"],
+        assets["admin-jumpbox"].default_settings["configuration_variants"][0]["target_runtime"],
+        assets["ssh-canary"].default_settings["configuration_variants"][0]["target_runtime"],
+    ]
+
+    for runtime in checks:
+        mapping = runtime["port_mappings"][0]
+
+        assert mapping["requested_host_port"] in {10222, 12222}
+        assert mapping["container_port"] == 2222
+
+
+def test_opencanary_ssh_runtime_mapping_uses_configured_container_port() -> None:
+    assets = _catalog_by_id()
+    mapping = assets["ssh-canary"].default_settings["runtime"]["port_mappings"][0]
+
+    assert mapping["requested_host_port"] == 12222
+    assert mapping["container_port"] == 22
+
+
+def test_dionaea_http_capture_mapping_uses_runtime_http_port() -> None:
+    assets = _catalog_by_id()
+    mapping = assets["dionaea-capture"].default_settings["runtime"]["port_mappings"][0]
+
+    assert mapping["requested_host_port"] == 18085
+    assert mapping["container_port"] == 81
+
+
+def test_cowrie_runtime_commands_prepare_key_directory() -> None:
+    assets = _catalog_by_id()
+    checks = [
+        assets["admin-jumpbox"].default_settings["runtime"],
+        assets["admin-jumpbox"].default_settings["configuration_variants"][0]["target_runtime"],
+        assets["ssh-canary"].default_settings["configuration_variants"][0]["target_runtime"],
+    ]
+
+    for runtime in checks:
+        command = " ".join(runtime["command"])
+
+        assert "/home/cowrie/cowrie/etc" in command
+        assert "/home/cowrie/cowrie/log/tty" in command
+        assert "/home/cowrie/cowrie/honeyfs/etc" in command
+
+
 def test_internal_assets_declare_public_http_unlock_signals() -> None:
     # Runtime dependency logic is catalog-driven, so each breadcrumb-backed
     # internal asset must declare the public HTTP signal that makes it eligible.

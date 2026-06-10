@@ -216,6 +216,41 @@ async def test_asset_gateway_reports_smtp_commands_while_proxying(
     assert backend_writer.written == [b"HELO tester\r\nQUIT\r\n"]
 
 
+@pytest.mark.asyncio
+async def test_asset_gateway_allows_backend_reply_after_client_finishes_writing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    route_path = _write_route_table(
+        tmp_path,
+        attacker_key="127.0.0.1",
+        public_port=16379,
+        backend_port=6379,
+        asset_id="redis-cache",
+    )
+    client_reader = _FakeReader([b"KEYS *\r\n", b""])
+    client_writer = _FakeWriter()
+    backend_reader = _FakeReader([b"*1\r\n$21\r\nsession:portal.reader\r\n", b""])
+    backend_writer = _FakeWriter()
+
+    async def fake_open_connection(host: str, port: int) -> tuple[_FakeReader, _FakeWriter]:
+        return backend_reader, backend_writer
+
+    monkeypatch.setattr(asset_gateway_app, "_peer_ip", lambda _writer: "127.0.0.1")
+    monkeypatch.setattr(asset_gateway_app.asyncio, "open_connection", fake_open_connection)
+
+    await asset_gateway_app._handle_connection(
+        client_reader,
+        client_writer,
+        public_port=16379,
+        route_path=route_path,
+    )
+
+    assert backend_writer.written == [b"KEYS *\r\n"]
+    assert backend_writer.eof_written is True
+    assert client_writer.written == [b"*1\r\n$21\r\nsession:portal.reader\r\n"]
+
+
 def _write_route_table(
     tmp_path: Path,
     *,
@@ -260,12 +295,19 @@ class _FakeWriter:
     def __init__(self) -> None:
         self.written: list[bytes] = []
         self.closed = False
+        self.eof_written = False
 
     def write(self, data: bytes) -> None:
         self.written.append(data)
 
     async def drain(self) -> None:
         return None
+
+    def can_write_eof(self) -> bool:
+        return True
+
+    def write_eof(self) -> None:
+        self.eof_written = True
 
     def close(self) -> None:
         self.closed = True

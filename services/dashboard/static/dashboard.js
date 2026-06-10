@@ -136,6 +136,25 @@ function countLabels(counts) {
   });
 }
 
+function gainTermLabels(event) {
+  const terms = Array.isArray(event.gain_terms) ? event.gain_terms : [];
+  if (terms.length) {
+    return terms.map(term => {
+      const technique = term.technique || "technique";
+      const support = Number(term.support);
+      const confidence = Number(term.confidence);
+      const gain = Number(term.gain);
+      const details = [
+        Number.isFinite(support) ? `s${support.toFixed(2)}` : "",
+        Number.isFinite(confidence) ? `c${confidence.toFixed(2)}` : "",
+        Number.isFinite(gain) ? `g${gain.toFixed(2)}` : "",
+      ].filter(Boolean).join(" ");
+      return details ? `${technique} ${details}` : technique;
+    });
+  }
+  return event.covered_techniques || [];
+}
+
 function formatRejectionReason(reason) {
   const text = String(reason || "");
   const dependencyMatch = text.match(/^missing dependencies:\s*\[(.*)\]$/);
@@ -395,16 +414,10 @@ function renderDecision(decision, attackerKey, confidences = {}) {
 }
 
 function renderDecisionEvent(event) {
-  const support = event.recommendation_support === null || event.recommendation_support === undefined
-    ? "0.00"
-    : Number(event.recommendation_support).toFixed(2);
-  const confidence = event.confidence_score === null || event.confidence_score === undefined
-    ? "0.00"
-    : Number(event.confidence_score).toFixed(2);
   const gain = event.expected_technique_gain === null || event.expected_technique_gain === undefined
     ? "0.00"
     : Number(event.expected_technique_gain).toFixed(2);
-  const coveredTechniques = event.covered_techniques || [];
+  const gainTerms = gainTermLabels(event);
   const eligibleLabels = (event.eligible_reveal_options || []).map(revealOptionLabel);
   const rejectionLabels = countLabels(event.rejection_reason_counts);
   const priorState = event.prior_support_enabled === false
@@ -436,10 +449,9 @@ function renderDecisionEvent(event) {
       <div class="trace-label">Rank</div>
       <div class="trace-content">
         <div>${badgeList([roleLabel], "warn")}</div>
-        <div class="rank-technique">selected technique: ${badgeList(event.selected_technique ? [event.selected_technique] : [], "warn", "no technique selected")}</div>
         <div class="subtle">strategy ${escapeHtml(event.strategy || "not selected")} | candidate ${escapeHtml(techniqueSource)}</div>
-        <div class="subtle">gain terms: ${badgeList(coveredTechniques, "", "no covered techniques")}</div>
-        <div class="subtle">score: total gain ${escapeHtml(gain)} over covered techniques; selected support ${escapeHtml(support)}, selected confidence ${escapeHtml(confidence)}; prior ${escapeHtml(priorState)}</div>
+        <div class="subtle">gain terms: ${badgeList(gainTerms, "", "no covered techniques")}</div>
+        <div class="subtle">score: total gain ${escapeHtml(gain)} over covered techniques; prior ${escapeHtml(priorState)}</div>
       </div>
     </div>
     <div class="trace-arrow" aria-hidden="true">→</div>

@@ -63,181 +63,6 @@ Expected: each passed scenario has the selected asset and the exact asset-gatewa
 
 This evaluation creates routes for scripted attacker keys such as `198.51.100.x`. To probe the fixed ports from this VM shell or browser, still run section 4 with the real source IP key, normally `146.169.44.23`.
 
-Optional configuration variant live checks:
-
-Use this after the enterprise stack is running when you want to prove that A.2 configuration variants are real attacker-visible changes. The helper below calls the private control-plane API from Docker, but every probe command uses the attacker-facing host/port. Reconnect after applying a variant; existing TCP sessions are not preserved. The `tests T...` comments name the ATT&CK techniques expected from that exact probe; a visible note may test a narrower technique than the variant's full follow-up intent.
-
-```bash
-# Pick the latest attacker key seen by the public portal; fall back to the VM public IP.
-TEST_ATTACKER_KEY="$(
-  curl -s "http://146.169.44.23:8090/api/summary" |
-    jq -r '.recent_entrypoint_observations | .[0].attacker_key // "146.169.44.23"'
-)"
-```
-
-HTTP content variants:
-
-```bash
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh internal-portal portal-api-directory-links # Apply the portal service-directory configuration for this attacker binding.
-
-curl -fsS "http://146.169.44.23:18080/api/openapi-summary.json" | grep -F "Operations Directory API" # tests T1046/T1018: service/API directory access.
-
-curl -fsS "http://146.169.44.23:18080/runbooks/service-directory.md" | grep -F "service-directory" # tests T1046/T1018: runbook-host inventory interest.
-
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh internal-portal portal-admin-console-link # Apply the portal admin-link configuration for this attacker binding.
-
-curl -fsS "http://146.169.44.23:18080/runbooks/admin-console-access.md" | grep -F "Maintenance Access" # tests T1213: reading the per-binding admin-console runbook.
-
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh finance-share finance-backup-archive-index # Apply the finance archive-index configuration.
-
-curl -fsS "http://146.169.44.23:18082/finance/archive/2024/customer-export-index.csv" | grep -F "customer-export" # tests T1005: finance archive index access.
-
-curl -fsS "http://146.169.44.23:18082/finance/archive/2024/archive-manifest.txt" | grep -F "Finance archive manifest" # tests T1005: finance archive manifest access.
-
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh finance-share finance-password-rotation-clue # Apply the finance password-rotation note configuration.
-
-curl -fsS "http://146.169.44.23:18082/finance/archive/2024/password-rotation-note.txt" | grep -F "password rotation" # tests T1213: reading a credential-process note; actual credential reuse is tested by follow-up login probes.
-
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh web-admin-console web-admin-login-surface # Apply the web-admin login-surface configuration.
-
-curl -fsS "http://146.169.44.23:18081/login/" | grep -F "Northbridge Admin Console" # visibility only: page load confirms the login page exists; the POST below tests T1110.
-
-curl -fsS -X POST "http://146.169.44.23:18081/login" -d "username=admin&password=x" >/dev/null || true # tests T1110: failed admin-console login attempt.
-
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh web-admin-console web-admin-discovery-endpoints # Apply the web-admin discovery endpoint configuration.
-
-curl -fsS "http://146.169.44.23:18081/api/inventory.json" | grep -F "svc-admin-console" # tests T1518: software/inventory discovery.
-
-curl -fsS "http://146.169.44.23:18081/api/processes.json" | grep -F "admin-console" # tests T1057: process discovery.
-
-curl -fsS "http://146.169.44.23:18081/api/groups.json" | grep -F "platform" # tests T1069: permission-group discovery.
-
-curl -fsS "http://146.169.44.23:18081/api/container-resources.json" | grep -F "ops-prod-a" # tests T1082: system/container resource discovery.
-
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh vpn-appliance vpn-profile-login-clue # Apply the VPN profile/login-clue configuration.
-
-curl -fsS "http://146.169.44.23:18443/policy/login-clue.txt" | grep -F "Remote access profile" # tests T1133: external remote-service profile clue.
-
-curl -fsS "http://146.169.44.23:18443/download/contractor-profile.ovpn" | grep -F "auth-user-pass" # tests T1133: contractor VPN profile download.
-
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh vpn-appliance vpn-route-policy-notes # Apply the VPN route-policy note configuration.
-
-curl -fsS "http://146.169.44.23:18443/policy/route-policy-notes.txt" | grep -F "Split-tunnel" # tests T1016: route-policy note access.
-
-curl -fsS "http://146.169.44.23:18443/policy/tunnel-routes.txt" | grep -F "Split tunnel" # tests T1572: tunnel route list access.
-
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh malware-sink malware-downloader-staging-directory # Apply the malware-sink downloader staging configuration.
-
-curl -fsS "http://146.169.44.23:18085/staging/downloader-index.txt" | grep -F "endpoint package" # tests T1608: downloader/resource staging index access.
-
-curl -fsS "http://146.169.44.23:18085/downloads/agent-update.bin" >/dev/null # tests T1105: staged downloader binary request.
-
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh malware-sink malware-upload-drop-endpoint # Apply the malware-sink upload/drop endpoint configuration.
-
-curl -fsS "http://146.169.44.23:18085/upload/drop-endpoint.txt" | grep -F "Upload intake endpoint" # visibility only: drop-endpoint note read; the POST below tests T1567.
-
-curl -fsS -X POST "http://146.169.44.23:18085/upload/" -d "filename=finance-drop.zip" >/dev/null || true # tests T1567: upload/exfil-shaped POST to the exposed drop endpoint.
-```
-
-Protocol target-runtime variants:
-
-```bash
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh git-internal git-seeded-repository-backend # Swap Git from base canary to the seeded Git daemon.
-
-timeout 8s git ls-remote git://146.169.44.23:19418/infra-deploy.git | head # tests T1046/T1213: Git service and repository access.
-
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh redis-cache redis-seeded-keyspace-backend # Swap Redis to the seeded keyspace backend.
-
-# tests T1046/T1213: Redis keyspace discovery.
-printf "KEYS *\r\n" | nc -w 3 146.169.44.23 16379 | grep -F "session:portal.reader"
-
-# tests T1046/T1005: Redis seeded value read.
-printf "GET session:portal.reader\r\n" | nc -w 3 146.169.44.23 16379 | grep -F "nbp_reader"
-
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh ftp-archive ftp-archive-review-banner # Swap FTP to the configured archive banner backend.
-
-# tests T1110/T1021: FTP USER probe; banner visibility is checked by grep.
-printf "USER archive\r\n" | nc -w 3 146.169.44.23 12121 | grep -F "archive-ftpd.internal.local"
-
-# tests T1110/T1021/T1039: FTP login and archive retrieval attempt.
-printf "USER anonymous\r\nPASS anonymous\r\nRETR finance-drop.zip\r\nQUIT\r\n" | nc -w 4 146.169.44.23 12121 || true
-
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh ops-db ops-db-schema-banner-backend # Swap ops-db to the configured MySQL-compatible banner backend.
-
-# visibility check: MySQL handshake is visible without using the Docker bridge.
-python3 - <<'PY'
-import socket
-s = socket.create_connection(("146.169.44.23", 13306), timeout=5)
-print(s.recv(512).decode("latin1", errors="replace"))
-s.close()
-PY
-
-# tests T1110: MySQL login attempt against the configured database surface.
-python3 - <<'PY'
-import socket
-import struct
-username = b"backup_reader"
-password = b"WrongPassword"
-with socket.create_connection(("146.169.44.23", 13306), timeout=5) as sock:
-    sock.recv(4096)
-    capabilities = 0x00000001 | 0x00000200 | 0x00008000 | 0x00080000
-    payload = struct.pack("<IIB23s", capabilities, 16777216, 33, b"\0" * 23)
-    payload += username + b"\0" + bytes([len(password)]) + password + b"mysql_native_password\0"
-    sock.sendall(struct.pack("<I", len(payload))[:3] + b"\x01" + payload)
-    print(sock.recv(4096).decode("utf-8", errors="replace"))
-PY
-
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh ssh-canary ssh-cowrie-jumpbox-profile # Swap the SSH canary to Cowrie.
-
-ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 12222 root@146.169.44.23 true </dev/null || true # visibility check: route accepts a client connection; failure is expected because BatchMode avoids password entry.
-
-# tests T1021.004/T1110: one SSH password attempt.
-tmpask="$(mktemp)"; printf '#!/bin/sh\necho wrongpass\n' > "$tmpask"; chmod +x "$tmpask"; DISPLAY=:0 SSH_ASKPASS="$tmpask" SSH_ASKPASS_REQUIRE=force setsid ssh -o NumberOfPasswordPrompts=1 -o PubkeyAuthentication=no -o PreferredAuthentications=password -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 12222 root@146.169.44.23 true </dev/null || true; rm -f "$tmpask"
-
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh legacy-telnet legacy-telnet-console-prompt # Swap Telnet to the legacy console prompt backend.
-
-# tests T1021/T1110: configured legacy console login-path probe.
-printf "admin\r\n" | nc -w 3 146.169.44.23 12323 | grep -F "Northbridge legacy console"
-
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh mail-relay mailoney-auth-relay-backend # Swap SMTP to Mailoney.
-
-# tests T1046: SMTP banner/relay interaction.
-printf "EHLO tester\r\nQUIT\r\n" | nc -w 3 146.169.44.23 2525 | grep -F "Python SMTP proxy"
-
-# tests T1087.003/T1110: SMTP recipient probing and AUTH attempt.
-printf "EHLO tester\r\nVRFY finance\r\nAUTH LOGIN\r\nYWRtaW4=\r\nV3JvbmdQYXNz\r\nQUIT\r\n" | nc -w 4 146.169.44.23 2525 || true
-
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh admin-jumpbox jumpbox-cowrie-operator-profile # Swap the admin jumpbox to its Cowrie operator profile.
-
-ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 10222 root@146.169.44.23 true </dev/null || true # visibility check: jumpbox SSH route accepts a client connection.
-```
-
-High-interaction target variants:
-
-Note: `honeytrap-generic` is the asset id used by the catalogue, but the current generic capture container is Glutton (`dtagdevsec/glutton`). The high-interaction adapter still records the normalized source as `honeytrap` so existing Sigma rules and dashboard fields remain stable.
-
-```bash
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh dionaea-capture dionaea-to-glutton-http-capture # Apply the Dionaea-to-Glutton adjacent HTTP capture route.
-
-# tests T1190/T1105 through generic high-interaction capture. This probe may not return an HTTP page; the expected effect is capture telemetry.
-printf "GET /config-check HTTP/1.1\r\nHost: capture.local\r\n\r\n" | nc -w 3 146.169.44.23 19999 || true
-
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh malware-sink malware-dionaea-same-port-upgrade # Apply the malware-sink same-port Dionaea upgrade.
-
-curl -i "http://146.169.44.23:18085/downloads/agent-update.bin" | head # tests T1041/T1105/T1190/T1204.002 when latest 18085 route points to Dionaea.
-
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh malware-sink malware-honeytrap-generic-listener # Apply the malware-sink adjacent Glutton generic capture listener.
-
-# tests T1046/T1105/T1190 through generic TCP capture.
-printf "payload upload test\r\n" | nc -w 3 146.169.44.23 19999 || true
-
-ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh honeytrap-generic honeytrap-wordpot-web-capture # Swap generic capture to Wordpot.
-
-curl -i "http://146.169.44.23:19999/wp-login.php" | grep -F "Wordpress" # tests T1190/T1046: WordPress-like exploit/probe surface.
-```
-
-Expected: each `apply_configuration_variant_for_test.sh` response shows a route update and either `configured_runtime: true` for same-port swaps or a newly exposed target asset. Each probe returns the expected visible string or successful protocol handshake within a reconnect.
-
 ## 2. Public Signals
 
 Run this from the same terminal/browser source IP that will later test internal ports:
@@ -746,3 +571,179 @@ cat data/runtime/asset_gateway_routes.json | jq # Current source-IP route table 
 ```bash
 ./scripts/reset_enterprise_runtime.sh # Stop runtime containers and clear generated state.
 ```
+
+
+## Optional configuration variant live checks:
+
+Use this after the enterprise stack is running when you want to prove that A.2 configuration variants are real attacker-visible changes. The helper below calls the private control-plane API from Docker, but every probe command uses the attacker-facing host/port. Reconnect after applying a variant; existing TCP sessions are not preserved. The `tests T...` comments name the ATT&CK techniques expected from that exact probe; a visible note may test a narrower technique than the variant's full follow-up intent.
+
+```bash
+# Pick the latest attacker key seen by the public portal; fall back to the VM public IP.
+TEST_ATTACKER_KEY="$(
+  curl -s "http://146.169.44.23:8090/api/summary" |
+    jq -r '.recent_entrypoint_observations | .[0].attacker_key // "146.169.44.23"'
+)"
+```
+
+HTTP content variants:
+
+```bash
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh internal-portal portal-api-directory-links # Apply the portal service-directory configuration for this attacker binding.
+
+curl -fsS "http://146.169.44.23:18080/api/openapi-summary.json" | grep -F "Operations Directory API" # tests T1046/T1018: service/API directory access.
+
+curl -fsS "http://146.169.44.23:18080/runbooks/service-directory.md" | grep -F "service-directory" # tests T1046/T1018: runbook-host inventory interest.
+
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh internal-portal portal-admin-console-link # Apply the portal admin-link configuration for this attacker binding.
+
+curl -fsS "http://146.169.44.23:18080/runbooks/admin-console-access.md" | grep -F "Maintenance Access" # tests T1213: reading the per-binding admin-console runbook.
+
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh finance-share finance-backup-archive-index # Apply the finance archive-index configuration.
+
+curl -fsS "http://146.169.44.23:18082/finance/archive/2024/customer-export-index.csv" | grep -F "customer-export" # tests T1005: finance archive index access.
+
+curl -fsS "http://146.169.44.23:18082/finance/archive/2024/archive-manifest.txt" | grep -F "Finance archive manifest" # tests T1005: finance archive manifest access.
+
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh finance-share finance-password-rotation-clue # Apply the finance password-rotation note configuration.
+
+curl -fsS "http://146.169.44.23:18082/finance/archive/2024/password-rotation-note.txt" | grep -F "password rotation" # tests T1213: reading a credential-process note; actual credential reuse is tested by follow-up login probes.
+
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh web-admin-console web-admin-login-surface # Apply the web-admin login-surface configuration.
+
+curl -fsS "http://146.169.44.23:18081/login/" | grep -F "Northbridge Admin Console" # visibility only: page load confirms the login page exists; the POST below tests T1110.
+
+curl -fsS -X POST "http://146.169.44.23:18081/login" -d "username=admin&password=x" >/dev/null || true # tests T1110: failed admin-console login attempt.
+
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh web-admin-console web-admin-discovery-endpoints # Apply the web-admin discovery endpoint configuration.
+
+curl -fsS "http://146.169.44.23:18081/api/inventory.json" | grep -F "svc-admin-console" # tests T1518: software/inventory discovery.
+
+curl -fsS "http://146.169.44.23:18081/api/processes.json" | grep -F "admin-console" # tests T1057: process discovery.
+
+curl -fsS "http://146.169.44.23:18081/api/groups.json" | grep -F "platform" # tests T1069: permission-group discovery.
+
+curl -fsS "http://146.169.44.23:18081/api/container-resources.json" | grep -F "ops-prod-a" # tests T1082: system/container resource discovery.
+
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh vpn-appliance vpn-profile-login-clue # Apply the VPN profile/login-clue configuration.
+
+curl -fsS "http://146.169.44.23:18443/policy/login-clue.txt" | grep -F "Remote access profile" # tests T1133: external remote-service profile clue.
+
+curl -fsS "http://146.169.44.23:18443/download/contractor-profile.ovpn" | grep -F "auth-user-pass" # tests T1133: contractor VPN profile download.
+
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh vpn-appliance vpn-route-policy-notes # Apply the VPN route-policy note configuration.
+
+curl -fsS "http://146.169.44.23:18443/policy/route-policy-notes.txt" | grep -F "Split-tunnel" # tests T1016: route-policy note access.
+
+curl -fsS "http://146.169.44.23:18443/policy/tunnel-routes.txt" | grep -F "Split tunnel" # tests T1572: tunnel route list access.
+
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh malware-sink malware-downloader-staging-directory # Apply the malware-sink downloader staging configuration.
+
+curl -fsS "http://146.169.44.23:18085/staging/downloader-index.txt" | grep -F "endpoint package" # tests T1608: downloader/resource staging index access.
+
+curl -fsS "http://146.169.44.23:18085/downloads/agent-update.bin" >/dev/null # tests T1105: staged downloader binary request.
+
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh malware-sink malware-upload-drop-endpoint # Apply the malware-sink upload/drop endpoint configuration.
+
+curl -fsS "http://146.169.44.23:18085/upload/drop-endpoint.txt" | grep -F "Upload intake endpoint" # visibility only: drop-endpoint note read; the POST below tests T1567.
+
+curl -fsS -X POST "http://146.169.44.23:18085/upload/" -d "filename=finance-drop.zip" >/dev/null || true # tests T1567: upload/exfil-shaped POST to the exposed drop endpoint.
+```
+
+Protocol target-runtime variants:
+
+```bash
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh git-internal git-seeded-repository-backend # Swap Git from base canary to the seeded Git daemon.
+
+timeout 8s git ls-remote git://146.169.44.23:19418/infra-deploy.git | head # tests T1046/T1213: Git service and repository access.
+
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh redis-cache redis-seeded-keyspace-backend # Swap Redis to the seeded keyspace backend.
+
+# tests T1046/T1213: Redis keyspace discovery.
+printf "KEYS *\r\n" | nc -w 3 146.169.44.23 16379 | grep -F "session:portal.reader"
+
+# tests T1046/T1005: Redis seeded value read.
+printf "GET session:portal.reader\r\n" | nc -w 3 146.169.44.23 16379 | grep -F "nbp_reader"
+
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh ftp-archive ftp-archive-review-banner # Swap FTP to the configured archive banner backend.
+
+# tests T1110/T1021: FTP USER probe; banner visibility is checked by grep.
+printf "USER archive\r\n" | nc -w 3 146.169.44.23 12121 | grep -F "archive-ftpd.internal.local"
+
+# tests T1110/T1021/T1039: FTP login and archive retrieval attempt.
+printf "USER anonymous\r\nPASS anonymous\r\nRETR finance-drop.zip\r\nQUIT\r\n" | nc -w 4 146.169.44.23 12121 || true
+
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh ops-db ops-db-schema-banner-backend # Swap ops-db to the configured MySQL-compatible banner backend.
+
+# visibility check: MySQL handshake is visible without using the Docker bridge.
+python3 - <<'PY'
+import socket
+s = socket.create_connection(("146.169.44.23", 13306), timeout=5)
+print(s.recv(512).decode("latin1", errors="replace"))
+s.close()
+PY
+
+# tests T1110: MySQL login attempt against the configured database surface.
+python3 - <<'PY'
+import socket
+import struct
+username = b"backup_reader"
+password = b"WrongPassword"
+with socket.create_connection(("146.169.44.23", 13306), timeout=5) as sock:
+    sock.recv(4096)
+    capabilities = 0x00000001 | 0x00000200 | 0x00008000 | 0x00080000
+    payload = struct.pack("<IIB23s", capabilities, 16777216, 33, b"\0" * 23)
+    payload += username + b"\0" + bytes([len(password)]) + password + b"mysql_native_password\0"
+    sock.sendall(struct.pack("<I", len(payload))[:3] + b"\x01" + payload)
+    print(sock.recv(4096).decode("utf-8", errors="replace"))
+PY
+
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh ssh-canary ssh-cowrie-jumpbox-profile # Swap the SSH canary to Cowrie.
+
+ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 12222 root@146.169.44.23 true </dev/null || true # visibility check: route accepts a client connection; failure is expected because BatchMode avoids password entry.
+
+# tests T1021.004/T1110: one SSH password attempt.
+tmpask="$(mktemp)"; printf '#!/bin/sh\necho wrongpass\n' > "$tmpask"; chmod +x "$tmpask"; DISPLAY=:0 SSH_ASKPASS="$tmpask" SSH_ASKPASS_REQUIRE=force setsid ssh -o NumberOfPasswordPrompts=1 -o PubkeyAuthentication=no -o PreferredAuthentications=password -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 12222 root@146.169.44.23 true </dev/null || true; rm -f "$tmpask"
+
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh legacy-telnet legacy-telnet-console-prompt # Swap Telnet to the legacy console prompt backend.
+
+# tests T1021/T1110: configured legacy console login-path probe.
+printf "admin\r\n" | nc -w 3 146.169.44.23 12323 | grep -F "Northbridge legacy console"
+
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh mail-relay mailoney-auth-relay-backend # Swap SMTP to Mailoney.
+
+# tests T1046: SMTP banner/relay interaction.
+printf "EHLO tester\r\nQUIT\r\n" | nc -w 3 146.169.44.23 2525 | grep -F "Python SMTP proxy"
+
+# tests T1087.003/T1110: SMTP recipient probing and AUTH attempt.
+printf "EHLO tester\r\nVRFY finance\r\nAUTH LOGIN\r\nYWRtaW4=\r\nV3JvbmdQYXNz\r\nQUIT\r\n" | nc -w 4 146.169.44.23 2525 || true
+
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh admin-jumpbox jumpbox-cowrie-operator-profile # Swap the admin jumpbox to its Cowrie operator profile.
+
+ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 10222 root@146.169.44.23 true </dev/null || true # visibility check: jumpbox SSH route accepts a client connection.
+```
+
+High-interaction target variants:
+
+Note: `honeytrap-generic` is the asset id used by the catalogue, but the current generic capture container is Glutton (`dtagdevsec/glutton`). The high-interaction adapter still records the normalized source as `honeytrap` so existing Sigma rules and dashboard fields remain stable.
+
+```bash
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh dionaea-capture dionaea-to-glutton-http-capture # Apply the Dionaea-to-Glutton adjacent HTTP capture route.
+
+# tests T1190/T1105 through generic high-interaction capture. This probe may not return an HTTP page; the expected effect is capture telemetry.
+printf "GET /config-check HTTP/1.1\r\nHost: capture.local\r\n\r\n" | nc -w 3 146.169.44.23 19999 || true
+
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh malware-sink malware-dionaea-same-port-upgrade # Apply the malware-sink same-port Dionaea upgrade.
+
+curl -i "http://146.169.44.23:18085/downloads/agent-update.bin" | head # tests T1041/T1105/T1190/T1204.002 when latest 18085 route points to Dionaea.
+
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh malware-sink malware-honeytrap-generic-listener # Apply the malware-sink adjacent Glutton generic capture listener.
+
+# tests T1046/T1105/T1190 through generic TCP capture.
+printf "payload upload test\r\n" | nc -w 3 146.169.44.23 19999 || true
+
+ATTACKER_KEY="$TEST_ATTACKER_KEY" ./scripts/apply_configuration_variant_for_test.sh honeytrap-generic honeytrap-wordpot-web-capture # Swap generic capture to Wordpot.
+
+curl -i "http://146.169.44.23:19999/wp-login.php" | grep -F "Wordpress" # tests T1190/T1046: WordPress-like exploit/probe surface.
+```
+
+Expected: each `apply_configuration_variant_for_test.sh` response shows a route update and either `configured_runtime: true` for same-port swaps or a newly exposed target asset. Each probe returns the expected visible string or successful protocol handshake within a reconnect.

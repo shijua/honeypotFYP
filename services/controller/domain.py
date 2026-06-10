@@ -57,6 +57,7 @@ class CandidateScore:
     matched_dependency_markers: tuple[str, ...] = field(default_factory=tuple)
     asset_group: str = "unknown"
     covered_techniques: tuple[str, ...] = field(default_factory=tuple)
+    gain_terms: tuple[dict[str, Any], ...] = field(default_factory=tuple)
     action_type: ActionType = ActionType.unlock
     configuration_id: str | None = None
     configuration_kind: str | None = None
@@ -497,6 +498,12 @@ class ControllerService:
             recommendations,
             use_prior_support=self._use_prior_support,
         )
+        gain_terms = _gain_term_details(
+            tuple(technique_scores),
+            profile.conf_by_technique,
+            recommendations,
+            use_prior_support=self._use_prior_support,
+        )
 
         return CandidateScore(
             asset=option.asset,
@@ -516,6 +523,7 @@ class ControllerService:
             matched_dependency_markers=tuple(matched_markers),
             asset_group=option.asset_group,
             covered_techniques=option.covered_techniques,
+            gain_terms=gain_terms,
             action_type=option.action_type,
             configuration_id=option.configuration_id,
             configuration_kind=option.configuration_kind,
@@ -782,6 +790,7 @@ class ControllerService:
             "telemetry_value": candidate.telemetry_value,
             "asset_group": candidate.asset_group,
             "covered_techniques": list(candidate.covered_techniques),
+            "gain_terms": list(candidate.gain_terms),
             "matched_dependency_markers": list(candidate.matched_dependency_markers),
             "matched_dependency_marker_count": candidate.matched_dependency_marker_count,
             "prior_degraded": (
@@ -939,6 +948,40 @@ def _expected_technique_gain(
             recommendations,
             use_prior_support=use_prior_support,
         )
+        for technique in covered_techniques
+    )
+
+
+def _gain_term_details(
+    covered_techniques: tuple[str, ...],
+    confidences: dict[str, float],
+    recommendations: dict[str, float],
+    *,
+    use_prior_support: bool = True,
+) -> tuple[dict[str, Any], ...]:
+    return tuple(
+        {
+            "technique": technique,
+            "support": round(
+                max(
+                    float(recommendations.get(technique, 0.0)),
+                    _best_family_score(technique, recommendations)[0],
+                )
+                if use_prior_support
+                else 1.0,
+                4,
+            ),
+            "confidence": round(float(confidences.get(technique, 0.0)), 4),
+            "gain": round(
+                _technique_gain(
+                    technique,
+                    confidences,
+                    recommendations,
+                    use_prior_support=use_prior_support,
+                ),
+                4,
+            ),
+        }
         for technique in covered_techniques
     )
 

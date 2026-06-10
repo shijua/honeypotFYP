@@ -244,6 +244,20 @@ def test_dashboard_summary_endpoint_returns_live_snapshot(
                                 "recommendation_support": 0.3,
                                 "expected_technique_gain": 0.6,
                                 "covered_techniques": ["T1087", "T1110"],
+                                "gain_terms": [
+                                    {
+                                        "technique": "T1087",
+                                        "support": 0.3,
+                                        "confidence": 0.8,
+                                        "gain": 0.06,
+                                    },
+                                    {
+                                        "technique": "T1110",
+                                        "support": 0.54,
+                                        "confidence": 0.0,
+                                        "gain": 0.54,
+                                    },
+                                ],
                                 "asset_group": "portal",
                                 "eligible_assets": ["internal-portal"],
                                 "eligible_reveal_options": [
@@ -536,6 +550,10 @@ def test_dashboard_summary_endpoint_returns_live_snapshot(
     }
     assert decision["decision_events"][0]["prior_support_enabled"] is True
     assert decision["decision_events"][0]["covered_techniques"] == ["T1087", "T1110"]
+    assert decision["decision_events"][0]["gain_terms"] == [
+        {"technique": "T1087", "support": 0.3, "confidence": 0.8, "gain": 0.06},
+        {"technique": "T1110", "support": 0.54, "confidence": 0.0, "gain": 0.54},
+    ]
     assert decision["decision_events"][0]["observed_techniques"] == ["T1110", "T1087"]
     assert decision["decision_events"][0]["matched_dependency_markers"] == [
         "any_http_indicators:combined:.env"
@@ -585,7 +603,8 @@ def test_dashboard_index_serves_html() -> None:
     assert "decisionSortKey(right).localeCompare(decisionSortKey(left))" in js
     assert "waiting for ${noun}" in js
     assert "gain terms:" in js
-    assert "selected support" in js
+    assert "function gainTermLabels" in js
+    assert "total gain" in js
     assert 'detailOpenAttribute(detailKey, hasRevealAction)' in js
     assert 'class="trace-label">Gate' in js
     assert 'class="trace-label">Rank' in js

@@ -97,6 +97,60 @@ def test_select_route_rejects_unmatched_source_ip_even_when_port_has_one_route()
     assert route is None
 
 
+def test_select_route_can_fallback_when_one_route_exists_for_port() -> None:
+    routes = [
+        AssetRoute(
+            attacker_key="198.51.100.10",
+            binding_id="binding-a",
+            asset_id="redis-cache",
+            public_port=16379,
+            backend_host="honeynet-a-redis-cache",
+            backend_port=6379,
+        )
+    ]
+
+    route = select_route(
+        routes,
+        client_ip="198.51.100.99",
+        public_port=16379,
+        allow_single_route_fallback=True,
+    )
+
+    assert route is not None
+    assert route.attacker_key == "198.51.100.10"
+    assert route.asset_id == "redis-cache"
+
+
+def test_select_route_does_not_fallback_when_port_has_multiple_routes() -> None:
+    routes = [
+        AssetRoute(
+            attacker_key="198.51.100.10",
+            binding_id="binding-a",
+            asset_id="redis-cache",
+            public_port=16379,
+            backend_host="honeynet-a-redis-cache",
+            backend_port=6379,
+        ),
+        AssetRoute(
+            attacker_key="198.51.100.20",
+            binding_id="binding-b",
+            asset_id="redis-cache",
+            public_port=16379,
+            backend_host="honeynet-b-redis-cache",
+            backend_port=6379,
+        ),
+    ]
+
+    route = select_route(
+        routes,
+        client_ip="198.51.100.99",
+        public_port=16379,
+        allow_single_route_fallback=True,
+    )
+
+    assert route is None
+
+
 def test_load_routes_skips_invalid_route_table_items(tmp_path: Path) -> None:
     route_path = tmp_path / "asset_gateway_routes.json"
     route_path.write_text(
