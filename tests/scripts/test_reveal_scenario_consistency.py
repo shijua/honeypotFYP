@@ -90,6 +90,7 @@ def _assert_policy_scenario_is_catalog_backed(
     for asset_id in touched_assets:
         assert asset_id in allowed_touched, f"{scenario['scenario_id']} touches unlinked asset {asset_id}"
     _assert_expected_reveals_are_catalog_backed(scenario, assets)
+    _assert_anchor_checks_have_expected_outcomes(scenario)
     _assert_timeline_traceability_is_declared(scenario)
 
     if scenario.get("expected_no_reveal") or scenario.get("boundary"):
@@ -162,6 +163,17 @@ def _assert_expected_reveals_are_catalog_backed(
     for reveal in reveals:
         assert isinstance(reveal, dict), scenario["scenario_id"]
         _assert_expected_action_is_catalog_backed(reveal, scenario, assets)
+
+
+def _assert_anchor_checks_have_expected_outcomes(scenario: dict[str, Any]) -> None:
+    for step in scenario_timeline(scenario):
+        if not step.get("anchor_check"):
+            continue
+        assert (
+            step.get("expected_no_reveal")
+            or _scenario_reveal_list(step.get("expected_reveals"))
+            or _scenario_reveal_list(step.get("allowed_reveals"))
+        ), f"{scenario['scenario_id']}:{step.get('step_id')} anchor_check must declare an expected outcome"
 
 
 def _scenario_reveal_list(value: object) -> list[object]:

@@ -59,6 +59,7 @@
       {
         "step_id": "s2-staging-interest",
         "phase": "resource development",
+        "anchor_check": true,
         "new_evidence": [
           {
             "evidence_id": "main-payload-e2",
@@ -67,6 +68,12 @@
             "tactic": "Resource Development",
             "technique": "T1608",
             "weight": 0.9
+          }
+        ],
+        "expected_reveals": [
+          {
+            "action_type": "unlock",
+            "asset_id": "honeytrap-generic"
           }
         ],
         "source_refs": [
@@ -142,6 +149,7 @@
         "step_id": "s5-capture-followup",
         "phase": "final useful follow-up",
         "anchor_check": true,
+        "expected_no_reveal": true,
         "new_evidence": [
           {
             "evidence_id": "main-payload-e5",
@@ -149,17 +157,6 @@
             "tactic": "Execution",
             "technique": "T1204.002",
             "weight": 0.8
-          }
-        ],
-        "allowed_reveals": [
-          {
-          "action_type": "configure",
-          "asset_id": "dionaea-capture",
-          "configuration_id": "dionaea-to-glutton-http-capture"
-        },
-          {
-            "action_type": "unlock",
-            "asset_id": "honeytrap-generic"
           }
         ],
         "touched_assets": [
@@ -275,6 +272,7 @@
       {
         "step_id": "s3-revealed-payload-touch",
         "phase": "revealed asset response",
+        "anchor_check": true,
         "new_evidence": [
           {
             "evidence_id": "main-choice-e3",
@@ -288,6 +286,14 @@
         ],
         "touched_assets": [
           "malware-sink"
+        ],
+        "expected_reveals": [
+          {
+            "action_type": "configure",
+            "asset_id": "malware-sink",
+            "configuration_id": "malware-dionaea-same-port-upgrade",
+            "target_asset_id": "dionaea-capture"
+          }
         ],
         "source_refs": [
           {
@@ -321,15 +327,11 @@
         "phase": "final outcome",
         "anchor_check": true,
         "new_evidence": [],
-        "allowed_reveals": [
+        "expected_reveals": [
           {
             "action_type": "configure",
             "asset_id": "malware-sink",
             "configuration_id": "malware-downloader-staging-directory"
-          },
-          {
-            "action_type": "unlock",
-            "asset_id": "admin-jumpbox"
           }
         ],
         "source_refs": [
@@ -627,13 +629,8 @@
         "step_id": "s5-final-config-check",
         "phase": "final configuration outcome",
         "anchor_check": true,
+        "expected_no_reveal": true,
         "new_evidence": [],
-        "allowed_reveals": [
-          {
-            "action_type": "unlock",
-            "asset_id": "admin-jumpbox"
-          }
-        ],
         "source_refs": [
           {
             "reference_id": "cisa-red-team-aa23-059a",

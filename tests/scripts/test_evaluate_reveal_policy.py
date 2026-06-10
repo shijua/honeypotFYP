@@ -625,6 +625,19 @@ def test_reveal_policy_sequence_scores_anchor_steps(tmp_path: Path) -> None:
                         }
                     ],
                 },
+                {
+                    "scenario_id": "anchor-unscored",
+                    "expected_reasonable_assets": ["entry"],
+                    "expected_hidden_assets": [],
+                    "timeline": [
+                        {
+                            "step_id": "unconstrained-anchor",
+                            "anchor_check": True,
+                            "new_evidence": [{"evidence_id": "e6", "technique": "T1046"}],
+                            "source_refs": [{"reference_id": "fixture", "exactness_level": "technique-level"}],
+                        }
+                    ],
+                },
             ]
         ),
         encoding="utf-8",
@@ -642,9 +655,11 @@ def test_reveal_policy_sequence_scores_anchor_steps(tmp_path: Path) -> None:
     assert rows["anchor-ok"]["anchor_step_correctness_rate"] == 1.0
     assert rows["anchor-missing"]["anchor_missing_expected_reveals"]
     assert rows["anchor-no-reveal-fail"]["anchor_failed_no_reveal_count"] == 1
+    assert rows["anchor-unscored"]["anchor_step_count"] == 1
+    assert rows["anchor-unscored"]["anchor_step_correct_count"] == 0
     assert rows["hidden-opened"]["hidden_violations"] == ["hidden"]
     aggregate = report["policies"]["all-open"]
-    assert aggregate["anchor_step_count"] == 3
+    assert aggregate["anchor_step_count"] == 4
     assert aggregate["anchor_missing_expected_reveal_count"] == 1
     assert aggregate["anchor_failed_no_reveal_count"] == 1
 

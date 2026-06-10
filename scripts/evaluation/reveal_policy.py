@@ -840,8 +840,6 @@ def _anchor_metrics(
                 not row["missing_expected_reveals"]
                 and not row["unexpected_reveal_actions"]
             )
-        else:
-            correct += 1
     return {
         "anchor_step_count": len(anchor_rows),
         "anchor_step_correct_count": correct,
@@ -850,7 +848,6 @@ def _anchor_metrics(
         "anchor_unexpected_reveal_actions": unexpected_actions,
         "anchor_failed_no_reveal_count": failed_no_reveal,
     }
-
 
 def _dedupe_reveal_actions(actions: Any) -> list[dict[str, str]]:
     """De-duplicate compact reveal-action dictionaries in timeline order."""

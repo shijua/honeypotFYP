@@ -61,12 +61,16 @@ function badgeList(items, className = "", emptyLabel = "none") {
   return items.map(item => `<span class="badge ${className}">${escapeHtml(item)}</span>`).join("");
 }
 
-function techniqueBadgeList(techniques, confidences = {}) {
-  const labels = (techniques || []).map(technique => {
-    const confidence = Number(confidences[technique]);
-    return Number.isFinite(confidence) ? `${technique}:${confidence.toFixed(2)}` : technique;
+function confidenceBadgeList(items, confidences = {}, className = "") {
+  const labels = (items || []).map(item => {
+    const confidence = Number(confidences[item]);
+    return Number.isFinite(confidence) ? `${item}:${confidence.toFixed(2)}` : item;
   });
-  return badgeList(labels, "warn");
+  return badgeList(labels, className);
+}
+
+function techniqueBadgeList(techniques, confidences = {}) {
+  return confidenceBadgeList(techniques, confidences, "warn");
 }
 
 function assetConfigurationLabels(assets) {
@@ -312,7 +316,7 @@ function renderAttackers(attackers) {
           </div>
         </summary>
           <div class="attacker-body">
-          <div class="kv"><div class="key">Tactics</div><div>${badgeList(attacker.recent_tactics || [])}</div></div>
+          <div class="kv"><div class="key">Tactics</div><div>${confidenceBadgeList(attacker.recent_tactics || [], attacker.confidence_by_tactic || {})}</div></div>
           <div class="kv"><div class="key">Techniques</div><div>${techniqueBadgeList(attacker.recent_techniques || [], attacker.confidence_by_technique || {})}</div></div>
           <div class="kv"><div class="key">Recent Activity</div><div>${badgeList(attackerActivityLabels(attacker))}</div></div>
           <div class="kv"><div class="key">Unlocked</div><div>${badgeList(attacker.unlocked_assets || [])}</div></div>

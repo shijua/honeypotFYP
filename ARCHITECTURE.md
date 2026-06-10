@@ -104,6 +104,8 @@ Eligibility is controlled by catalog constraints: dependencies, unlock signals, 
 
 Runtime state remains file-backed under `data/runtime/`. The adaptive loop records reveal feedback for evaluation/debugging, but the controller does not use that feedback for ranking. Warm-standby runtimes may be started before a route exists, so later reveals can attach a route without exposing a new port early.
 
+Reveal feedback records whether the attacker interacted with the asset that was just exposed. It is not assigned to every event that happens later. A later event counts as feedback only when it belongs to the same attacker binding and refers to the revealed asset, either through profiler evidence carrying that asset id or through an asset-gateway touch recorded after the reveal time. If the touch produces a mapped tactic or technique, the feedback is marked useful. If the asset is touched but no mapping is produced, it is marked shallow. If no matching touch appears before the feedback window expires, it is marked ignored. When one controller decision exposes both a main and an explore asset, the two actions are treated as one reveal batch; a response to either asset is enough for the loop to continue.
+
 ## API Surface
 
 FastAPI services expose the control loop as small versioned endpoints: binding resolution/heartbeat/recycle, telemetry ingestion for entrypoint/Cowrie/OpenCanary/high-interaction events, profiler evidence/profile reads, controller ticks, orchestration apply/prewarm, gateway sync/read, and dashboard `/api/summary`. The exact request and response shapes live in `libs/contracts/models.py`.
