@@ -35,8 +35,8 @@ def write_reveal_policy_chart(report: dict[str, Any], path: Path) -> None:
         for policy in policies
     )
     primary_metric = "anchor_step_correctness_rate" if has_anchor_steps else "reveal_correctness"
-    primary_label = "Anchor correctness" if has_anchor_steps else "Supported reveal"
-    primary_title = "Key decision correctness" if has_anchor_steps else "Edge case reveal correctness"
+    primary_label = "Key-decision agreement" if has_anchor_steps else "Supported reveal"
+    primary_title = "multi-step scenarios" if has_anchor_steps else "Edge-case scenarios"
     quality_metrics = [
         (primary_metric, primary_label, "#14853d"),
         ("useful_evidence_per_reveal", "Useful response", "#2563eb"),
