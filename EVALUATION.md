@@ -124,16 +124,11 @@ To print the Markdown tables used for report prose, including the gate-narrowing
 
 Expected for an accepted main controller/scenario set: no hidden violations, no missing or unexpected actions on anchor steps, no failed anchor no-reveal checks, and declared source traceability for every step. The broad regression fixture may report unexpected actions when the controller opens scenario-supported assets beyond the small exact list; that is useful for debugging but is not the headline accuracy number.
 
-## 3. Optional Public Dataset Prior Validation
+## 3. Public Dataset Prior Validation
 
 This checks whether the active ATT&CK group prior can recommend future technique families from locally downloaded ATT&CK-labelled public dataset traces. It does not train a new prior and does not affect runtime controller behavior. The reported command is scoped to CasinoLimit, and the report's `dataset_sources` field states which dataset actually contributed ordered multi-technique traces. CasinoLimit provides labelled event traces, not Enterprise ATT&CK intrusion-set-to-technique relationships.
 
-Fetch optional validation material only when needed:
-
-```bash
-.venv/bin/python scripts/data/fetch_public_attack_datasets.py --dry-run
-.venv/bin/python scripts/data/fetch_public_attack_datasets.py --dataset casinolimit
-```
+The README setup downloads CasinoLimit into `vendor/datasets/casinolimit`. If that directory has been removed, rerun `.venv/bin/python scripts/data/fetch_public_attack_datasets.py --dataset casinolimit`.
 
 Run the offline dataset validation:
 

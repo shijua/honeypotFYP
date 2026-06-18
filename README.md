@@ -27,7 +27,7 @@ Use the testing guide when you want to simulate attacker behavior. The `live-app
 | `data/technique_prior/` | Generated ATT&CK group technique prior used by the controller; ignored except for placeholders. |
 | `deploy/` | Docker/runtime assets, static internal surfaces, public portal files, and honeypot configuration. |
 | `tests/` | Unit, component, evaluation, and fixture tests. `tests/fixtures/README.md` explains scenario files. |
-| `vendor/` | Optional external source material such as SigmaHQ rules and public validation datasets; ignored by git. |
+| `vendor/` | External SigmaHQ rules and public validation datasets downloaded during setup; ignored by git. |
 
 ## Local Generated State
 
@@ -35,9 +35,14 @@ A clean clone should be understandable from the tracked source, docs, tests, `da
 
 ## Setup
 
+The full Docker runtime, live route checks, and runtime-latency evaluation target a Linux host. macOS can run the offline Python setup and evaluation commands, but Docker Desktop does not expose Linux container bridge IPs directly to the macOS host and its Docker CLI cannot be mounted into the Linux control-plane containers.
+
 ```bash
 python3.10 -m venv .venv
 .venv/bin/python -m pip install -e ".[dev]"
+mkdir -p vendor
+test -d vendor/sigma || git clone --depth 1 https://github.com/SigmaHQ/sigma.git vendor/sigma
+.venv/bin/python scripts/data/fetch_public_attack_datasets.py --dataset casinolimit
 .venv/bin/python scripts/data/fetch_mitre_attack_stix.py --output data/mitre/enterprise-attack.json
 .venv/bin/python scripts/data/build_attack_group_prior.py \
   --stix data/mitre/enterprise-attack.json \
@@ -46,11 +51,14 @@ python3.10 -m venv .venv
   --path data/technique_prior/attack_group_technique_prior.json
 ```
 
-The active reveal policy reads the generated ATT&CK group-technique prior at `data/technique_prior/attack_group_technique_prior.json`. This generated file is local state and ignored by git. Raw public validation datasets, if used, belong under ignored `vendor/datasets/`.
+The active reveal policy reads the generated ATT&CK group-technique prior at `data/technique_prior/attack_group_technique_prior.json`. This generated file is local state and ignored by git. Raw public validation datasets belong under ignored `vendor/datasets/`.
+Setup also downloads SigmaHQ into `vendor/sigma` for hybrid Cowrie command mapping and CasinoLimit into `vendor/datasets/casinolimit` for public-dataset prior validation. Both directories are ignored by git and can be recreated by rerunning the setup commands.
 
 For evaluation commands, chart generation, route checks, and latency checks, see [EVALUATION.md](EVALUATION.md).
 
 ## Live Stack
+
+Run the live stack on a Linux host with Docker Engine and Docker Compose installed.
 
 ```bash
 ./scripts/reset_enterprise_runtime.sh
@@ -59,11 +67,7 @@ For evaluation commands, chart generation, route checks, and latency checks, see
 
 After the stack starts, use [ATTACK_TESTING_GUIDE.md](ATTACK_TESTING_GUIDE.md) for manual traffic and check the dashboard at port `8090` for profiles, decisions, routes, and asset state. Generated route-check reports, when you run them from [EVALUATION.md](EVALUATION.md), are written under `data/runtime/`.
 
-## Optional Sigma Rule Source
+## Sigma Rule Source
 
-Cowrie command detection still supports `local`, `sigma`, and `hybrid` via `HONEYPOT_COWRIE_COMMAND_MAPPING_MODE`. The default is `hybrid`: it loads `data/cowrie/command_mapping_rules.json` first, then compatible Sigma YAML from `data/detections/cowrie_sigma` and optional SigmaHQ Linux rules when `vendor/sigma` exists.
-
-```bash
-mkdir -p vendor
-test -d vendor/sigma || git clone --depth 1 https://github.com/SigmaHQ/sigma.git vendor/sigma
-```
+Cowrie command detection still supports `local`, `sigma`, and `hybrid` via `HONEYPOT_COWRIE_COMMAND_MAPPING_MODE`. The default is `hybrid`: it loads `data/cowrie/command_mapping_rules.json` first, then compatible Sigma YAML from `data/detections/cowrie_sigma` and SigmaHQ Linux rules from `vendor/sigma`.
+The setup commands clone SigmaHQ into `vendor/sigma`.
