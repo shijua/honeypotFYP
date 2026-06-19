@@ -197,6 +197,12 @@ Expected: each scenario has the expected `attacker_key + asset_id + public_port`
 
 This measures reveal-application overhead after the compose stack is running. It is a feasibility and believability check, not a reveal-correctness metric. The report separates direct unlocks, prewarmed unlocks, and cold-start unlocks because averaging hidden prewarm, route refresh, and container startup hides the main fingerprinting risk.
 
+Start the enterprise stack before running latency:
+
+```bash
+./scripts/start_enterprise_stack.sh
+```
+
 ```bash
 .venv/bin/python scripts/evaluation/runtime_latency.py \
   --assets internal-portal,finance-share,web-admin-console,vpn-appliance,malware-sink,admin-jumpbox,dionaea-capture,honeytrap-generic \
