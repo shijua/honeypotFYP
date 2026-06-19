@@ -30,6 +30,10 @@ def test_public_portal_env_old_contains_realistic_breadcrumb_values() -> None:
     content = (ROOT / "deploy/public-portal/html/.env.old").read_text(encoding="utf-8")
 
     assert "DB_HOST=db01.internal.local" in content
+    assert "DB_PORT=13306" in content
+    assert "REDIS_PORT=16379" in content
+    assert "INTERNAL_PORTAL_URL=http://intranet.internal.local:18080" in content
+    assert "GITEA_URL=git://git.internal.local:19418/infra-deploy.git" in content
     assert "GITEA_TOKEN=nbg_git_ro_2026_04_legacy" in content
     assert "INTERNAL_API_KEY=nb_api_ro_2026_04_status" in content
     assert "PORTAL_READER_TOKEN=nbp_reader_2026_04_window" in content

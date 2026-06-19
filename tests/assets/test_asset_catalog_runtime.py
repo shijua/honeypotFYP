@@ -130,6 +130,42 @@ def test_git_and_redis_seed_material_exists_for_realistic_future_runtime() -> No
         assert path.stat().st_size > 0
 
 
+def test_attacker_visible_breadcrumbs_use_catalogue_public_ports() -> None:
+    assets = _catalog_by_id()
+
+    def public_port(asset_id: str) -> int:
+        mappings = assets[asset_id].default_settings["runtime"]["port_mappings"]
+        return int(mappings[0]["requested_host_port"])
+
+    public_env = (ROOT / "deploy/public-portal/html/.env.old").read_text(encoding="utf-8")
+    source_map = (ROOT / "deploy/public-portal/html/assets/app.js.map").read_text(encoding="utf-8")
+    hosts = (ROOT / "deploy/internal-assets/internal-portal/html/directory/hosts.csv").read_text(encoding="utf-8")
+    connections = (ROOT / "deploy/internal-assets/internal-portal/html/directory/network-connections.csv").read_text(encoding="utf-8")
+    git_config = (ROOT / "deploy/internal-assets/git-internal/seed/customer-portal/config/application-prod.yml").read_text(encoding="utf-8")
+
+    expected_fragments = {
+        "internal-portal": f"intranet.internal.local:{public_port('internal-portal')}",
+        "git-internal": f"git.internal.local:{public_port('git-internal')}",
+        "ops-db": f"db01.internal.local:{public_port('ops-db')}",
+        "redis-cache": f"redis-cache.internal.local:{public_port('redis-cache')}",
+        "finance-share": f"finance-share.internal.local:{public_port('finance-share')}",
+        "web-admin-console": f"intranet-admin-02.internal:{public_port('web-admin-console')}",
+        "ftp-archive": f"archive-ftpd.internal.local:{public_port('ftp-archive')}",
+        "ssh-canary": f"ssh-gw-02.internal:{public_port('ssh-canary')}",
+        "admin-jumpbox": f"admin-jumpbox-01.internal:{public_port('admin-jumpbox')}",
+        "legacy-telnet": f"legacy-switch-01.internal:{public_port('legacy-telnet')}",
+        "mail-relay": f"mail-relay.internal.local:{public_port('mail-relay')}",
+        "vpn-appliance": f"vpn-ra-01.internal:{public_port('vpn-appliance')}",
+        "malware-sink": f"artifact-staging-01.internal:{public_port('malware-sink')}",
+    }
+
+    for asset_id in ("internal-portal", "git-internal", "ops-db", "redis-cache"):
+        assert expected_fragments[asset_id] in public_env or expected_fragments[asset_id] in source_map
+
+    for fragment in expected_fragments.values():
+        assert fragment in hosts or fragment in connections or fragment in git_config
+
+
 def test_static_internal_asset_ports_are_wired_to_compose_and_env() -> None:
     enterprise = (ROOT / "docker-compose.enterprise.yml").read_text(encoding="utf-8")
     control = (ROOT / "docker-compose.control.yml").read_text(encoding="utf-8")

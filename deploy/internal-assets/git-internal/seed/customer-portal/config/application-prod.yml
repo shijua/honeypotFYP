@@ -4,9 +4,10 @@ app:
   internalStatusEndpoint: /internal-api/status
 
 internal:
-  portalUrl: http://intranet.internal.local
-  gitCloneUrl: git://git.internal.local:9418/infra-deploy.git
-  financeShareUrl: http://finance-share.internal.local
+  portalUrl: http://intranet.internal.local:18080
+  gitCloneUrl: git://git.internal.local:19418/infra-deploy.git
+  financeShareUrl: http://finance-share.internal.local:18082
+  operationsDatabase: db01.internal.local:13306
 
 credentials:
   portalReaderUser: portal.reader
@@ -15,5 +16,5 @@ credentials:
 
 cache:
   host: redis-cache.internal.local
-  port: 6379
+  port: 16379
   readOnlyUser: portal_cache_ro

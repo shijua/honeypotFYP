@@ -1,6 +1,10 @@
-source,destination,port,protocol,owner,change_ticket
-intranet-admin-02,ops-db-01,3306,tcp,platform-ops,OPS-1842
-intranet-admin-02,redis-cache-01,6379,tcp,platform-ops,OPS-1797
-finance-share-01,mail-relay-01,25,tcp,finance-ops,OPS-1784
-gitlab-runner-03,artifact-staging-01,80,tcp,developer-platform,OPS-1839
-vpn-ra-01,admin-jumpbox-01,22,tcp,network-ops,OPS-1802
+source,destination,service_port,protocol,published_endpoint,owner,change_ticket
+intranet-admin-02,ops-db-01,3306,tcp,db01.internal.local:13306,platform-ops,OPS-1842
+intranet-admin-02,redis-cache-01,6379,tcp,redis-cache.internal.local:16379,platform-ops,OPS-1797
+finance-share-01,mail-relay-01,25,tcp,mail-relay.internal.local:2525,finance-ops,OPS-1784
+gitlab-runner-03,git-service-01,9418,tcp,git.internal.local:19418,developer-platform,OPS-1839
+gitlab-runner-03,artifact-staging-01,80,tcp,artifact-staging-01.internal:18085,developer-platform,OPS-1839
+finance-share-01,archive-ftpd-01,21,tcp,archive-ftpd.internal.local:12121,finance-ops,OPS-1784
+vpn-ra-01,admin-jumpbox-01,22,tcp,admin-jumpbox-01.internal:10222,network-ops,OPS-1802
+vpn-ra-01,ssh-gw-02,22,tcp,ssh-gw-02.internal:12222,network-ops,OPS-1802
+support-console-01,legacy-switch-01,23,tcp,legacy-switch-01.internal:12323,platform-ops,OPS-1761

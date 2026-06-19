@@ -12,5 +12,5 @@ Current service owners:
 Read-only clone endpoint planned for the internal Git service:
 
 ```text
-git://git.internal.local:9418/infra-deploy.git
+git://git.internal.local:19418/infra-deploy.git
 ```

@@ -4,19 +4,21 @@ global:
 
 customerPortal:
   publicHost: portal.northbridge.example
-  internalStatusUrl: http://intranet.internal.local/internal-api/status
-  adminConsoleUrl: http://intranet-admin-02.internal
+  internalStatusUrl: http://intranet.internal.local:18080/internal-api/status
+  adminConsoleUrl: http://intranet-admin-02.internal:18081
 
 redis:
   host: redis-cache.internal.local
-  port: 6379
+  port: 16379
   readOnlyUser: portal_cache_ro
 
 finance:
   shareHost: finance-share.internal.local
+  sharePort: 18082
   archivePath: /finance/archive/2024/
   backupReader: backup-reader
 
 mail:
   relayHost: mail-relay.internal.local
+  relayPort: 2525
   senderDomain: corp.example
